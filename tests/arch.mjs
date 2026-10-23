@@ -95,5 +95,31 @@ for (const domain of Object.keys(ALLOWED)) {
   for (const file of sources(dir)) checkDomain(domain, file)
 }
 
+
+// ── patch 文件与 Settings 字段一致 ──
+// 加了配置项却忘了写进 cordis.patch.yml，用户就不知道有这个开关。
+// 逐行扫而不是用正则抠接口块：转义太多，容易写错且难读。
+const configLines = fs.readFileSync(path.join(root, 'src', 'host', 'config.ts'), 'utf8').split(String.fromCharCode(10))
+const ifaceStart = configLines.findIndex(line => line.startsWith('export interface Settings'))
+assert.ok(ifaceStart >= 0, '找不到 Settings 接口')
+const ifaceEnd = configLines.findIndex((line, index) => index > ifaceStart && line === '}')
+assert.ok(ifaceEnd > ifaceStart, 'Settings 接口没有闭合')
+
+const settingsKeys = new Set()
+for (const line of configLines.slice(ifaceStart + 1, ifaceEnd)) {
+  const match = /^ {2}([A-Za-z][A-Za-z0-9]*)\??:/.exec(line)
+  if (match !== null) settingsKeys.add(match[1])
+}
+
+const patchLines = fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8').split(String.fromCharCode(10))
+const patchKeys = new Set()
+for (const line of patchLines) {
+  const match = /^ {8}([a-z][A-Za-z0-9]*):/.exec(line)
+  if (match !== null) patchKeys.add(match[1])
+}
+
+const missingInPatch = [...settingsKeys].filter(key => !patchKeys.has(key))
+assert.deepEqual(missingInPatch, [], `这些配置项没写进 cordis.patch.yml：${missingInPatch.join(', ')}`)
+
 assert.deepEqual(violations, [], `架构违规：\n  ${violations.join('\n  ')}`)
 console.log(`arch: 全部通过（${Object.keys(ALLOWED).length} 个域的依赖方向符合约束）`)

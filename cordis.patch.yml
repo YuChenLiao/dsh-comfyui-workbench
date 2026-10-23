@@ -6,19 +6,63 @@
 #   dsh plugin --profile desktop add link:<本仓库绝对路径>
 # 装完重启 DSH；运行中的 dsh 也可在「设置 → 插件」里启用。
 #
-# 可调项（改完重启即可）：
-#   roots         额外要纳入资产库的目录（绝对路径）。默认已包含：当前工作目录、
-#                 全部 workspace、dsh-comfyui-image 的 outputDir、进程 cwd。
-#   maxDepth      扫描深度，默认 3（0 = 只看根目录本身）。
-#   maxItems      单个根目录最多收集多少个文件，默认 4000。
-#   cacheMs       列表缓存毫秒数，默认 4000；点资产库里的刷新会强制重扫。
-#   includeHidden 是否进入 .开头的目录，默认 false。
+# 全部字段都可省略。下面的 config 只是把默认值写出来，方便对照修改。
+# 优先级：profile 配置 > 环境变量（COMFYUI_URL / COMFYUI_BASE_URL / COMFYUI_TIMEOUT_MS）> 内置默认。
 - insert:
     - id: comfyui-workbench
       name: dsh-comfyui-workbench
       config:
-        maxDepth: 3
-        maxItems: 4000
-        cacheMs: 4000
-        includeHidden: false
+        # ── 资产库 ──
+        # 额外纳入资产库的目录（绝对路径）。默认已包含：当前工作目录、全部 workspace、
+        # dsh-comfyui-image 的 outputDir、进程 cwd。
         roots: []
+        # 扫描深度，0 = 只看根目录本身。
+        maxDepth: 3
+        # 单个根目录最多收集多少个文件。
+        maxItems: 4000
+        # 列表缓存毫秒数；资产库里的刷新会强制重扫。
+        cacheMs: 4000
+        # 是否进入 .开头的目录。
+        includeHidden: false
+
+        # ── ComfyUI ──
+        # 服务地址。设置里也有对应的输入框；这里是同一份配置。
+        baseUrl: http://127.0.0.1:8188
+        # 透传请求头：反代鉴权、Cookie 之类。插件不内置任何默认值。
+        headers: {}
+        # 产物落盘目录；不写则落到当前 workspace 根。
+        outputDir: null
+        # 除 outputDir 外还要纳入索引的目录。
+        assetRoots: []
+        # 工作流模板目录；不写则用 ~/.dsh-comfyui-workbench/workflows。
+        workflowsDir: null
+
+        # ── 服务托管 ──
+        # 自动探测 ComfyUI 安装位置（判据：有 main.py 且有 models 目录）。
+        autoDetect: true
+        # 未运行时按需拉起。拉起期间到达的请求会排队等待，不会立刻失败。
+        autoStart: true
+        # 特殊情况才填完整启动命令，例如 ["D:\\ComfyUI\\venv\\Scripts\\python.exe", "main.py", "--port", "8188"]。
+        startCommand: []
+        # 冷启就绪上限（ComfyUI 比模型服务慢）。
+        readyTimeoutMs: 180000
+        # 空闲多久后停止「自己拉起的」进程；0 = 不回收。外部实例永不被停。
+        idleShutdownMs: 300000
+
+        # ── 运行 ──
+        # 未绑定变量是否报错（默认报错；关掉则静默保留 {{var}} 原样）。
+        strictVars: true
+        # 点生成时走哪条路：conversation（发进对话，由模型执行）| direct（UI 直连）。
+        runMode: conversation
+        # 工具响应带回几张图：first | all（上限 3）| none。
+        returnImages: first
+        # 单次运行等待上限。
+        timeoutMs: 300000
+        # 轮询 /history 的间隔。
+        pollIntervalMs: 1000
+
+        # ── 其它 ──
+        # 索引模式：auto（JSONL 索引）| off（只用扫描）。
+        indexMode: auto
+        # better-sidebar 页签：auto | on | off。
+        betterSidebarTab: auto
