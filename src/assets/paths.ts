@@ -1,10 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-/** 用户主目录（Windows 与 POSIX 各取其一）。 */
-export function homeDir(): string {
-  return process.env.USERPROFILE ?? process.env.HOME ?? ''
-}
+import { homeDir } from '../host/paths.js'
+
+export { canonical, homeDir } from '../host/paths.js'
 
 /**
  * `dsh-comfyui-image` 配置里的 outputDir（若用户显式指定过输出目录）。
@@ -21,20 +20,5 @@ export function comfyImageOutputDir(): string | undefined {
     return typeof dir === 'string' && dir.trim() !== '' ? dir : undefined
   } catch {
     return undefined
-  }
-}
-
-/**
- * 规范化路径：绝对、去尾分隔符、尽量解析 realpath。
- *
- * realpath 失败（路径还不存在）时退回绝对路径 —— 授权判断要在"文件尚未创建"
- * 的场景下也能给出结论。
- */
-export function canonical(target: string): string {
-  const abs = path.resolve(target)
-  try {
-    return fs.realpathSync.native(abs)
-  } catch {
-    return abs
   }
 }

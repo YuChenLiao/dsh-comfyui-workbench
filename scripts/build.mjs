@@ -45,7 +45,20 @@ const clientJob = {
   logLevel: 'info',
 }
 
-const jobs = [hostJob, clientJob]
+/** 测试与调试用的域产物：ESM，保持多文件语义但打成单文件，便于 node 直接 import。 */
+const workflowJob = {
+  entryPoints: ['src/workflow/index.ts'],
+  outfile: 'lib/workflow.js',
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: 'node20',
+  external: ['node:*'],
+  sourcemap: false,
+  logLevel: 'info',
+}
+
+const jobs = [hostJob, clientJob, workflowJob]
 
 fs.mkdirSync('lib', { recursive: true })
 

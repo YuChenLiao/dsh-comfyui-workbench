@@ -24,7 +24,8 @@ const ALLOWED = {
   scan: [],
   host: [],
   assets: ['scan', 'host'],
-  http: ['assets', 'scan', 'host'],
+  workflow: ['host'],
+  http: ['assets', 'scan', 'host', 'workflow'],
   client: [], // 客户端只依赖自身与 react / react-dom（由宿主注入）
 }
 
