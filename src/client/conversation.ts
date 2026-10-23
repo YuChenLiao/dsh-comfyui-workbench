@@ -74,6 +74,35 @@ export function pasteText(editor: HTMLElement, text: string): void {
   editor.dispatchEvent(event)
 }
 
+/** 参考图转提示词时发进对话的指令（固定格式，便于模型稳定跟随）。 */
+const DESCRIBE_INSTRUCTION = [
+  '请参考这张图，写一条可以直接用于生图的正向提示词。',
+  '只输出一个 <prompt>…</prompt> 块，块内是提示词本身，不要解释、不要罗列参数。',
+].join('')
+
+/**
+ * 参考图转提示词：先把图放进草稿，再把指令贴在后面。
+ *
+ * 图与指令走同一条粘贴通道（宿主的 paste 处理器），与用户手打完全同构。
+ * 自动回填需要"订阅本会话新消息"，那个能力尚未验证 —— 所以这里只负责把
+ * 半成品递到输入框，最后一击由用户按回车完成。
+ *
+ * @param item - 资产项。
+ * @param actions - 宿主导航回调。
+ */
+export async function describeImage(item: GalleryItem, actions: { goToConversation: () => void }): Promise<void> {
+  await addToConversation(item, actions)
+  const editor = findComposerEditor()
+  if (editor === null) throw new Error('没找到输入框，无法填入转写指令。')
+  try {
+    editor.focus()
+  } catch {
+    // 焦点拿不到不影响粘贴
+  }
+  pasteText(editor, `
+${DESCRIBE_INSTRUCTION}`)
+}
+
 /** 把一段文本送进当前会话的输入框；找不到输入框时返回 false。 */
 export async function sendTextToComposer(text: string, actions: { goToConversation: () => void }): Promise<boolean> {
   let editor = findComposerEditor()

@@ -12,6 +12,11 @@ export interface ComfyClientOptions {
   headers?: Record<string, string>
   /** 单次 HTTP 上限（毫秒）。长任务不靠它兜，靠轮询超时。 */
   requestTimeoutMs?: number
+  /**
+   * 请求前的"确保服务可用"钩子（服务托管用）。
+   * 返回 false 表示拉不起来，直接归成 comfy_unreachable。
+   */
+  ensure?: () => Promise<boolean>
 }
 
 /** 默认单请求超时：`/object_info` 可能几 MB，给足但不无限等。 */
@@ -28,6 +33,7 @@ export class ComfyClient {
   readonly baseUrl: string
   private readonly headers: Record<string, string>
   private readonly requestTimeoutMs: number
+  private readonly ensure: (() => Promise<boolean>) | undefined
   /** `/object_info` 缓存：响应可能好几 MB，同一进程不必反复拉。 */
   private infoCache: ObjectInfo | null = null
   /** 提交时带的 client_id（ComfyUI 用它区分来源）。 */
@@ -37,6 +43,7 @@ export class ComfyClient {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
     this.headers = options.headers ?? {}
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT
+    this.ensure = options.ensure
   }
 
   /** 发一个请求；网络层失败统一归成 comfy_unreachable。 */
@@ -45,6 +52,10 @@ export class ComfyClient {
     init: RequestInit = {},
     timeoutMs = this.requestTimeoutMs,
   ): Promise<Response> {
+    if (this.ensure !== undefined) {
+      const ready = await this.ensure()
+      if (!ready) throw comfyUnreachable(this.baseUrl, new Error('服务未就绪，自动拉起也失败了'))
+    }
     const url = `${this.baseUrl}${path}`
     try {
       return await fetch(url, {

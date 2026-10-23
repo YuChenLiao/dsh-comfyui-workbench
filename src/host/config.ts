@@ -35,6 +35,16 @@ export interface Settings {
   runMode: 'conversation' | 'direct'
   /** 工具响应是否带图片字节。 */
   returnImages: 'first' | 'all' | 'none'
+  /** 自动探测 ComfyUI 安装位置。 */
+  autoDetect: boolean
+  /** 未运行时按需拉起。 */
+  autoStart: boolean
+  /** 特殊情况下的完整启动命令（覆盖自动拼装）。 */
+  startCommand: string[]
+  /** 冷启就绪上限。 */
+  readyTimeoutMs: number
+  /** 空闲回收毫秒数；0 表示不回收。 */
+  idleShutdownMs: number
   /** 单次运行等待上限。 */
   timeoutMs: number
   /** 轮询 /history 的间隔。 */
@@ -113,6 +123,11 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     strictVars: raw.strictVars !== false,
     runMode: oneOf(raw.runMode, ['conversation', 'direct'] as const, 'conversation'),
     returnImages: oneOf(raw.returnImages, ['first', 'all', 'none'] as const, 'first'),
+    autoDetect: raw.autoDetect !== false,
+    autoStart: raw.autoStart !== false,
+    startCommand: listOf(raw.startCommand),
+    readyTimeoutMs: int(raw.readyTimeoutMs, 180_000, 5_000, 900_000),
+    idleShutdownMs: int(raw.idleShutdownMs, 300_000, 0, 3_600_000),
     timeoutMs: int(pick('timeoutMs'), 300_000, 1_000, 3_600_000),
     pollIntervalMs: int(raw.pollIntervalMs, 1_000, 100, 10_000),
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),

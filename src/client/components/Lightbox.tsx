@@ -183,6 +183,7 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
           <button type="button" className="cfa-btn" onClick={act('copyPrompt')}><Icon name="text" size={14} />{t('copyPrompt')}</button>
           <button type="button" className="cfa-btn" onClick={act('exportWorkflow')}><Icon name="download" size={14} />{t('exportWorkflow')}</button>
           <button type="button" className="cfa-btn" onClick={act('addToChat')}><Icon name="chat" size={14} />{t('addToChat')}</button>
+          <button type="button" className="cfa-btn" onClick={act('describe')}><Icon name="text" size={14} />{t('describe')}</button>
           <button type="button" className="cfa-btn cfa-danger" onClick={act('remove')}><Icon name="trash" size={14} />{t('remove')}</button>
         </div>
         <dl className="cfa-kv">{rows}</dl>

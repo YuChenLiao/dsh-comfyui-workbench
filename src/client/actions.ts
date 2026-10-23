@@ -1,6 +1,6 @@
 import { API, apiJson, download } from './api.js'
 import { copyImageToClipboard, copyTextToClipboard } from './clipboard.js'
-import { addToConversation } from './conversation.js'
+import { addToConversation, describeImage } from './conversation.js'
 import type { Translate } from './i18n.js'
 import type { ActionKind, GalleryItem } from './types.js'
 
@@ -77,6 +77,10 @@ export async function runAction(
   }
   if (kind === 'copyPrompt') return await copyPrompt(item, t)
   if (kind === 'exportWorkflow') return await exportWorkflow(item, t)
+  if (kind === 'describe') {
+    await describeImage(item, handlers)
+    return t('describeQueued')
+  }
   await addToConversation(item, handlers)
   return t('added')
 }

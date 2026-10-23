@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Settings } from '../host/config.js'
 import type { AssetIndex, AssetStatus } from '../store/index.js'
 import { rebuildFromSidecars } from '../store/index.js'
-import type { ComfyClient } from '../comfy/index.js'
+import type { ComfyClient, ComfySupervisor } from '../comfy/index.js'
 import type { HostContext } from '../host/types.js'
 import { isAuthorized } from '../assets/authorize.js'
 import { rootsOf } from '../assets/roots.js'
@@ -22,6 +22,7 @@ import { buildZip } from '../assets/zip.js'
 import { mimeOf, readFullSidecar } from '../scan/index.js'
 import { pathsFromBody, readJsonBody, sendJson } from './respond.js'
 import { createRunHandler } from './run-api.js'
+import { handleServiceStatus, handleServiceStop } from './service-api.js'
 import { handleWorkflowDetail, handleWorkflowList, workflowIdFromPath } from './workflows-api.js'
 
 /** API 前缀。统一挂在独立前缀下，避免和 SPA fallback 抢路径。 */
@@ -31,7 +32,7 @@ export const PREFIX = '/comfyui-workbench/api'
 type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => void | Promise<void>
 
 /** 需要写操作的子路径（其余一律只读）。 */
-const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run'])
+const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop'])
 
 /**
  * 构造请求处理器。
@@ -50,6 +51,8 @@ export function createHandler(
   workflowDir: string,
   /** ComfyUI 客户端（direct 运行与预检用）。 */
   client: ComfyClient,
+  /** 服务托管（状态与停止）。 */
+  supervisor: ComfySupervisor,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
 
@@ -290,6 +293,8 @@ export function createHandler(
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
     '/run': createRunHandler({ client, workflowDir, settings }),
+    '/service': handleServiceStatus.bind(null, supervisor),
+    '/service/stop': handleServiceStop.bind(null, supervisor),
   }
 
   return async (req, res) => {

@@ -40,7 +40,7 @@ export interface Notice {
 }
 
 /** 卡片与灯箱上的动作。 */
-export type ActionKind = 'copyImage' | 'copyPrompt' | 'exportWorkflow' | 'addToChat' | 'remove'
+export type ActionKind = 'copyImage' | 'copyPrompt' | 'exportWorkflow' | 'addToChat' | 'describe' | 'remove'
 
 /** 工作流列表项（GET /workflows 的 items）。 */
 export interface WorkflowListItem {

@@ -13,7 +13,7 @@
  */
 import fs from 'node:fs'
 
-import { ComfyClient } from './comfy/index.js'
+import { ComfyClient, ComfySupervisor } from './comfy/index.js'
 import { resolveSettings } from './host/config.js'
 import { resolveLogger } from './host/logger.js'
 import { pluginDataDir, workflowsDir } from './host/paths.js'
@@ -67,11 +67,24 @@ export function apply(ctx: HostContext, config: unknown): void {
   /** 工作流目录：配置可覆盖，默认 $HOME/.dsh-comfyui-workbench/workflows。 */
   const flowDir = settings.workflowsDir ?? workflowsDir()
 
+  // 服务托管：外部在跑就只用不托管；没跑且装了才拉起；只停自己拉起的那个。
+  const supervisor = new ComfySupervisor({
+    baseUrl: settings.baseUrl,
+    autoDetect: settings.autoDetect,
+    autoStart: settings.autoStart,
+    ...(settings.startCommand.length === 0 ? {} : { startCommand: settings.startCommand }),
+    readyTimeoutMs: settings.readyTimeoutMs,
+    idleShutdownMs: settings.idleShutdownMs,
+    logger,
+  })
+  if (typeof ctx.effect === 'function') ctx.effect(() => () => supervisor.dispose(), `${name}: supervisor`)
+
   // 构造客户端不产生连接，HTTP 路由与工具共用同一个实例（object_info 缓存也共用）。
   const client = new ComfyClient({
     baseUrl: settings.baseUrl,
     headers: settings.headers,
     requestTimeoutMs: settings.timeoutMs,
+    ensure: () => supervisor.ensureReady(),
   })
 
   const track = (dispose: (() => void) | void): void => {
@@ -88,7 +101,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex, flowDir, client)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {
