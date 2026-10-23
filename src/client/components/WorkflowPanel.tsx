@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { fetchWorkflowDetail, fetchWorkflowList, fileUrl, runDirect } from '../api.js'
+import { fetchWorkflowDetail, fetchWorkflowList, fileUrl, pollRun, runDirect } from '../api.js'
 import { sendTextToComposer } from '../conversation.js'
 import { Icon } from '../icons.js'
 import type { Translate } from '../i18n.js'
@@ -53,6 +53,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
   const [notice, setNotice] = useState<Notice | null>(null)
   const [result, setResult] = useState<DirectRunResult | null>(null)
   const [brokenCount, setBrokenCount] = useState(0)
+  /** 轮询句柄：提交后每 2.5 秒查一次，组件卸载或换工作流时停掉。 */
+  const pollRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!visible) return undefined
@@ -74,6 +76,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
       setVars({})
       return undefined
     }
+    stopPolling()
+    setBusy(false)
     let alive = true
     fetchWorkflowDetail(selected)
       .then(detail => {
@@ -85,6 +89,47 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
       .catch(error => { if (alive) setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) }) })
     return () => { alive = false }
   }, [selected])
+
+  const stopPolling = (): void => {
+    if (pollRef.current !== null) {
+      window.clearTimeout(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  useEffect(() => stopPolling, [])
+
+  const track = (promptId: string, startedAt: number): void => {
+    // 20 分钟兜底：真卡住了就别一直转。
+    if (Date.now() - startedAt > 20 * 60 * 1000) {
+      setBusy(false)
+      setNotice({ kind: 'err', text: `${t('runFailed')}：等了 20 分钟还没结果，可以去 ComfyUI 界面看队列。` })
+      return
+    }
+    pollRef.current = window.setTimeout(() => {
+      void pollRun(promptId)
+        .then(outcome => {
+          if (outcome.pending === true) {
+            track(promptId, startedAt)
+            return
+          }
+          setResult(outcome)
+          setBusy(false)
+          if (outcome.ok !== true) {
+            setNotice({ kind: 'err', text: outcome.message ?? t('runFailed') })
+          } else {
+            setNotice({
+              kind: 'ok',
+              text: t('runDone').replace('{n}', String(outcome.artifacts?.length ?? 0)).replace('{ms}', String(outcome.durationMs ?? 0)),
+            })
+          }
+        })
+        .catch(error => {
+          setBusy(false)
+          setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+        })
+    }, 2500)
+  }
 
   useEffect(() => {
     if (notice === null) return undefined
@@ -110,26 +155,37 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
       })
       return
     }
+    stopPolling()
     setBusy(true)
     try {
       if (mode === 'conversation') {
         const ok = await sendTextToComposer(instructionOf(surface.workflowId, vars), { goToConversation })
         setNotice(ok ? { kind: 'ok', text: t('instructionFilled') } : { kind: 'err', text: t('instructionFailed') })
+        setBusy(false)
       } else {
-        const outcome = await runDirect({ workflowId: surface.workflowId, vars })
-        setResult(outcome)
-        if (outcome.ok !== true) {
-          setNotice({ kind: 'err', text: `${outcome.message ?? t('runFailed')}${outcome.hint === undefined ? '' : ` — ${outcome.hint}`}` })
-        } else {
-          setNotice({
-            kind: 'ok',
-            text: t('runDone').replace('{n}', String(outcome.artifacts?.length ?? 0)).replace('{ms}', String(outcome.durationMs ?? 0)),
-          })
+        // 提交即返回，之后轮询。这样一个请求不会挂几分钟。
+        const submitted = await runDirect({ workflowId: surface.workflowId, vars })
+        if (submitted.ok !== true) {
+          setResult(submitted)
+          setNotice({ kind: 'err', text: `${submitted.message ?? t('runFailed')}${submitted.hint === undefined ? '' : ` — ${submitted.hint}`}` })
+          setBusy(false)
+          return
         }
+        if (submitted.pending === true && submitted.promptId !== undefined) {
+          setNotice({ kind: 'ok', text: t('submitted') })
+          track(submitted.promptId, Date.now())
+          return // busy 保持，等轮询结束
+        }
+        setResult(submitted)
+        setNotice({
+          kind: 'ok',
+          text: t('runDone').replace('{n}', String(submitted.artifacts?.length ?? 0)).replace('{ms}', String(submitted.durationMs ?? 0)),
+        })
+        setBusy(false)
+        return
       }
     } catch (error) {
       setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
-    } finally {
       setBusy(false)
     }
   }

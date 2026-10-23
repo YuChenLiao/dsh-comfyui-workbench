@@ -126,7 +126,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir, outputDir)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {

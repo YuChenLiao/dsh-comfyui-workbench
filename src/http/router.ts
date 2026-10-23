@@ -61,6 +61,8 @@ export function createHandler(
   assertWritable: (dir: string) => void,
   /** 上传目录（参考图落这里）。 */
   uploadsDir: string,
+  /** 默认产物目录。 */
+  defaultOutputDir: string,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
 
@@ -300,7 +302,7 @@ export function createHandler(
     '/file': handleFile,
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
-    '/run': createRunHandler({ client, workflowDir, settings, assertWritable }),
+    '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir }),
     '/service': handleServiceStatus.bind(null, supervisor),
     '/service/stop': handleServiceStop.bind(null, supervisor),
     '/upload': createUploadHandler(uploadsDir),

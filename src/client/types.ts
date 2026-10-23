@@ -91,6 +91,8 @@ export interface WorkflowSurface {
 /** 直接运行的结果（direct 模式）。 */
 export interface DirectRunResult {
   ok: boolean
+  /** 已提交但还没出图。 */
+  pending?: boolean
   promptId?: string
   durationMs?: number
   artifacts?: Array<{ path: string; digest: string; mime: string; bytes: number; width?: number; height?: number }>

@@ -12,6 +12,7 @@ export {
   resumeRun,
   runWorkflow,
   submitWorkflow,
+  waitForRun,
 } from './runner.js'
 export type {
   Artifact,

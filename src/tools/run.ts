@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { resumeRun, runWorkflow } from '../run/index.js'
+import { resumeRun, submitWorkflow, waitForRun } from '../run/index.js'
 import type { PendingRun, RunOutcome } from '../run/index.js'
 import type { Artifact } from '../run/index.js'
 import { buildSurface, readEntry } from '../workflow/index.js'
@@ -163,7 +163,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
       }
 
       try {
-        const outcome = await runWorkflow({
+        const submitted = await submitWorkflow({
           client: deps.client,
           workflow: loaded.workflow,
           slots: loaded.surface.inputs,
@@ -175,7 +175,31 @@ export function runTool(deps: ToolDeps): ToolSpec {
           workflowHash: loaded.surface.workflowHash,
         })
 
-        // 没跑完就先回去：不让工具调用一直挂着把对话卡住。
+        // 默认异步：提交完就把控制权交回对话。出图要几分钟，
+        // 让工具调用一直挂着会让用户以为连接断了。
+        if (args.wait !== true) {
+          return {
+            ok: true,
+            pending: true,
+            promptId: submitted.promptId,
+            waitedMs: 0,
+            message: `已提交（promptId ${submitted.promptId}），ComfyUI 正在出图。`,
+            hint: '出图要几分钟。稍后用 comfyui_run 传 promptId 就能取结果；这次调用结束后任务不会中断。',
+            notes: submitted.notes,
+          }
+        }
+
+        const outcome = await waitForRun(deps.client, submitted.promptId, {
+          timeoutMs: asInt(args.waitMs, deps.timeoutMs, 1_000, 1_800_000),
+          pollIntervalMs: deps.pollIntervalMs,
+          fallback: {
+            outputDir,
+            workflowId: loaded.workflowId,
+            workflowHash: loaded.surface.workflowHash,
+            effective: submitted.effective,
+          },
+        })
+
         if ('pending' in outcome) return formatOutcome(outcome, deps)
 
         // 登记索引：索引是派生（真源是 sidecar），登记失败不该让本次运行算失败。

@@ -104,6 +104,7 @@ export const DICT = {
         runModeLabel: '运行方式',
         runDone: '完成：{n} 个产物，用时 {ms} ms',
         runFailed: '运行失败',
+        submitted: '已提交，正在出图…',
       },
       en: {
         title: 'Gallery',
@@ -185,6 +186,7 @@ export const DICT = {
         runModeLabel: 'Run mode',
         runDone: 'Done: {n} artifact(s) in {ms} ms',
         runFailed: 'Run failed',
+        submitted: 'Submitted — generating…',
         tabAssets: 'Assets',
         tabWorkflow: 'Workflow',
         selectWorkflow: 'Choose a workflow…',

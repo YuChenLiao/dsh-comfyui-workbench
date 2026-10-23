@@ -318,45 +318,74 @@ export async function collectArtifacts(
 }
 
 /**
- * 跑一次工作流：提交，然后在 timeoutMs 内等结果。
+ * 等一次已提交的运行出结果。
  *
- * 超时**不报错**，而是返回 pending —— 出图要几分钟，让工具调用一直挂着
- * 会把对话卡死，用户会以为断线。
+ * 超时**不报错**、也不中断 ComfyUI 侧的任务，只返回 pending。
  *
- * @param options - 运行参数。
+ * @param client - ComfyUI 客户端。
+ * @param promptId - 运行 id。
+ * @param options - 等待上限、轮询间隔、以及续查用的回退上下文。
  */
-export async function runWorkflow(options: RunOptions): Promise<RunOutcome | PendingRun> {
+export async function waitForRun(
+  client: ComfyClient,
+  promptId: string,
+  options: {
+    timeoutMs: number
+    pollIntervalMs: number
+    fallback: { outputDir: string; workflowId?: string; workflowHash?: string; effective?: Record<string, unknown> }
+    onStage?: (stage: 'waiting' | 'fetching') => void
+  },
+): Promise<RunOutcome | PendingRun> {
   const startedAt = Date.now()
-  const submitted = await submitWorkflow(options)
   options.onStage?.('waiting')
-
   const deadline = startedAt + options.timeoutMs
+
   for (;;) {
-    const state = await checkRun(options.client, submitted.promptId)
+    const state = await checkRun(client, promptId)
     if (state.done && state.entry !== undefined) {
       options.onStage?.('fetching')
-      const context = recallRun(submitted.promptId) ?? {
-        workflowId: options.workflowId,
-        workflowHash: options.workflowHash,
-        outputDir: options.outputDir,
-        effective: submitted.effective,
-        writeMetadata: options.writeMetadata !== false,
+      const context = recallRun(promptId) ?? {
+        workflowId: options.fallback.workflowId ?? 'unknown',
+        workflowHash: options.fallback.workflowHash ?? '',
+        outputDir: options.fallback.outputDir,
+        effective: options.fallback.effective ?? {},
+        writeMetadata: true,
         submittedAt: startedAt,
       }
-      const outcome = await collectArtifacts(options.client, submitted.promptId, state.entry, context)
-      return { ...outcome, notes: [...submitted.notes, ...outcome.notes] }
+      return await collectArtifacts(client, promptId, state.entry, context)
     }
     if (Date.now() > deadline) {
       return {
         ok: true,
         pending: true,
-        promptId: submitted.promptId,
+        promptId,
         waitedMs: Date.now() - startedAt,
         hint: '还在出图。用同一个工具传 promptId 续查；这次调用结束后 ComfyUI 侧不会中断。',
       }
     }
     await sleep(options.pollIntervalMs)
   }
+}
+
+/**
+ * 跑一次工作流（提交 + 等到超时）。
+ *
+ * @param options - 运行参数。
+ */
+export async function runWorkflow(options: RunOptions): Promise<RunOutcome | PendingRun> {
+  const submitted = await submitWorkflow(options)
+  const outcome = await waitForRun(options.client, submitted.promptId, {
+    timeoutMs: options.timeoutMs,
+    pollIntervalMs: options.pollIntervalMs,
+    fallback: {
+      outputDir: options.outputDir,
+      workflowId: options.workflowId,
+      workflowHash: options.workflowHash,
+      effective: submitted.effective,
+    },
+    ...(options.onStage === undefined ? {} : { onStage: (stage) => options.onStage?.(stage) }),
+  })
+  return 'pending' in outcome ? outcome : { ...outcome, notes: [...submitted.notes, ...outcome.notes] }
 }
 
 /** 续查一次运行：完成就取产物，没完成返回 pending。 */

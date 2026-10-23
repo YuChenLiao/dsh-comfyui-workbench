@@ -72,6 +72,24 @@ export async function runDirect(input: {
   return bag
 }
 
+/** 查一次已提交的运行。 */
+export async function pollRun(promptId: string): Promise<DirectRunResult> {
+  const res = await fetch(`${API}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ promptId }),
+  })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object' ? (data as DirectRunResult) : null
+  if (bag === null) throw new Error(`查询失败：HTTP ${res.status}`)
+  return bag
+}
+
 /** 文件字节地址。`thumb` 为真时走缩略图。 */
 export function fileUrl(path: string, thumb?: boolean): string {
   return `${API}/file?path=${encodeURIComponent(path)}${thumb === true ? '&thumb=1' : ''}`
