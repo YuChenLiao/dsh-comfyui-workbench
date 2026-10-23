@@ -1,0 +1,72 @@
+{
+  "name": "dsh-comfyui-workbench",
+  "version": "0.1.0",
+  "description": "DSH 的 ComfyUI 工作台：把 ComfyUI 生成的图片与其它产物收进资产库（浏览、检索、删除、批量导出），并支持执行任意 API 格式工作流；工作流对用户只暴露输入与输出，详细节点配置留给模型按需查看与调参。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "meta": {
+    "title": "ComfyUI 工作台",
+    "description": "浏览与整理 ComfyUI 产物，执行自己的工作流；用户只看输入与输出，节点细节留给模型。"
+  },
+  "icon": "./icon.svg",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "comfyui",
+    "workflow",
+    "gallery",
+    "album",
+    "图片",
+    "相册",
+    "工作流"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YuChenLiao/dsh-comfyui-workbench.git"
+  },
+  "homepage": "https://github.com/YuChenLiao/dsh-comfyui-workbench#readme",
+  "bugs": {
+    "url": "https://github.com/YuChenLiao/dsh-comfyui-workbench/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.3"
+  },
+  "license": "MIT"
+}

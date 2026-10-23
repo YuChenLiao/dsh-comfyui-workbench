@@ -1,0 +1,24 @@
+# 把本插件插进 DSH profile 的配置树（bundle 挂载声明）。
+#
+# 安装（发布态）：
+#   dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
+# 安装（本地开发）：
+#   dsh plugin --profile desktop add link:<本仓库绝对路径>
+# 装完重启 DSH；运行中的 dsh 也可在「设置 → 插件」里启用。
+#
+# 可调项（改完重启即可）：
+#   roots         额外要纳入资产库的目录（绝对路径）。默认已包含：当前工作目录、
+#                 全部 workspace、dsh-comfyui-image 的 outputDir、进程 cwd。
+#   maxDepth      扫描深度，默认 3（0 = 只看根目录本身）。
+#   maxItems      单个根目录最多收集多少个文件，默认 4000。
+#   cacheMs       列表缓存毫秒数，默认 4000；点资产库里的刷新会强制重扫。
+#   includeHidden 是否进入 .开头的目录，默认 false。
+- insert:
+    - id: comfyui-workbench
+      name: dsh-comfyui-workbench
+      config:
+        maxDepth: 3
+        maxItems: 4000
+        cacheMs: 4000
+        includeHidden: false
+        roots: []
