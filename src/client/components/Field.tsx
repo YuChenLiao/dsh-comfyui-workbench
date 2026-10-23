@@ -1,12 +1,14 @@
+import type { Translate } from '../i18n.js'
 import type { SurfaceSlot } from '../types.js'
 
 /** 一个输入控件。按 type 决定形态，不猜。 */
 export function Field(props: {
   slot: SurfaceSlot
   value: unknown
+  t: Translate
   onChange: (value: unknown) => void
 }): React.ReactElement {
-  const { slot, value, onChange } = props
+  const { slot, value, t, onChange } = props
   const id = `cwf-${slot.name}`
 
   const label = (
@@ -61,7 +63,7 @@ export function Field(props: {
         id={id}
         type="text"
         className="cwf-input"
-        placeholder="图片绝对路径（也可以先在资产库复制路径）"
+        placeholder={t('fieldImagePlaceholder')}
         value={value === undefined ? '' : String(value)}
         onChange={event => onChange(event.target.value)}
       />

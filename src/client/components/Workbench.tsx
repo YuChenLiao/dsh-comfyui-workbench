@@ -34,14 +34,14 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
           aria-selected={tab === 'assets'}
           className={`cwb-tab${tab === 'assets' ? ' on' : ''}`}
           onClick={() => setTab('assets')}
-        >资产库</button>
+        >{t('tabAssets')}</button>
         <button
           type="button"
           role="tab"
           aria-selected={tab === 'workflow'}
           className={`cwb-tab${tab === 'workflow' ? ' on' : ''}`}
           onClick={() => setTab('workflow')}
-        >工作流</button>
+        >{t('tabWorkflow')}</button>
       </nav>
       <div className="cwb-body">
         {tab === 'assets'

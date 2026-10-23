@@ -34,6 +34,9 @@ type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => void | Pro
 /** 需要写操作的子路径（其余一律只读）。 */
 const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop'])
 
+/** 这些只接受 POST（DELETE 语义上没有意义，不该被放行）。 */
+const POST_ONLY = new Set(['/run'])
+
 /**
  * 构造请求处理器。
  *
@@ -321,9 +324,11 @@ export function createHandler(
       }
 
       const writable = WRITABLE.has(sub)
-      const methodOk = writable
-        ? req.method === 'POST' || req.method === 'DELETE'
-        : req.method === 'GET' || req.method === 'HEAD'
+      const methodOk = POST_ONLY.has(sub)
+        ? req.method === 'POST'
+        : writable
+          ? req.method === 'POST' || req.method === 'DELETE'
+          : req.method === 'GET' || req.method === 'HEAD'
       if (!methodOk) {
         sendJson(res, 405, {
           ok: false,

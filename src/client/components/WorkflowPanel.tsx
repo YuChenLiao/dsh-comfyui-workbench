@@ -52,6 +52,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
   const [notice, setNotice] = useState<Notice | null>(null)
   const [result, setResult] = useState<DirectRunResult | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [brokenCount, setBrokenCount] = useState(0)
 
   // 列表：只在可见时拉，避免后台标签页反复请求。
   useEffect(() => {
@@ -61,6 +62,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
       .then(data => {
         if (!alive) return
         setList(data.workflows)
+        setBrokenCount(data.broken?.length ?? 0)
         setSelected(current => (current === '' && data.workflows.length === 1 ? (data.workflows[0]?.workflowId ?? '') : current))
       })
       .catch(error => { if (alive) setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) }) })
@@ -102,7 +104,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
   const submit = async (): Promise<void> => {
     if (surface === null || busy) return
     if (missing.length > 0) {
-      setNotice({ kind: 'err', text: `还差必填参数：${missing.map(slot => slot.name).join('、')}` })
+      setNotice({ kind: 'err', text: `${t('needRequired')}${missing.map(slot => slot.name).join('、')}` })
       return
     }
 
@@ -111,8 +113,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
       if (mode === 'conversation') {
         const ok = await sendTextToComposer(instructionOf(surface.workflowId, vars), { goToConversation })
         setNotice(ok
-          ? { kind: 'ok', text: '已把运行指令填入输入框，按回车发送后由模型执行。' }
-          : { kind: 'err', text: '没找到输入框，请手动复制参数后让模型运行。' })
+          ? { kind: 'ok', text: t('instructionFilled') }
+          : { kind: 'err', text: t('instructionFailed') })
       } else {
         const outcome = await runDirect({ workflowId: surface.workflowId, vars })
         if (outcome.ok !== true) {
@@ -134,8 +136,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     return (
       <div className="cwf-root">
         <div className="cwf-empty">
-          <p>还没有工作流。</p>
-          <p className="cwf-hint">在 ComfyUI 里用 Export (API) 导出，然后运行 <code>node scripts/import.mjs &lt;文件&gt;</code>。</p>
+          <p>{t('emptyWorkflows')}</p>
+          <p className="cwf-hint">{t('emptyWorkflowsHint')}</p>
         </div>
       </div>
     )
@@ -152,7 +154,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
           onChange={event => setSelected(event.target.value)}
           title={current?.description ?? ''}
         >
-          <option value="">选择工作流…</option>
+          <option value="">{t('selectWorkflow')}</option>
           {list.map(item => (
             <option key={item.workflowId} value={item.workflowId} title={item.description}>
               {item.title}
@@ -160,28 +162,28 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
             </option>
           ))}
         </select>
-        <div className="cwf-modes" role="group" aria-label="运行方式">
+        <div className="cwf-modes" role="group" aria-label={t('run')}>
           <button
             type="button"
             className={`cwf-chip${mode === 'conversation' ? ' on' : ''}`}
-            title="把运行指令发进当前对话，由模型执行；图片会出现在对话里"
+            title={t('modeConversationHint')}
             onClick={() => setMode('conversation')}
-          >发进对话</button>
+          >{t('modeConversation')}</button>
           <button
             type="button"
             className={`cwf-chip${mode === 'direct' ? ' on' : ''}`}
-            title="直接执行，不消耗模型往返；产物只在本面板显示"
+            title={t('modeDirectHint')}
             onClick={() => setMode('direct')}
-          >直接生成</button>
+          >{t('modeDirect')}</button>
         </div>
         <button type="button" className="cwf-run" disabled={surface === null || busy} onClick={() => { void submit() }}>
-          {busy ? '运行中…' : '生成'}
+          {busy ? t('running') : t('run')}
         </button>
       </header>
 
       {current !== undefined && current.description !== '' ? <p className="cwf-desc">{current.description}</p> : null}
       {current !== undefined && current.description === '' ? (
-        <p className="cwf-desc cwf-desc-missing">这个工作流还没有用途说明，模型与你自己都只能靠标题猜。可以让模型补一条。</p>
+        <p className="cwf-desc cwf-desc-missing">{t('undescribedHint')}</p>
       ) : null}
 
       {surface !== null ? (
@@ -191,18 +193,20 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
               key={slot.name}
               slot={slot}
               value={vars[slot.name]}
+              t={t}
               onChange={value => setVars(previous => ({ ...previous, [slot.name]: value }))}
             />
           ))}
           {advanced.length > 0 ? (
             <details className="cwf-advanced" open={showAdvanced} onToggle={event => setShowAdvanced((event.target as HTMLDetailsElement).open)}>
-              <summary>更多参数（{advanced.length}）</summary>
+              <summary>{t('moreParams')}（{advanced.length}）</summary>
               <div className="cwf-grid2">
                 {advanced.map(slot => (
                   <Field
                     key={slot.name}
                     slot={slot}
                     value={vars[slot.name]}
+                    t={t}
                     onChange={value => setVars(previous => ({ ...previous, [slot.name]: value }))}
                   />
                 ))}
@@ -214,7 +218,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
 
       {result !== null && result.ok === true && (result.artifacts?.length ?? 0) > 0 ? (
         <div className="cwf-output">
-          <div className="cwf-output-title">输出</div>
+          <div className="cwf-output-title">{t('outputTitle')}</div>
           <div className="cwf-output-grid">
             {(result.artifacts ?? []).map(artifact => (
               <figure key={artifact.path} className="cwf-out-card">
@@ -226,6 +230,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
         </div>
       ) : null}
 
+      {brokenCount > 0 ? <p className="cwf-desc cwf-desc-missing">{t('brokenHint')}（{brokenCount}）</p> : null}
       {notice !== null ? <div className={`cwf-notice${notice.kind === 'err' ? ' err' : ''}`}>{notice.text}</div> : null}
     </div>
   )
