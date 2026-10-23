@@ -161,6 +161,30 @@ export function runTool(deps: ToolDeps): ToolSpec {
           }
         }
 
+        // 登记索引：索引是派生（真源是 sidecar），登记失败不该让本次运行算失败。
+        const createdAt = new Date().toISOString()
+        const tags = Array.isArray(args.tags) ? args.tags.filter((tag): tag is string => typeof tag === 'string') : []
+        for (const artifact of outcome.artifacts) {
+          try {
+            deps.index.add({
+              digest: artifact.digest,
+              path: artifact.path,
+              bytes: artifact.bytes,
+              mime: artifact.mime,
+              ...(artifact.width === undefined ? {} : { width: artifact.width }),
+              ...(artifact.height === undefined ? {} : { height: artifact.height }),
+              workflowId: loaded.workflowId,
+              workflowHash: loaded.surface.workflowHash,
+              promptId: outcome.promptId,
+              createdAt,
+              tags,
+              status: 'present',
+            })
+          } catch {
+            deps.logger?.warn?.('资产索引登记失败（产物已落盘）')
+          }
+        }
+
         const notes = [...preNotes, ...outcome.notes]
         const skipped = outcome.artifacts.filter(isImageArtifact).length - inline.length
         if (skipped > 0 && mode !== 'none') {

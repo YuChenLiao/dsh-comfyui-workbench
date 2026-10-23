@@ -19,6 +19,7 @@ import { resolveLogger } from './host/logger.js'
 import { pluginDataDir, workflowsDir } from './host/paths.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
+import { AssetIndex } from './store/index.js'
 import { createTools } from './tools/index.js'
 import type { ToolSpec } from './tools/index.js'
 
@@ -70,12 +71,14 @@ export function apply(ctx: HostContext, config: unknown): void {
     }
   }
 
+  const assetIndex = new AssetIndex()
+
   // ── HTTP 路由 ──
   const server = ctx.get?.('webServer') as WebServerLike | undefined
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings)
+    const handler = createHandler(ctx, settings, assetIndex)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {
@@ -104,6 +107,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     timeoutMs: settings.timeoutMs,
     pollIntervalMs: settings.pollIntervalMs,
     overrides: new Map(),
+    index: assetIndex,
     logger,
   })) {
     track(tools.register(spec))

@@ -3,6 +3,8 @@ import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { Settings } from '../host/config.js'
+import type { AssetIndex, AssetStatus } from '../store/index.js'
+import { rebuildFromSidecars } from '../store/index.js'
 import type { HostContext } from '../host/types.js'
 import { isAuthorized } from '../assets/authorize.js'
 import { rootsOf } from '../assets/roots.js'
@@ -26,7 +28,7 @@ export const PREFIX = '/comfyui-workbench/api'
 type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => void | Promise<void>
 
 /** 需要写操作的子路径（其余一律只读）。 */
-const WRITABLE = new Set(['/delete', '/delete-many', '/workflows'])
+const WRITABLE = new Set(['/delete', '/delete-many', '/workflows', '/assets/rebuild'])
 
 /**
  * 构造请求处理器。
@@ -37,7 +39,11 @@ const WRITABLE = new Set(['/delete', '/delete-many', '/workflows'])
  * @param ctx - 宿主上下文。
  * @param settings - 归一化配置。
  */
-export function createHandler(ctx: HostContext, settings: Settings): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+export function createHandler(
+  ctx: HostContext,
+  settings: Settings,
+  index: AssetIndex,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
 
   const handleRoots = (_url: URL, res: ServerResponse): void => {
@@ -226,7 +232,49 @@ export function createHandler(ctx: HostContext, settings: Settings): (req: Incom
     res.end(zip)
   }
 
+  /** 资产检索：索引是派生层，查不到不等于文件不存在（可重建）。 */
+  const handleAssets = (url: URL, res: ServerResponse): void => {
+    const tags = url.searchParams.getAll('tag').filter(tag => tag !== '')
+    const kindRaw = url.searchParams.get('kind') ?? ''
+    const statusRaw = url.searchParams.get('status') ?? ''
+    const kind = ['image', 'video', 'audio', 'file'].includes(kindRaw)
+      ? (kindRaw as 'image' | 'video' | 'audio' | 'file')
+      : undefined
+    const status = ['present', 'missing', 'archived'].includes(statusRaw) ? (statusRaw as AssetStatus) : undefined
+
+    const page = index.search({
+      ...(url.searchParams.get('q') === null ? {} : { q: url.searchParams.get('q') ?? '' }),
+      ...(url.searchParams.get('workflow') === null ? {} : { workflow: url.searchParams.get('workflow') ?? '' }),
+      ...(tags.length === 0 ? {} : { tag: tags }),
+      ...(kind === undefined ? {} : { kind }),
+      ...(status === undefined ? {} : { status }),
+      ...(url.searchParams.get('since') === null ? {} : { since: url.searchParams.get('since') ?? '' }),
+      ...(url.searchParams.get('until') === null ? {} : { until: url.searchParams.get('until') ?? '' }),
+      ...(url.searchParams.get('cursor') === null ? {} : { cursor: url.searchParams.get('cursor') ?? '' }),
+      limit: Math.min(200, Math.max(1, Number.parseInt(url.searchParams.get('limit') ?? '60', 10) || 60)),
+    })
+    sendJson(res, 200, { ok: true, total: page.items.length, items: page.items, next: page.next ?? null })
+  }
+
+  /** 从 sidecar 重建索引（不是重新扫描磁盘列表，而是把索引整个换掉）。 */
+  const handleRebuild = (url: URL, res: ServerResponse): void => {
+    const list = roots()
+    if (list.length === 0) {
+      sendJson(res, 200, { ok: true, rebuilt: 0, roots: 0 })
+      return
+    }
+    const records = rebuildFromSidecars(list.map(root => root.path), {
+      maxDepth: settings.maxDepth,
+      maxItems: settings.maxItems,
+      includeHidden: settings.includeHidden,
+    })
+    index.rewrite(records)
+    sendJson(res, 200, { ok: true, rebuilt: records.length, roots: list.length })
+  }
+
   const routes: Record<string, Route> = {
+    '/assets': handleAssets,
+    '/assets/rebuild': handleRebuild,
     '/roots': handleRoots,
     '/items': handleItems,
     '/meta': handleMeta,

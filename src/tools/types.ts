@@ -1,5 +1,6 @@
 import type { ComfyClient } from '../comfy/index.js'
 import type { LoggerLike } from '../host/types.js'
+import type { AssetIndex } from '../store/index.js'
 
 /** 文本块。 */
 export interface ToolText {
@@ -48,6 +49,8 @@ export interface ToolDeps {
   pollIntervalMs: number
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */
   overrides: Map<string, Override[]>
+  /** 资产索引（运行成功后登记）。 */
+  index: AssetIndex
   logger?: LoggerLike | undefined
 }
 

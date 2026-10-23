@@ -45,10 +45,10 @@ const clientJob = {
   logLevel: 'info',
 }
 
-/** 测试与调试用的域产物：ESM，保持多文件语义但打成单文件，便于 node 直接 import。 */
-const workflowJob = {
-  entryPoints: ['src/workflow/index.ts'],
-  outfile: 'lib/workflow.js',
+/** 测试与调试用的域产物：ESM 单文件，便于 node 直接 import（不经过宿主入口）。 */
+const domainJob = (domain) => ({
+  entryPoints: [`src/${domain}/index.ts`],
+  outfile: `lib/${domain}.js`,
   bundle: true,
   format: 'esm',
   platform: 'node',
@@ -56,9 +56,9 @@ const workflowJob = {
   external: ['node:*'],
   sourcemap: false,
   logLevel: 'info',
-}
+})
 
-const jobs = [hostJob, clientJob, workflowJob]
+const jobs = [hostJob, clientJob, domainJob('workflow'), domainJob('store')]
 
 fs.mkdirSync('lib', { recursive: true })
 
