@@ -214,5 +214,8 @@ test('导入：拒绝 UI 格式并给出可执行指引', () => {
   assert.equal(id, 'my-sdxl', 'id 应净化为小写短横线')
   assert.ok(surface.inputs.some(slot => slot.name === 'prompt'))
   assert.equal(sanitizeId('a b/c.json'), 'c', 'id 取自文件名而非路径')
+  // 中文必须保留：只留 ASCII 会让"文生图/图生图/局部重绘"撞成同一个 id 互相覆盖
+  assert.equal(sanitizeId('MOSS-Image_文生图.json'), 'moss-image_文生图')
+  assert.notEqual(sanitizeId('MOSS-Image_文生图.json'), sanitizeId('MOSS-Image_图生图.json'))
   assert.equal(listEntries(dir).entries.length, 1)
 })

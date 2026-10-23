@@ -26,11 +26,16 @@ export interface WorkflowEntry {
 /**
  * 文件名 → 稳定 id。
  *
- * 只保留字母数字与 `-_`：id 会进 URL 与文件路径，放开字符集等于开后门。
+ * 保留各语言的字母与数字（`\p{L}\p{N}`），丢掉路径分隔符、引号、控制字符这些
+ * 真正危险的东西。早期版本只留 ASCII，结果 `MOSS-Image_文生图` 与 `MOSS-Image_图生图`
+ * 会被压成同一个 id 互相覆盖 —— 中文名的工作流直接丢数据。
  */
 export function sanitizeId(name: string): string {
   const base = path.basename(name, path.extname(name))
-  const cleaned = base.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  const cleaned = base
+    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
   return cleaned === '' ? 'workflow' : cleaned.slice(0, 64)
 }
 

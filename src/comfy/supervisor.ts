@@ -97,6 +97,10 @@ export function detectInstallation(extraRoots: readonly string[] = []): string |
   for (const drive of ['C:', 'D:', 'E:', 'F:']) {
     candidates.push(path.join(`${drive}${path.sep}`, 'ComfyUI'))
     candidates.push(path.join(`${drive}${path.sep}`, 'comfyui'))
+    // 整合包：ComfyUI_windows_portable/ComfyUI
+    candidates.push(path.join(`${drive}${path.sep}`, 'ComfyUI_windows_portable', 'ComfyUI'))
+    // Desktop 版：Comfy-Desktop/ComfyUI-Installs/<实例名>/ComfyUI
+    candidates.push(...desktopCandidates(`${drive}${path.sep}`))
   }
 
   const seen = new Set<string>()
@@ -109,13 +113,33 @@ export function detectInstallation(extraRoots: readonly string[] = []): string |
   return undefined
 }
 
-/** 选出可用的解释器：优先目录内的 venv / python_embeded。 */
+/**
+ * Desktop 版的安装结构：`<drive>/Comfy-Desktop/ComfyUI-Installs/<实例>/ComfyUI`。
+ *
+ * 实例名由用户的安装决定（可能叫 comfyui、default……），所以列一层再逐个看。
+ */
+function desktopCandidates(root: string): string[] {
+  const installs = path.join(root, 'Comfy-Desktop', 'ComfyUI-Installs')
+  let names: string[]
+  try {
+    names = fs.readdirSync(installs)
+  } catch {
+    return []
+  }
+  return names.map(name => path.join(installs, name, 'ComfyUI'))
+}
+
+/** 选出可用的解释器：优先目录内的 venv / python_embeded，其次 Desktop 的 standalone-env。 */
 function interpreterOf(dir: string): string {
+  const parent = path.dirname(dir)
   const candidates = [
     path.join(dir, 'venv', 'Scripts', 'python.exe'),
     path.join(dir, 'venv', 'bin', 'python'),
     path.join(dir, 'python_embeded', 'python.exe'),
     path.join(dir, '.venv', 'Scripts', 'python.exe'),
+    // Desktop 版：解释器在 ComfyUI 的上一级（ComfyUI-Installs/<实例>/standalone-env）
+    path.join(parent, 'standalone-env', 'python.exe'),
+    path.join(parent, 'standalone-env', 'bin', 'python'),
   ]
   for (const candidate of candidates) {
     try {

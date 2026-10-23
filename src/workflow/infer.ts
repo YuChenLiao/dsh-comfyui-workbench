@@ -227,14 +227,17 @@ export function inferSurface(workflow: ApiWorkflow, extraInternal: readonly stri
         name = renamed
       }
 
-      const required = value === '' || value === null || value === undefined
+      // 只有"必须给一张图却没有"才算必填。其余参数模板里本来就有值（哪怕是空串），
+      // 把空串一律当"缺"会让复杂节点（wildcard 之类）在运行时误报 variable_unbound。
+      const empty = value === '' || value === null || value === undefined
+      const required = empty && (type === 'image' || type === 'mask')
       const slot: IOSlot = {
         name,
         bind: `${id}.inputs.${key}`,
         label: titleOf(node),
         type,
         required,
-        group: classify(name, type),
+        group: classify({ name, type, required }),
         ...(required ? {} : { default: value as string | number | boolean }),
       }
       slots.push(slot)
@@ -242,7 +245,17 @@ export function inferSurface(workflow: ApiWorkflow, extraInternal: readonly stri
     }
   }
 
-  // basic 段上限 3：提示词优先，其次图像输入，其余下沉。
+  // basic 兜底：整合包的提示词常叫 text / character / action，不叫 prompt。
+  // 一个 basic 都没有时，把最像提示词的提上来 —— 否则界面第一屏是空的。
+  if (!slots.some(slot => slot.group === 'basic')) {
+    const candidates = slots.filter(slot => slot.type === 'string' && /text|prompt|character|action|caption|description|wildcard/i.test(slot.name))
+    for (const slot of candidates.slice(0, 2)) {
+      slot.group = 'basic'
+      notes.push(`没有识别出标准提示词参数，已把 ${slot.name} 提为常用参数。`)
+    }
+  }
+
+  // basic 段上限 3：提示词优先，其余下沉。
   const basicCount = slots.filter(slot => slot.group === 'basic').length
   if (basicCount > 3) {
     let kept = 0
@@ -254,12 +267,61 @@ export function inferSurface(workflow: ApiWorkflow, extraInternal: readonly stri
     notes.push(`基础参数超过 3 个，其余 ${basicCount - 3} 个已折进"更多参数"。`)
   }
 
-  return { slots, models: inferModels(nodes), outputs: inferOutputs(nodes, notes), notes }
+  return {
+    slots: limitSlots(slots, notes),
+    models: inferModels(nodes),
+    outputs: inferOutputs(nodes, notes),
+    notes,
+  }
 }
 
-/** 哪些参数进第一屏：提示词与图像输入，其余都是"高级"。 */
-function classify(name: string, type: VarType): IOSlot['group'] {
-  if (type === 'image' || type === 'mask') return 'basic'
-  if (type === 'string' && /^(prompt|negative_prompt|text)$/i.test(name)) return 'basic'
+/** 单份工作流最多暴露多少个参数。整合包的 PromptAndLoraLoader 能塞出三百个（lora_name_1..49）。 */
+const MAX_EXPOSED_SLOTS = 24
+
+/** 参数名的优先级：提示词 > 常见旋钮 > 采样/模型 > 其余。 */
+const PRIORITY: RegExp[] = [
+  /^(prompt|negative_prompt|text|text_g|text_l|caption|character|action|wildcard)$/i,
+  /^(seed|noise_seed|steps|cfg|denoise|strength|width|height|batch_size|guidance)$/i,
+  /^(sampler_name|scheduler|checkpoint|model|lora_name)$/i,
+]
+
+/** 一个槽位的排序权重（越小越靠前）。 */
+function rankOf(slot: IOSlot): number {
+  if (slot.group === 'basic') return 0
+  for (let index = 0; index < PRIORITY.length; index += 1) {
+    if ((PRIORITY[index] as RegExp).test(slot.name)) return index + 1
+  }
+  return PRIORITY.length + 1
+}
+
+/**
+ * 限制暴露的参数数量。
+ *
+ * 三百个 lora 权重对用户和模型都是灾难：模型选不出该改哪个，界面上也无从下手。
+ * 按优先级保留前 N 个，其余不暴露（仍然留在模板里，需要时用 `persist` 改节点）。
+ */
+function limitSlots(slots: IOSlot[], notes: string[]): IOSlot[] {
+  if (slots.length <= MAX_EXPOSED_SLOTS) return slots
+  const kept = slots
+    .map((slot, index) => ({ slot, index, rank: rankOf(slot) }))
+    .sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : a.index - b.index))
+    .slice(0, MAX_EXPOSED_SLOTS)
+    .sort((a, b) => a.index - b.index)
+    .map(item => item.slot)
+
+  notes.push(`参数太多（${slots.length} 个），只暴露了最相关的 ${MAX_EXPOSED_SLOTS} 个；其余仍可用 persist 改节点。`)
+  return kept
+}
+
+/**
+ * 哪些参数进第一屏：提示词与**必填的**图像输入。
+ *
+ * 非必填的 mask（noise_mask、sam_mask_hint_threshold 之类）是节点的高级选项，
+ * 归进 basic 只会把用户的注意力从"填提示词"上带走。
+ */
+function classify(slot: { name: string; type: VarType; required: boolean }): IOSlot['group'] {
+  if (slot.required && (slot.type === 'image' || slot.type === 'mask')) return 'basic'
+  if (slot.type === 'image' && /^(input_image|image|init_image|reference|image_path)$/i.test(slot.name)) return 'basic'
+  if (slot.type === 'string' && /^(prompt|negative_prompt|text)$/i.test(slot.name)) return 'basic'
   return 'advanced'
 }

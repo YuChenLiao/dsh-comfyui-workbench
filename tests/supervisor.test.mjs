@@ -43,7 +43,9 @@ test('detectInstallation：认 main.py + models，不认空目录', () => {
   const good = fakeInstall()
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-empty-'))
   assert.equal(detectInstallation([good]), good)
-  assert.equal(detectInstallation([empty]), undefined, '空目录不算安装')
+  // 注意：detectInstallation 还会扫环境变量与常见位置，所以这里只能断言
+  // "空目录本身没被当成安装"，不能断言整体返回 undefined（本机可能真装着 ComfyUI）。
+  assert.notEqual(detectInstallation([empty]), empty, '空目录不算安装')
 })
 
 test('外部实例在跑：只用不托管，且 stop 不动它', async () => {
