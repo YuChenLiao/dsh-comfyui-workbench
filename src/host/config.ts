@@ -29,13 +29,15 @@ export interface Settings {
   workflowsDir: string | null
   /** 上传的参考图目录；null 表示用默认（~/.dsh-comfyui-workbench/uploads）。 */
   uploadsDir: string | null
+  /** 资产索引文件；null 表示用默认（~/.dsh-comfyui-workbench/assets.jsonl）。 */
+  indexFile: string | null
   /** 除 outputDir 外纳入索引的目录。 */
   assetRoots: string[]
   /** 未绑定变量是否报错（默认报错）。 */
   strictVars: boolean
   /** 点生成时走哪条路：conversation（发进对话）| direct（UI 直连）。 */
   runMode: 'conversation' | 'direct'
-  /** 工具响应是否带图片字节。 */
+  /** 已弃用：工具响应只给路径；该字段仅为兼容旧配置而解析。 */
   returnImages: 'first' | 'all' | 'none'
   /** 自动探测 ComfyUI 安装位置。 */
   autoDetect: boolean
@@ -122,6 +124,7 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     outputDir: typeof outputDir === 'string' && outputDir.trim() !== '' ? outputDir.trim() : null,
     workflowsDir: typeof raw.workflowsDir === 'string' && raw.workflowsDir.trim() !== '' ? raw.workflowsDir.trim() : null,
     uploadsDir: typeof raw.uploadsDir === 'string' && raw.uploadsDir.trim() !== '' ? raw.uploadsDir.trim() : null,
+    indexFile: typeof raw.indexFile === 'string' && raw.indexFile.trim() !== '' ? raw.indexFile.trim() : null,
     assetRoots: listOf(raw.assetRoots),
     strictVars: raw.strictVars !== false,
     runMode: oneOf(raw.runMode, ['conversation', 'direct'] as const, 'conversation'),
@@ -131,7 +134,7 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     startCommand: listOf(raw.startCommand),
     readyTimeoutMs: int(raw.readyTimeoutMs, 180_000, 5_000, 900_000),
     idleShutdownMs: int(raw.idleShutdownMs, 300_000, 0, 3_600_000),
-    timeoutMs: int(pick('timeoutMs'), 300_000, 1_000, 3_600_000),
+    timeoutMs: int(pick('timeoutMs'), 120_000, 1_000, 3_600_000),
     pollIntervalMs: int(raw.pollIntervalMs, 1_000, 100, 10_000),
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),
     betterSidebarTab: oneOf(raw.betterSidebarTab, ['auto', 'on', 'off'] as const, 'auto'),

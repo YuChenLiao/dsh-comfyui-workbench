@@ -120,7 +120,18 @@ const ctx = {
 const previousCwd = process.cwd()
 process.chdir(root)
 
-apply(ctx, { roots: [], maxDepth: 2, maxItems: 100, cacheMs: 0 })
+// roots 现在还会并入插件数据目录（uploads / 默认 outputs），测试必须把它们也指到临时目录，
+// 否则会扫到本机真实的 ~/.dsh-comfyui-workbench 里的图。
+const isoDir = path.join(root, 'iso')
+fs.mkdirSync(isoDir, { recursive: true })
+apply(ctx, {
+  roots: [],
+  maxDepth: 2,
+  maxItems: 100,
+  cacheMs: 0,
+  outputDir: isoDir,
+  uploadsDir: isoDir,
+})
 
 assert.ok(route, 'webServer.register 应当被调用')
 assert.equal(route.kind, 'prefix')

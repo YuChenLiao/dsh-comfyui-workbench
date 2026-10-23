@@ -76,6 +76,10 @@ export function rootsOf(ctx: HostContext, settings: RootsSettings): RootEntry[] 
     path: settings.uploadsDir ?? path.join(pluginDataDir(), 'uploads'),
     kind: 'upload',
   })
+  // 默认产物目录：不在这里出现的话，用户跑完看不到自己刚生成的图。
+  if (settings.outputDir === undefined || settings.outputDir === null) {
+    candidates.push({ path: path.join(pluginDataDir(), 'outputs'), kind: 'output' })
+  }
 
   // 本插件自己的产物目录与额外根：不写进来的话，用户配了 outputDir 却看不到产物。
   if (typeof settings.outputDir === 'string' && settings.outputDir !== '') {

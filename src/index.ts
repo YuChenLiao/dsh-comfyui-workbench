@@ -70,9 +70,13 @@ export function apply(ctx: HostContext, config: unknown): void {
   /** 工作流目录：配置可覆盖，默认 $HOME/.dsh-comfyui-workbench/workflows。 */
   const flowDir = settings.workflowsDir ?? workflowsDir()
 
-  // 上传目录先建出来：rootsOf 只收已存在的目录，晚建会让刚传的图预览 403。
+  // 上传目录与产物目录先建出来：rootsOf 只收已存在的目录，晚建会让刚传的图预览 403。
   const uploadsDir = settings.uploadsDir ?? path.join(pluginDataDir(), 'uploads')
   ensureDir(uploadsDir)
+  // 产物默认落到插件数据目录，而不是 process.cwd() —— dsh 进程的 cwd 是 profile 目录，
+  // 往那里写图等于污染宿主自己的安装树。
+  const outputDir = settings.outputDir ?? path.join(pluginDataDir(), 'outputs')
+  ensureDir(outputDir)
 
   // 服务托管：外部在跑就只用不托管；没跑且装了才拉起；只停自己拉起的那个。
   const supervisor = new ComfySupervisor({
@@ -101,7 +105,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     }
   }
 
-  const assetIndex = new AssetIndex()
+  const assetIndex = settings.indexFile === null ? new AssetIndex() : new AssetIndex(settings.indexFile)
 
   /**
    * 输出目录必须落在授权根内。
@@ -141,7 +145,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   for (const spec of createTools({
     client,
     workflowsDir: flowDir,
-    outputDir: settings.outputDir ?? process.cwd(),
+    outputDir,
     timeoutMs: settings.timeoutMs,
     pollIntervalMs: settings.pollIntervalMs,
     overrides: new Map(),

@@ -121,7 +121,7 @@ interface RunInput {
   tags?: string[]
   wait?: boolean          // 默认 true
   timeoutMs?: number      // 默认 300000
-  /** 工具响应里直接带回图片字节：'first'(默认) | 'all' | 'none'。见 §3.3。 */
+  /** 已弃用，字段保留以兼容旧调用：工具响应不能承载图片字节，图片一律只给路径。见 §3.3。 */
   returnImages?: 'first' | 'all' | 'none'
 }
 ```
@@ -148,27 +148,21 @@ interface RunResult {
 }
 ```
 
-**图片走工具响应，不走路径中转。** `comfyui_run` 在 `returnImages !== 'none'` 时，把产物作为 image content 直接放进工具响应，模型拿到的是图本身，不需要再 `read` 一次文件。
+**图片只给路径，不进工具响应（内联方案已废弃）。**
 
-这条改变了既有的做法：`dsh-comfyui-image` 的 `generate_image` 只返回 `path` 文本，模型想看图就得再读文件 —— 多一次磁盘读取、一次解码，并在会话里多留一份中间副本。直接返回字节省掉的正是这一段。
+现行行为：`comfyui_run` 的响应是纯文本 —— 每个产物的路径、MIME、体积、**原始**像素尺寸。模型要看图就按返回的路径读原图；UI 侧的图片展示走插件自己的 HTTP 路由，与工具响应无关。
 
-约束（防上下文爆炸）：
+早先的实现把产物按 MCP 风格塞成 `{ type: 'image', data, mimeType }` 块，理由是"模型不必再 read 一次文件，宿主不支持就忽略"。实测不是忽略，是崩：宿主把工具结果的每个块当结构化内容重建模型请求，`image` 块必须携带附件引用（attachment），裸 base64 会让请求装配读到空 attachment 而抛错，被 LLM 适配器包装成 `TRANSPORT`。该块一旦落进会话历史就永久生效 —— 一次 `comfyui_run` 之后，这个会话每次请求都失败（重试全灭，重进会话仍只报 `TRANSPORT`），只能改历史数据才救得回来。
 
-| 项 | 限制 |
+因此：
+
+| 项 | 规则 |
 | --- | --- |
-| 张数 | `first` 只回第一张；`all` 上限 3 张，超出部分只给路径并附 `truncated` 提示 |
-| 长边 | ≤ 2048px，超出等比缩小 |
-| 编码 | webp（有 alpha 时 png），质量 85 |
-| 体积 | 单张 ≤ 2MB，超了降质量重编码，仍超则退化为只给路径 |
+| 块类型 | 工具响应只允许 `text`；`ToolBlock = ToolText`，类型上就不存在图片块 |
+| 尺寸声明 | `artifacts[].width/height` 永远是**原始**像素，不是压缩后的 |
+| 图片交付 | 只给 `artifacts[].path`；后续 img2img / inpaint / 超分必须用这个路径指向原图 |
 
-路径仍留在 `artifacts[].path`：资产必须落在 `outputDir`，那是可检索、可重跑的真源。会话里那份附件是 dsh 自己的持久化副本，不可省。省掉的是"资产目录之外的第二份临时副本 + 一次多余读取与解码"。
-
-**压缩必须伴随原始尺寸声明。** 工具响应里的 image block 是**展示副本**，不是产物本身。如果只把缩过的图给模型，它看到 2048 就以为原图 2048，下一轮超分或重绘按 2048 设参数，产出必然糊 —— 这是"看起来能用、结果退化"的典型。所以：
-
-- `artifacts[].width/height` 永远是**原始**像素，不是压缩后的。
-- 工具响应的 text 段固定包含一句：`原图 4096×4096，展示副本缩放至 2048×2048（仅用于查看，引用时请用 path）`。
-- `notes` 里追加 `displayed-downscaled: 4096x4096 → 2048x2048`，机器可读。
-- 任何后续调用（img2img / inpaint / 超分）必须用 `artifacts[].path` 指向的原图，**不得**使用展示副本的会话附件路径。
+路径才是真源：资产落在 `outputDir`，可检索、可重跑。展示交给 Web 端（缩略图走插件 HTTP 路由），不再往模型上下文里塞字节。
 
 ### 3.4 预检与产物发现
 
@@ -688,7 +682,7 @@ ctx.inject(['betterSidebar'], (scope) => {
     assetRoots: []            # 除 outputDir 外纳入索引的目录
     strictVars: true
     runMode: conversation     # conversation（默认，点生成=发进对话）| direct
-    returnImages: first       # first | all | none（工具响应是否带回图片字节）
+    returnImages: first       # 已弃用：工具响应只给路径，字段保留以兼容旧配置
     timeoutMs: 300000
     pollIntervalMs: 1000
     indexMode: auto           # auto | off
@@ -766,9 +760,9 @@ ctx.inject(['betterSidebar'], (scope) => {
 | B32 | 绑定性冲突 | patch 一个被 `bind` 控制的 input | 返回 `param-bound` 并指出控制它的变量名；不静默写入 |
 | B33 | 备注双来源 | 模型写 `description`，用户从 UI 改同一字段 | `meta.json` 里 `updatedBy` 依次为 `agent` → `user`；`comfyui_workflow_list` 立刻返回新文案 |
 | B34 | 无备注可见 | 删除 `meta.json` 与 `schema.json` | IO 面仍生成，`undescribed: true` 被标出；`description` 为空串而不是 undefined |
-| B35 | 生成即入对话 | `runMode: conversation` 下点生成 | 会话里出现一条含 JSON 参数的消息；模型调 `comfyui_run`；图片以 image block 出现在对话中；`outputDir` 同时有该文件 |
-| B36 | 图片不经路径中转 | 检查该轮工具响应与后续调用 | 工具响应含 image content；模型**没有**再对产物路径发起 `read`/`read_image` 调用 |
-| B37 | 张数与体积上限 | 一次产出 5 张图，`returnImages: 'all'` | 响应里 image block 3 个，其余只给路径；`notes` 含 `truncated`；单张 ≤2MB 且长边 ≤2048 |
+| B35 | 生成即入对话 | `runMode: conversation` 下点生成 | 会话里出现一条含 JSON 参数的消息；模型调 `comfyui_run`；工具响应是文本（路径 + 原始尺寸）、不含 image block；`outputDir` 同时有该文件 |
+| B36 | 工具响应不含图片字节 | 检查该轮工具响应与紧随其后的请求 | 响应只有 text 块；下一轮请求正常返回，不再出现 `TRANSPORT`；模型按路径读图 |
+| B37 | 多图产出 | 一次产出 5 张图 | 响应列出全部 5 个产物路径与原始尺寸；无 image block；下一轮请求不失败 |
 | B38 | 参数保真告警 | 手动让模型把 seed 改成别的值再跑 | UI 输出区标红并列出差异（表单值 vs `RunResult.vars`）；不静默接受 |
 | B39 | 转提示词自动回填 | 对一张图点"转提示词" | 会话出现带图消息；回复含 `<prompt>` 块时表单提示词槽位被填入；该消息被标记已采用，不重复填 |
 | B40 | 转提示词降级 | 模拟拿不到订阅 / 模型不按格式回 | 弹窗展示原回复可手动采用；按钮旁有提示；无未捕获异常、不静默失败 |
@@ -895,5 +889,5 @@ ctx.inject(['betterSidebar'], (scope) => {
 ### 与设计的实质偏离
 
 1. **索引换成 JSONL**：规模（几千条）+ 零依赖 + 可手工修，比 sqlite 更划算。代价是大规模检索慢，且需要压实逻辑。
-2. **图片随工具响应返回**：设计里写的是"MCP 风格 image 块"，实际是按该形状实现，但**宿主是否接受 image 块尚未验证** —— 文本块始终带有路径与原始尺寸，所以即使 image 块被忽略，模型也不会失去信息。
+2. **图片不进工具响应**：设计里写的是"MCP 风格 image 块"，实现过一版，现已撤掉。核实结果：宿主不接受这种块，而且不是忽略 —— 请求装配按 `{ type: 'image', attachment }` 重建内容，裸 base64 读到空 attachment 抛错，被适配器包装成 `TRANSPORT`，并永久污染该会话的每次请求。现行实现只返回文本路径与原始尺寸。
 3. **输出目录写入加了授权校验**：设计没写，实现时发现不给校验等于开任意路径写入的后门。默认输出目录本来就在授权根内，只有显式指定根外路径才会被拒。

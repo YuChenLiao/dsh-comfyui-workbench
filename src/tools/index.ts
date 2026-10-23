@@ -6,4 +6,4 @@
  * 「改说明 + 调参」也合成一个入口。
  */
 export { createTools } from './registry.js'
-export type { Override, ToolBlock, ToolDeps, ToolImage, ToolSpec, ToolText } from './types.js'
+export type { Override, ToolBlock, ToolDeps, ToolSpec, ToolText } from './types.js'

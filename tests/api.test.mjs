@@ -64,10 +64,11 @@ function tmpDirs() {
   const workflows = path.join(base, 'workflows')
   const out = path.join(base, 'out')
   const uploads = path.join(base, 'uploads')
+  const index = path.join(base, 'assets.jsonl')
   fs.mkdirSync(workflows, { recursive: true })
   fs.mkdirSync(out, { recursive: true })
   fs.mkdirSync(uploads, { recursive: true })
-  return { base, workflows, out, uploads }
+  return { base, workflows, out, uploads, index }
 }
 
 /** 1×1 透明 PNG。 */
@@ -111,7 +112,7 @@ test('GET /workflows：空目录返回零条，导入后带模型与备注状态
 test('GET /workflows/{id}：返回完整输入槽位；不存在时 404', async () => {
   const dirs = tmpDirs()
   importWorkflowFile(dirs.workflows, SAMPLE)
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
 
   try {
     const detail = await (await fetch(`${app.origin}/comfyui-workbench/api/workflows/text2img-basic`)).json()
@@ -134,7 +135,7 @@ test('GET /workflows/{id}：返回完整输入槽位；不存在时 404', async 
 
 test('GET /workflows/{id} 不接受写方法', async () => {
   const dirs = tmpDirs()
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const res = await fetch(`${app.origin}/comfyui-workbench/api/workflows/text2img-basic`, { method: 'POST' })
     assert.equal(res.status, 405)
@@ -145,7 +146,7 @@ test('GET /workflows/{id} 不接受写方法', async () => {
 
 test('POST /workflows 仍是批量导出（无 body 时 400）', async () => {
   const dirs = tmpDirs()
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const res = await fetch(`${app.origin}/comfyui-workbench/api/workflows`, {
       method: 'POST',
@@ -161,7 +162,7 @@ test('POST /workflows 仍是批量导出（无 body 时 400）', async () => {
 
 test('GET /assets：索引为空时返回空列表而不是报错', async () => {
   const dirs = tmpDirs()
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const res = await fetch(`${app.origin}/comfyui-workbench/api/assets?limit=10`)
     assert.equal(res.status, 200)
@@ -176,7 +177,7 @@ test('GET /assets：索引为空时返回空列表而不是报错', async () => 
 test('POST /run 拒绝授权范围外的输出目录', async () => {
   const dirs = tmpDirs()
   importWorkflowFile(dirs.workflows, SAMPLE)
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
 
   try {
     const res = await fetch(`${app.origin}/comfyui-workbench/api/run`, {
@@ -210,7 +211,7 @@ test('POST /run 拒绝授权范围外的输出目录', async () => {
 
 test('POST /upload：二进制直传落到上传目录，返回尺寸', async () => {
   const dirs = tmpDirs()
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const res = await fetch(`${app.origin}/comfyui-workbench/api/upload?filename=${encodeURIComponent('参考图.png')}`, {
       method: 'POST',
@@ -235,7 +236,7 @@ test('POST /upload：二进制直传落到上传目录，返回尺寸', async ()
 
 test('POST /upload：不是图片就拒绝，扩展名不认也拒绝', async () => {
   const dirs = tmpDirs()
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const fake = await fetch(`${app.origin}/comfyui-workbench/api/upload?filename=a.png`, {
       method: 'POST',
@@ -259,7 +260,7 @@ test('POST /upload：不是图片就拒绝，扩展名不认也拒绝', async ()
 
 test('工具注册：4 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
-  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
     assert.deepEqual(names, ['comfyui_run', 'comfyui_workflow_edit', 'comfyui_workflow_inspect', 'comfyui_workflow_list'])

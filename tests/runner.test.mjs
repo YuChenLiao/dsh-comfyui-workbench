@@ -14,7 +14,7 @@ import path from 'node:path'
 import { test } from 'node:test'
 
 import { ComfyClient } from '../lib/comfy.js'
-import { runWorkflow } from '../lib/run.js'
+import { resumeRun, runWorkflow } from '../lib/run.js'
 
 /** 1×1 透明 PNG。 */
 const PNG = Buffer.from(
@@ -180,7 +180,7 @@ test('缺变量：一个请求都不发（B12）', async () => {
   }
 })
 
-test('超时：发出 /interrupt 并报 timeout（B13）', async () => {
+test('超时：返回可续查的 pending，不中断任务', async () => {
   const wf = workflow()
   const slots = await slotsOf(wf)
   const comfy = await fakeComfy({
@@ -189,21 +189,58 @@ test('超时：发出 /interrupt 并报 timeout（B13）', async () => {
   })
 
   try {
-    await assert.rejects(
-      runWorkflow({
-        client: new ComfyClient({ baseUrl: comfy.baseUrl }),
-        workflow: wf,
-        slots,
-        vars: { prompt: 'a cat' },
-        outputDir: tmpOut(),
-        timeoutMs: 300,
-        pollIntervalMs: 10,
-        workflowId: 't',
-        workflowHash: 'h1',
-      }),
-      (error) => error.code === 'timeout',
-    )
-    assert.ok(comfy.has('POST /interrupt'), '超时必须取消，否则队列被堵')
+    const outcome = await runWorkflow({
+      client: new ComfyClient({ baseUrl: comfy.baseUrl }),
+      workflow: wf,
+      slots,
+      vars: { prompt: 'a cat' },
+      outputDir: tmpOut(),
+      timeoutMs: 300,
+      pollIntervalMs: 10,
+      workflowId: 't',
+      workflowHash: 'h1',
+    })
+    // 出图要几分钟，工具不能一直占着对话：超时是"这次不等了"，不是"放弃这个任务"。
+    assert.equal(outcome.pending, true)
+    assert.equal(outcome.promptId, 'p1')
+    assert.ok(!comfy.has('POST /interrupt'), '不该中断还在跑的任务')
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('续查：同一 promptId 第二次查能拿到产物', async () => {
+  const wf = workflow()
+  const slots = await slotsOf(wf)
+  // 用开关控制"什么时候算跑完"：第一次调用期间始终不完成，续查时再放行。
+  let allowComplete = false
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    onHistory: () => (allowComplete
+      ? { status: { completed: true }, outputs: { 9: { images: [{ filename: 'out.png' }] } } }
+      : undefined),
+  })
+
+  try {
+    const first = await runWorkflow({
+      client: new ComfyClient({ baseUrl: comfy.baseUrl }),
+      workflow: wf,
+      slots,
+      vars: { prompt: 'a cat' },
+      outputDir: tmpOut(),
+      timeoutMs: 200,
+      pollIntervalMs: 10,
+      workflowId: 't',
+      workflowHash: 'h1',
+    })
+    assert.equal(first.pending, true)
+
+    allowComplete = true
+    const resumed = await resumeRun(new ComfyClient({ baseUrl: comfy.baseUrl }), first.promptId, { outputDir: tmpOut() })
+    assert.equal(resumed.ok, true)
+    assert.equal(resumed.pending, undefined)
+    assert.equal(resumed.artifacts.length, 1)
+    assert.ok(fs.existsSync(resumed.artifacts[0].path))
   } finally {
     await comfy.close()
   }

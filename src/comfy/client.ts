@@ -145,6 +145,26 @@ export class ComfyClient {
     return Buffer.from(array)
   }
 
+  /**
+   * 上传图片到 ComfyUI 的 input 目录。
+   *
+   * 不手动设 Content-Type：multipart 的 boundary 必须由 fetch 自己生成。
+   *
+   * @param form - 已装好 `image` 字段的表单。
+   */
+  async uploadImage(form: FormData): Promise<{ name: string; subfolder: string }> {
+    const res = await this.request('/upload/image', { method: 'POST', body: form }, 120_000)
+    if (res.status === 401 || res.status === 403) throw authFailed(this.baseUrl, res.status)
+    if (!res.ok) {
+      throw new RunError('output_unreadable', `图片上传到 ComfyUI 失败：HTTP ${res.status}`, '确认 ComfyUI 版本支持 POST /upload/image。')
+    }
+    const parsed: unknown = await res.json()
+    const bag = parsed !== null && typeof parsed === 'object' ? (parsed as { name?: unknown; subfolder?: unknown }) : null
+    const name = typeof bag?.name === 'string' ? bag.name : ''
+    if (name === '') throw new RunError('output_unreadable', 'ComfyUI 没有返回文件名。', '检查 /upload/image 的返回格式。')
+    return { name, subfolder: typeof bag?.subfolder === 'string' ? bag.subfolder : '' }
+  }
+
   /** 取消执行（超时收尾必发，否则队列被一条已放弃的任务堵住）。 */
   async interrupt(): Promise<void> {
     try {

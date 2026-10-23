@@ -1,22 +1,22 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { runWorkflow } from '../run/index.js'
+import { resumeRun, runWorkflow } from '../run/index.js'
+import type { PendingRun, RunOutcome } from '../run/index.js'
 import type { Artifact } from '../run/index.js'
 import { buildSurface, readEntry } from '../workflow/index.js'
 import type { ApiWorkflow, WorkflowIOSurface } from '../workflow/types.js'
 import { asInt, asRecord, asString } from './types.js'
 import type { ToolBlock, ToolDeps, ToolSpec } from './types.js'
 
-/** 单张图直接塞进响应的体积上限。超了就只给路径 —— 上下文比带宽更贵。 */
-const MAX_INLINE_BYTES = 2 * 1024 * 1024
-/** `all` 模式下最多回几张。 */
-const MAX_INLINE_COUNT = 3
-
-/** 哪些产物可以当图片回给模型。 */
-function isImageArtifact(artifact: Artifact): boolean {
-  return artifact.mime.startsWith('image/')
-}
+/**
+ * 图片产物只以文件路径交付。
+ *
+ * 宿主把工具结果的每个块都当结构化内容重建模型请求：`{ type: 'image' }` 必须携带
+ * 附件引用（attachment），裸 base64 的 MCP 风格图片块会让请求装配读到 undefined
+ * 的 attachment 而抛错，并被 LLM 适配器包装成不可恢复的 TRANSPORT 失败。该失败会
+ * 永久留在会话历史里，之后每次请求都失败。因此这里不再产出图片块。
+ */
 
 /** 已解析并备好 IO 面的工作流。 */
 interface LoadedWorkflow {
@@ -54,9 +54,9 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
 /**
  * `comfyui_run`：跑一次工作流。
  *
- * 图片随响应返回（image 块），模型不必再 read 一次文件 —— 那会多一次磁盘读取、
- * 一次解码，并在会话里留下资产目录之外的中间副本。**同时**在文本里声明原始像素尺寸：
- * 只给压缩图会让模型以为原图就那么大，下一轮按错的尺寸设参数，产物必然糊。
+ * 产物只以路径 + 原始像素尺寸的文本交付：宿主的工具结果不能承载二进制图片，
+ * 而尺寸必须写清楚 —— 只给压缩图会让模型以为原图就那么大，下一轮按错的尺寸设参数，
+ * 产物必然糊。
  *
  * @param deps - 依赖。
  */
@@ -64,12 +64,16 @@ export function runTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_run',
     description:
-      '执行一个 ComfyUI 工作流。参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow_list / inspect 查）。返回值包含产物路径、原始像素尺寸与图片本身；图片已经给你了，不要再 read 文件。',
+      '执行一个 ComfyUI 工作流。参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow_list / inspect 查）。返回值包含产物路径与原始像素尺寸；宿主不回传图片本身，需要看图时按返回的路径读取原图。',
     parameters: {
       type: 'object',
       additionalProperties: false,
-      required: ['workflow'],
+      required: [],
       properties: {
+        promptId: {
+          type: 'string',
+          description: '续查一次已提交但还没出完的运行（上一次返回里给的 promptId）。传了它就不用再给 workflow。',
+        },
         workflow: {
           type: 'object',
           description: '工作流标识：{"id":"sdxl"} 指向工作流目录，或 {"path":"D:/某处/workflow.json"} 指向单文件',
@@ -85,7 +89,11 @@ export function runTool(deps: ToolDeps): ToolSpec {
         },
         outputPath: { type: 'string', description: '产物落盘目录；不传用配置的 outputDir' },
         timeoutMs: { type: 'integer', description: '等待上限（毫秒），默认取配置' },
-        returnImages: { type: 'string', enum: ['first', 'all', 'none'], description: '响应里带几张图，默认 first' },
+        returnImages: {
+          type: 'string',
+          enum: ['first', 'all', 'none'],
+          description: '已弃用：工具结果不能承载二进制图片，图片一律只给路径。保留该参数只为兼容旧调用。',
+        },
       },
     },
     output: {
@@ -96,6 +104,13 @@ export function runTool(deps: ToolDeps): ToolSpec {
         const artifacts = Array.isArray(bag.artifacts) ? (bag.artifacts as Artifact[]) : []
 
         const lines: string[] = []
+        if (bag.pending === true) {
+          lines.push(String(bag.message ?? '已提交，还在出图。'))
+          if (typeof bag.hint === 'string' && bag.hint !== '') lines.push(String(bag.hint))
+          lines.push(`promptId：${String(bag.promptId)}`)
+          blocks.push({ type: 'text', text: lines.join(String.fromCharCode(10)) })
+          return blocks
+        }
         if (bag.ok === true) {
           lines.push(`工作流 ${String(bag.workflowId)} 执行完成，用时 ${String(bag.durationMs)} ms。`)
           for (const item of artifacts) {
@@ -103,20 +118,27 @@ export function runTool(deps: ToolDeps): ToolSpec {
             lines.push(`- ${item.path}（${item.mime}，${Math.round(item.bytes / 1024)} KB${size}）`)
           }
           if (Array.isArray(bag.notes) && bag.notes.length > 0) lines.push(`备注：${bag.notes.join('；')}`)
-          lines.push('图片已随响应返回；需要再次处理时请用上面的路径指向原图，不要用响应里的副本。')
+          lines.push('图片只给路径：需要看图或继续处理时，用上面的路径读取原图；响应里没有图片副本。')
         } else {
           lines.push(String(bag.message ?? '执行失败。'))
           if (typeof bag.hint === 'string' && bag.hint !== '') lines.push(`下一步：${bag.hint}`)
         }
         blocks.push({ type: 'text', text: lines.join('\n') })
-
-        for (const item of (Array.isArray(bag.inlineImages) ? (bag.inlineImages as Array<{ data: string; mimeType: string }>) : [])) {
-          blocks.push({ type: 'image', data: item.data, mimeType: item.mimeType })
-        }
         return blocks
       },
     },
     async execute(args) {
+      // 续查：上一次调用超时返回 pending 后，用 promptId 回来问结果。
+      const resumeId = asString(args.promptId).trim()
+      if (resumeId !== '') {
+        try {
+          const outcome = await resumeRun(deps.client, resumeId, { outputDir: deps.outputDir })
+          return formatOutcome(outcome, deps)
+        } catch (error) {
+          return failureOf(error)
+        }
+      }
+
       const loaded = loadWorkflow(deps, args)
 
       const outputDir = asString(args.outputPath).trim() !== '' ? asString(args.outputPath).trim() : deps.outputDir
@@ -153,19 +175,8 @@ export function runTool(deps: ToolDeps): ToolSpec {
           workflowHash: loaded.surface.workflowHash,
         })
 
-        const mode = asString(args.returnImages, 'first')
-        const inline: Array<{ data: string; mimeType: string }> = []
-        if (mode !== 'none') {
-          const limit = mode === 'all' ? MAX_INLINE_COUNT : 1
-          for (const artifact of outcome.artifacts.filter(isImageArtifact).slice(0, limit)) {
-            if (artifact.bytes > MAX_INLINE_BYTES) continue
-            try {
-              inline.push({ data: fs.readFileSync(artifact.path).toString('base64'), mimeType: artifact.mime })
-            } catch {
-              // 读不到就只给路径
-            }
-          }
-        }
+        // 没跑完就先回去：不让工具调用一直挂着把对话卡住。
+        if ('pending' in outcome) return formatOutcome(outcome, deps)
 
         // 登记索引：索引是派生（真源是 sidecar），登记失败不该让本次运行算失败。
         const createdAt = new Date().toISOString()
@@ -192,10 +203,6 @@ export function runTool(deps: ToolDeps): ToolSpec {
         }
 
         const notes = [...preNotes, ...outcome.notes]
-        const skipped = outcome.artifacts.filter(isImageArtifact).length - inline.length
-        if (skipped > 0 && mode !== 'none') {
-          notes.push(`${skipped} 张图超过 ${Math.round(MAX_INLINE_BYTES / 1024 / 1024)} MB 或超出张数上限，只给了路径。`)
-        }
 
         return {
           ok: true,
@@ -204,19 +211,47 @@ export function runTool(deps: ToolDeps): ToolSpec {
           durationMs: outcome.durationMs,
           artifacts: outcome.artifacts,
           effectiveVars: outcome.effective,
-          inlineImages: inline,
           notes,
         }
       } catch (error) {
-        const code = error !== null && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
-        const hint = error !== null && typeof error === 'object' ? (error as { hint?: unknown }).hint : undefined
-        return {
-          ok: false,
-          code: typeof code === 'string' ? code : 'execution_failed',
-          message: error instanceof Error ? error.message : String(error),
-          ...(typeof hint === 'string' ? { hint } : {}),
-        }
+        return failureOf(error)
       }
     },
+  }
+}
+
+/** 把完成/未完成两种结果统一成工具返回值。 */
+function formatOutcome(
+  outcome: RunOutcome | PendingRun,
+  _deps: ToolDeps,
+): Record<string, unknown> {
+  if ('pending' in outcome) {
+    return {
+      ok: true,
+      pending: true,
+      promptId: outcome.promptId,
+      waitedMs: outcome.waitedMs,
+      message: `已提交，等了 ${Math.round(outcome.waitedMs / 1000)} 秒还在出图。`,
+      hint: outcome.hint,
+    }
+  }
+  return {
+    ok: true,
+    promptId: outcome.promptId,
+    durationMs: outcome.durationMs,
+    artifacts: outcome.artifacts,
+    effectiveVars: outcome.effective,
+    notes: outcome.notes,
+  }
+}
+
+/** 失败统一出口。 */
+function failureOf(error: unknown): Record<string, unknown> {
+  const bag = error !== null && typeof error === 'object' ? (error as { code?: unknown; hint?: unknown }) : null
+  return {
+    ok: false,
+    code: typeof bag?.code === 'string' ? bag.code : 'execution_failed',
+    message: error instanceof Error ? error.message : String(error),
+    ...(typeof bag?.hint === 'string' ? { hint: bag.hint } : {}),
   }
 }

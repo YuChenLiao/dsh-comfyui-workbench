@@ -4,15 +4,22 @@ import path from 'node:path'
 
 import { ensureDir } from '../host/paths.js'
 import { readPngTextChunks } from '../scan/index.js'
-import type { ComfyClient, FileRef } from '../comfy/index.js'
-import { asRunError, executionFailed, nodeMissing, noOutput, outputUnreadable, RunError, timedOut } from '../comfy/index.js'
+import type { ComfyClient, HistoryEntry } from '../comfy/index.js'
+import {
+  asRunError,
+  executionFailed,
+  materializeImages,
+  nodeMissing,
+  noOutput,
+  outputUnreadable,
+  RunError,
+} from '../comfy/index.js'
 import type { ApiWorkflow, IOSlot } from '../workflow/types.js'
 import { applyVariables, VariableError } from '../workflow/variables.js'
 
 /** 一次运行的产物。 */
 export interface Artifact {
   path: string
-  /** sha256 前 12 位，用于跨 run 判重。 */
   digest: string
   mime: string
   bytes: number
@@ -20,16 +27,29 @@ export interface Artifact {
   height?: number
 }
 
-/** 运行结果。 */
+/** 运行完成的结果。 */
 export interface RunOutcome {
+  ok: true
   promptId: string
   artifacts: Artifact[]
   durationMs: number
-  /** 实际生效的变量（含默认值补全），回给调用方做"表单 vs 实际"的比对。 */
   effective: Record<string, unknown>
   notes: string[]
-  /** 写出的 sidecar 路径（未开启时 undefined）。 */
   metadataPath?: string
+}
+
+/**
+ * 还没跑完。
+ *
+ * 这不是错误：ComfyUI 出图动辄几分钟，工具调用不能一直占着对话
+ * （用户会以为连接断了）。拿到 promptId 后可用同一次调用的 `promptId` 续查。
+ */
+export interface PendingRun {
+  ok: true
+  pending: true
+  promptId: string
+  waitedMs: number
+  hint: string
 }
 
 /** 运行参数。 */
@@ -38,17 +58,45 @@ export interface RunOptions {
   workflow: ApiWorkflow
   slots: readonly IOSlot[]
   vars: Record<string, unknown>
-  /** 产物落盘目录。 */
   outputDir: string
   timeoutMs: number
   pollIntervalMs: number
-  /** 供调用方记录进度（UI 轮询用）。 */
-  onStage?: (stage: 'preflight' | 'queued' | 'running' | 'fetching') => void
-  /** 写 sidecar 时用的标识。 */
   workflowId: string
   workflowHash: string
-  /** 是否写 sidecar，默认 true。 */
   writeMetadata?: boolean
+  onStage?: (stage: 'preflight' | 'queued' | 'waiting' | 'fetching') => void
+}
+
+/** 提交后仍需记住的上下文（续查时用来写 sidecar）。 */
+export interface PendingContext {
+  workflowId: string
+  workflowHash: string
+  outputDir: string
+  effective: Record<string, unknown>
+  writeMetadata: boolean
+  submittedAt: number
+}
+
+/** 进程内登记表：promptId → 上下文。插件重启即丢，丢了不影响 ComfyUI 侧的结果。 */
+const pending = new Map<string, PendingContext>()
+
+/** 登记一次提交。 */
+export function rememberRun(promptId: string, context: PendingContext): void {
+  pending.set(promptId, context)
+  if (pending.size > 50) {
+    const oldest = [...pending.entries()].sort((a, b) => a[1].submittedAt - b[1].submittedAt)[0]
+    if (oldest !== undefined) pending.delete(oldest[0])
+  }
+}
+
+/** 取回登记；可能来自别处提交或插件重启过，所以允许 undefined。 */
+export function recallRun(promptId: string): PendingContext | undefined {
+  return pending.get(promptId)
+}
+
+/** 忘掉一条。 */
+export function forgetRun(promptId: string): void {
+  pending.delete(promptId)
 }
 
 /** 工作流里用到的全部 class_type。 */
@@ -62,25 +110,24 @@ function requiredNodes(workflow: ApiWorkflow): string[] {
   return [...set]
 }
 
-/** history.outputs → 文件引用列表。不按节点名匹配，遍历所有键。 */
-function fileRefsOf(outputs: Record<string, Record<string, unknown>> | undefined): Array<{ ref: FileRef; nodeId: string }> {
-  const found: Array<{ ref: FileRef; nodeId: string }> = []
+/** history.outputs → 文件引用。不按节点名匹配，遍历所有键。 */
+function fileRefsOf(
+  outputs: Record<string, Record<string, unknown>> | undefined,
+): Array<{ filename: string; subfolder: string; type: string }> {
+  const found: Array<{ filename: string; subfolder: string; type: string }> = []
   if (outputs === undefined) return found
-  for (const [nodeId, bag] of Object.entries(outputs)) {
+  for (const bag of Object.values(outputs)) {
     if (bag === null || typeof bag !== 'object') continue
     for (const value of Object.values(bag)) {
       const list = Array.isArray(value) ? value : [value]
       for (const item of list) {
         if (item === null || typeof item !== 'object') continue
-        const bag2 = item as { filename?: unknown; subfolder?: unknown; type?: unknown }
-        if (typeof bag2.filename !== 'string' || bag2.filename === '') continue
+        const ref = item as { filename?: unknown; subfolder?: unknown; type?: unknown }
+        if (typeof ref.filename !== 'string' || ref.filename === '') continue
         found.push({
-          nodeId,
-          ref: {
-            filename: bag2.filename,
-            ...(typeof bag2.subfolder === 'string' ? { subfolder: bag2.subfolder } : {}),
-            ...(typeof bag2.type === 'string' ? { type: bag2.type } : {}),
-          },
+          filename: ref.filename,
+          subfolder: typeof ref.subfolder === 'string' ? ref.subfolder : '',
+          type: typeof ref.type === 'string' ? ref.type : 'output',
         })
       }
     }
@@ -88,18 +135,20 @@ function fileRefsOf(outputs: Record<string, Record<string, unknown>> | undefined
   return found
 }
 
-/** 扩展名 → MIME（产物可能是图也可能是视频/音频）。 */
+/** 扩展名 → MIME。 */
 function mimeOf(file: string): string {
-  const ext = path.extname(file).toLowerCase()
-  if (ext === '.png') return 'image/png'
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
-  if (ext === '.webp') return 'image/webp'
-  if (ext === '.gif') return 'image/gif'
-  if (ext === '.webm') return 'video/webm'
-  if (ext === '.mp4') return 'video/mp4'
-  if (ext === '.mp3') return 'audio/mpeg'
-  if (ext === '.wav') return 'audio/wav'
-  return 'application/octet-stream'
+  const table: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.webm': 'video/webm',
+    '.mp4': 'video/mp4',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+  }
+  return table[path.extname(file).toLowerCase()] ?? 'application/octet-stream'
 }
 
 /** 落盘文件名：保留 ComfyUI 给的名字，冲突时加时间戳前缀而不是覆盖。 */
@@ -111,24 +160,29 @@ function targetFor(outputDir: string, filename: string): string {
   return path.join(outputDir, `${stamp}-${safe}`)
 }
 
+/** sha256 前 12 位。 */
+function digestOf(bytes: Buffer): string {
+  return crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 12)
+}
+
 /** 等一小会儿。 */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 /**
- * 跑一次工作流：预检 → 提交 → 轮询 → 取产物 → 写 sidecar。
+ * 提交一次工作流：变量应用 → 预检 → 送图 → 提交。
  *
- * 预检放在提交之前：缺节点时立刻报错，不要让用户排 40 秒队之后才失败。
+ * 预检放在提交之前：缺节点时立刻报错，不要让用户排几十秒队之后才失败。
  *
  * @param options - 运行参数。
  */
-export async function runWorkflow(options: RunOptions): Promise<RunOutcome> {
-  const { client, slots, vars, outputDir, timeoutMs, pollIntervalMs } = options
+export async function submitWorkflow(
+  options: RunOptions,
+): Promise<{ promptId: string; effective: Record<string, unknown>; notes: string[] }> {
+  const { client, slots, vars } = options
   const notes: string[] = []
-  const startedAt = Date.now()
 
-  // 1. 变量应用（可能抛 variable-*）
   let applied
   try {
     applied = applyVariables(options.workflow, slots, vars)
@@ -139,7 +193,6 @@ export async function runWorkflow(options: RunOptions): Promise<RunOutcome> {
     throw asRunError(error, 'workflow_invalid')
   }
 
-  // 2. 节点预检
   options.onStage?.('preflight')
   const info = await client.objectInfo()
   const known = new Set(Object.keys(info))
@@ -150,55 +203,71 @@ export async function runWorkflow(options: RunOptions): Promise<RunOutcome> {
     notes.push('/object_info 为空，跳过节点预检（可能是刚启动的 ComfyUI）。')
   }
 
-  // 3. 提交
+  // 图像类参数要送进 ComfyUI 的 input 目录：LoadImage 只认自己目录里的文件名，
+  // 直接写绝对路径会被判成 Invalid image file。
+  const imageSlots = slots.filter(slot => slot.type === 'image' || slot.type === 'mask').map(slot => slot.name)
+  if (imageSlots.length > 0) {
+    const moved = await materializeImages(client, applied.effective, imageSlots)
+    notes.push(...moved.notes)
+    if (moved.notes.length > 0) {
+      applied = applyVariables(options.workflow, slots, { ...moved.vars })
+    }
+  }
+
   const promptId = await client.queuePrompt(applied.workflow)
   options.onStage?.('queued')
 
-  // 4. 轮询
-  options.onStage?.('running')
-  const deadline = startedAt + timeoutMs
-  let entry
-  let done = false
-  while (!done) {
-    if (Date.now() > deadline) {
-      await client.interrupt()
-      throw timedOut(Date.now() - startedAt, promptId)
-    }
-    await sleep(pollIntervalMs)
-    entry = await client.history(promptId)
-    if (entry === undefined) continue
+  rememberRun(promptId, {
+    workflowId: options.workflowId,
+    workflowHash: options.workflowHash,
+    outputDir: options.outputDir,
+    effective: applied.effective,
+    writeMetadata: options.writeMetadata !== false,
+    submittedAt: Date.now(),
+  })
 
-    const status = entry.status
-    if (status?.status_str === 'error') throw executionFailed(entry, promptId)
-    const hasOutputs = entry.outputs !== undefined && Object.keys(entry.outputs).length > 0
-    if (status?.completed === true || hasOutputs) done = true
-  }
+  return { promptId, effective: applied.effective, notes }
+}
 
-  // 5. 取产物
-  options.onStage?.('fetching')
-  const refs = fileRefsOf(entry?.outputs)
+/** 查一次状态；执行出错时抛 execution_failed。 */
+export async function checkRun(client: ComfyClient, promptId: string): Promise<{ done: boolean; entry?: HistoryEntry }> {
+  const entry = await client.history(promptId)
+  if (entry === undefined) return { done: false }
+  if (entry.status?.status_str === 'error') throw executionFailed(entry, promptId)
+  const hasOutputs = entry.outputs !== undefined && Object.keys(entry.outputs).length > 0
+  return { done: entry.status?.completed === true || hasOutputs, entry }
+}
+
+/**
+ * 取产物并落盘，顺带写 sidecar。
+ *
+ * @param client - ComfyUI 客户端。
+ * @param promptId - 运行 id。
+ * @param entry - 已完成的 history 条目。
+ * @param context - 提交时记下的上下文。
+ */
+export async function collectArtifacts(
+  client: ComfyClient,
+  promptId: string,
+  entry: HistoryEntry,
+  context: PendingContext,
+): Promise<RunOutcome> {
+  const refs = fileRefsOf(entry.outputs)
   if (refs.length === 0) throw noOutput(true)
 
-  ensureDir(outputDir)
+  ensureDir(context.outputDir)
   const artifacts: Artifact[] = []
-  for (const { ref } of refs) {
+  for (const ref of refs) {
     let bytes: Buffer
     try {
-      bytes = await client.view(ref)
+      bytes = await client.view({ filename: ref.filename, subfolder: ref.subfolder, type: ref.type })
     } catch (error) {
       throw outputUnreadable(ref.filename, error)
     }
-    const target = targetFor(outputDir, ref.filename)
+    const target = targetFor(context.outputDir, ref.filename)
     fs.writeFileSync(target, bytes)
 
-    const digest = digestOf(bytes)
-    const artifact: Artifact = {
-      path: target,
-      digest,
-      mime: mimeOf(target),
-      bytes: bytes.length,
-    }
-    // 尺寸只对 PNG 可靠（读 IHDR）；其它格式留给后续版本。
+    const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOf(target), bytes: bytes.length }
     if (path.extname(target).toLowerCase() === '.png') {
       const parsed = readPngTextChunks(target, bytes.length)
       if (parsed !== undefined && parsed.width > 0 && parsed.height > 0) {
@@ -209,42 +278,110 @@ export async function runWorkflow(options: RunOptions): Promise<RunOutcome> {
     artifacts.push(artifact)
   }
 
-  const durationMs = Date.now() - startedAt
-
-  // 6. sidecar（与 dsh-comfyui-image 字段兼容的超集）
-  let metadataPath: string | undefined
+  const durationMs = Date.now() - context.submittedAt
   const primary = artifacts[0]
-  if (options.writeMetadata !== false && primary !== undefined) {
+  let metadataPath: string | undefined
+  if (context.writeMetadata && primary !== undefined) {
     metadataPath = `${primary.path}.json`
     const meta = {
       plugin: 'dsh-comfyui-workbench',
       createdAt: new Date().toISOString(),
-      workflowId: options.workflowId,
-      workflowHash: options.workflowHash,
-      vars: applied.effective,
-      prompt: typeof applied.effective.prompt === 'string' ? applied.effective.prompt : undefined,
-      negativePrompt: typeof applied.effective.negative_prompt === 'string' ? applied.effective.negative_prompt : undefined,
-      seed: typeof applied.effective.seed === 'number' ? applied.effective.seed : undefined,
+      workflowId: context.workflowId,
+      workflowHash: context.workflowHash,
+      vars: context.effective,
+      prompt: typeof context.effective.prompt === 'string' ? context.effective.prompt : undefined,
+      negativePrompt: typeof context.effective.negative_prompt === 'string' ? context.effective.negative_prompt : undefined,
+      seed: typeof context.effective.seed === 'number' ? context.effective.seed : undefined,
       width: primary.width,
       height: primary.height,
       durationMs,
       artifacts: artifacts.map(item => ({ path: item.path, digest: item.digest, bytes: item.bytes })),
       comfy: { url: client.baseUrl, promptId },
-      notes,
-      workflow: applied.workflow,
     }
     try {
       fs.writeFileSync(metadataPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
     } catch {
       metadataPath = undefined
-      notes.push('sidecar 写入失败（产物已存在，仅缺元数据）。')
     }
   }
 
-  return { promptId, artifacts, durationMs, effective: applied.effective, notes, ...(metadataPath === undefined ? {} : { metadataPath }) }
+  forgetRun(promptId)
+  return {
+    ok: true,
+    promptId,
+    artifacts,
+    durationMs,
+    effective: context.effective,
+    notes: [],
+    ...(metadataPath === undefined ? {} : { metadataPath }),
+  }
 }
 
-/** sha256 前 12 位。 */
-function digestOf(bytes: Buffer): string {
-  return crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 12)
+/**
+ * 跑一次工作流：提交，然后在 timeoutMs 内等结果。
+ *
+ * 超时**不报错**，而是返回 pending —— 出图要几分钟，让工具调用一直挂着
+ * 会把对话卡死，用户会以为断线。
+ *
+ * @param options - 运行参数。
+ */
+export async function runWorkflow(options: RunOptions): Promise<RunOutcome | PendingRun> {
+  const startedAt = Date.now()
+  const submitted = await submitWorkflow(options)
+  options.onStage?.('waiting')
+
+  const deadline = startedAt + options.timeoutMs
+  for (;;) {
+    const state = await checkRun(options.client, submitted.promptId)
+    if (state.done && state.entry !== undefined) {
+      options.onStage?.('fetching')
+      const context = recallRun(submitted.promptId) ?? {
+        workflowId: options.workflowId,
+        workflowHash: options.workflowHash,
+        outputDir: options.outputDir,
+        effective: submitted.effective,
+        writeMetadata: options.writeMetadata !== false,
+        submittedAt: startedAt,
+      }
+      const outcome = await collectArtifacts(options.client, submitted.promptId, state.entry, context)
+      return { ...outcome, notes: [...submitted.notes, ...outcome.notes] }
+    }
+    if (Date.now() > deadline) {
+      return {
+        ok: true,
+        pending: true,
+        promptId: submitted.promptId,
+        waitedMs: Date.now() - startedAt,
+        hint: '还在出图。用同一个工具传 promptId 续查；这次调用结束后 ComfyUI 侧不会中断。',
+      }
+    }
+    await sleep(options.pollIntervalMs)
+  }
+}
+
+/** 续查一次运行：完成就取产物，没完成返回 pending。 */
+export async function resumeRun(
+  client: ComfyClient,
+  promptId: string,
+  fallback: { outputDir: string },
+): Promise<RunOutcome | PendingRun> {
+  const context = recallRun(promptId) ?? {
+    workflowId: 'unknown',
+    workflowHash: '',
+    outputDir: fallback.outputDir,
+    effective: {},
+    writeMetadata: true,
+    submittedAt: Date.now(),
+  }
+  const state = await checkRun(client, promptId)
+  if (!state.done || state.entry === undefined) {
+    return {
+      ok: true,
+      pending: true,
+      promptId,
+      waitedMs: 0,
+      hint: '还在出图。等一会儿再查一次；ComfyUI 侧不会因为调用结束而中断。',
+    }
+  }
+  return await collectArtifacts(client, promptId, state.entry, context)
 }

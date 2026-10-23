@@ -3,5 +3,20 @@
  *
  * 依赖 comfy（传输）、workflow（模板与变量）、scan（读 PNG 尺寸）、host（路径）。
  */
-export { runWorkflow } from './runner.js'
-export type { Artifact, RunOptions, RunOutcome } from './runner.js'
+export {
+  checkRun,
+  collectArtifacts,
+  forgetRun,
+  recallRun,
+  rememberRun,
+  resumeRun,
+  runWorkflow,
+  submitWorkflow,
+} from './runner.js'
+export type {
+  Artifact,
+  PendingContext,
+  PendingRun,
+  RunOptions,
+  RunOutcome,
+} from './runner.js'

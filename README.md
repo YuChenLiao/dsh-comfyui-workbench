@@ -24,7 +24,7 @@
 - **只展示输入输出**：`basic` 段只放提示词与图像输入，`seed/steps/cfg` 等折进"更多参数"。
 - **四个模型工具**：`comfyui_workflow_list`（含底模名与作用备注）、`comfyui_workflow_inspect`（不传 nodeId 给 IO 面与节点清单，传了给单节点完整配置）、`comfyui_run`、`comfyui_workflow_edit`（默认只影响下一次运行，写模板需 `persist` + `expectHash`）。
 - **执行链**：节点预检（缺节点在提交前失败）→ 提交 → 轮询 → 超时必发 `/interrupt` → 遍历 `history.outputs` 取产物 → 写 sidecar（`dsh-comfyui-image` 字段超集）。
-- **图片随工具响应返回**，并在文本里声明**原始像素尺寸** —— 只给压缩图会让模型以为原图就那么小，下一轮按错的尺寸设参数。
+- **图片只给路径 + 原始像素尺寸**：工具响应是纯文本（路径、MIME、体积、原始宽高），不内联图片字节。宿主不接受 MCP 风格的内联图片块 —— 它会按 `{type:'image', attachment}` 重建请求并因此抛错，包装成 `TRANSPORT` 后永久污染该会话的每次请求（见 `docs/design.md` §3.3）。UI 侧展示走插件 HTTP 路由。
 - **资产索引**：JSONL，可删可重建（真源是产物旁的 sidecar）；`GET /assets` 支持 q / workflow / tag / kind / status / 游标分页。
 
 0.2 已落地：

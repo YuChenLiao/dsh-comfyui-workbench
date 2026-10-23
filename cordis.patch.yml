@@ -38,6 +38,8 @@
         workflowsDir: null
         # 上传的参考图目录；不写则用 ~/.dsh-comfyui-workbench/uploads。
         uploadsDir: null
+        # 资产索引文件；不写则用 ~/.dsh-comfyui-workbench/assets.jsonl。
+        indexFile: null
 
         # ── 服务托管 ──
         # 自动探测 ComfyUI 安装位置（判据：有 main.py 且有 models 目录）。

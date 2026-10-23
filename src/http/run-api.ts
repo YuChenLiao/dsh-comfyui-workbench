@@ -83,6 +83,17 @@ export function createRunHandler(deps: {
         workflowId,
         workflowHash: entry.surface.workflowHash,
       })
+      if ('pending' in outcome) {
+        sendJson(res, 200, {
+          ok: true,
+          pending: true,
+          promptId: outcome.promptId,
+          waitedMs: outcome.waitedMs,
+          message: `已提交，等了 ${Math.round(outcome.waitedMs / 1000)} 秒还在出图。`,
+          hint: outcome.hint,
+        })
+        return
+      }
       sendJson(res, 200, {
         ok: true,
         promptId: outcome.promptId,

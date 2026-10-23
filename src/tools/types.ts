@@ -8,15 +8,15 @@ export interface ToolText {
   text: string
 }
 
-/** 图片块（MCP 风格：base64 + mimeType）。宿主若不支持会被忽略，文本块仍然有效。 */
-export interface ToolImage {
-  type: 'image'
-  data: string
-  mimeType: string
-}
-
-/** 工具响应块。 */
-export type ToolBlock = ToolText | ToolImage
+/**
+ * 工具响应块：只有文本。
+ *
+ * MCP 风格的 `{ type: 'image', data, mimeType }` 块不是宿主认可的模型内容：请求装配按
+ * `{ type: 'image', attachment }` 重建请求，裸 base64 块会让它读到空 attachment 而抛错，
+ * 被 LLM 适配器包装成 TRANSPORT 失败；该块一旦落进会话历史，之后每次请求都失败。
+ * 图片只能以文件路径交付。
+ */
+export type ToolBlock = ToolText
 
 /** 宿主要求的输出声明。 */
 export interface ToolOutput {
