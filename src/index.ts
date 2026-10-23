@@ -1,25 +1,37 @@
 /**
  * dsh-comfyui-workbench —— 宿主侧入口。
  *
- * 装配职责只有三件：解析配置、注册 HTTP 路由、把失败说清楚。
- * 具体逻辑分层在：
- *   scan/     读磁盘与图片内嵌元数据（只依赖 node:*）
- *   assets/   根目录授权、扫描缓存、缩略图、去重、删除、ZIP
- *   http/     解析请求 → 调 service → 写响应
- *   workflow/ 工作流模板、IO 面、执行（后续版本）
+ * 装配职责只有三件：解析配置、注册 HTTP 路由、注册工具。具体逻辑分层在：
+ *   scan/      读磁盘与图片内嵌元数据（只依赖 node:*）
+ *   host/      宿主最小面、logger、配置、路径
+ *   assets/    根目录授权、扫描缓存、缩略图、去重、删除、ZIP
+ *   workflow/  模板、IO 面推断、变量应用
+ *   comfy/     ComfyUI 传输与错误分类
+ *   run/       预检 → 提交 → 轮询 → 取产物 → sidecar
+ *   tools/     四个模型工具
+ *   http/      解析请求 → 调 service → 写响应
  */
 import fs from 'node:fs'
 
+import { ComfyClient } from './comfy/index.js'
 import { resolveSettings } from './host/config.js'
 import { resolveLogger } from './host/logger.js'
+import { pluginDataDir, workflowsDir } from './host/paths.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
+import { createTools } from './tools/index.js'
+import type { ToolSpec } from './tools/index.js'
 
 /** 插件名（同时是 loader entry 的默认 id）。 */
 export const name = 'dsh-comfyui-workbench'
 
-/** 需要的宿主服务：HTTP 路由载体。 */
+/** 需要的宿主服务：HTTP 路由载体。tools 走可选获取，缺它不该让整个插件停摆。 */
 export const inject = ['webServer']
+
+/** 宿主 tools 服务的最小面。 */
+interface ToolsLike {
+  register: (spec: ToolSpec) => (() => void) | void
+}
 
 /**
  * 读当前 package.json 的版本号。
@@ -51,18 +63,51 @@ export function apply(ctx: HostContext, config: unknown): void {
   const warn = logger?.warn ?? console.warn
   const info = logger?.info ?? console.info
 
+  const track = (dispose: (() => void) | void): void => {
+    if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
+      // 交给宿主在卸载时调用
+      ctx.effect(() => dispose, `${name}: disposer`)
+    }
+  }
+
+  // ── HTTP 路由 ──
   const server = ctx.get?.('webServer') as WebServerLike | undefined
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
+  } else {
+    const handler = createHandler(ctx, settings)
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
+    } else {
+      server.register({ kind: 'prefix', path: PREFIX, handler })
+    }
+    info(`[${name}] v${VERSION} 资产库 API 就绪：${PREFIX}（最大深度 ${settings.maxDepth}）`)
+  }
+
+  // ── 工具（可选） ──
+  const tools = ctx.get?.('tools') as ToolsLike | undefined
+  if (tools === undefined || typeof tools.register !== 'function') {
+    warn(`[${name}] 拿不到 tools 服务，工作流工具未注册（资产库仍可用）。`)
     return
   }
 
-  const handler = createHandler(ctx, settings)
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
-  } else {
-    server.register({ kind: 'prefix', path: PREFIX, handler })
+  const client = new ComfyClient({
+    baseUrl: settings.baseUrl,
+    headers: settings.headers,
+    requestTimeoutMs: settings.timeoutMs,
+  })
+
+  for (const spec of createTools({
+    client,
+    workflowsDir: workflowsDir(),
+    outputDir: settings.outputDir ?? process.cwd(),
+    timeoutMs: settings.timeoutMs,
+    pollIntervalMs: settings.pollIntervalMs,
+    overrides: new Map(),
+    logger,
+  })) {
+    track(tools.register(spec))
   }
 
-  info(`[${name}] v${VERSION} 资产库 API 就绪：${PREFIX}（最大深度 ${settings.maxDepth}）`)
+  info(`[${name}] 工作流工具已注册：list / inspect / run / edit（数据目录 ${pluginDataDir()}）`)
 }

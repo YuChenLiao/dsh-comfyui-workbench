@@ -1,7 +1,7 @@
 import type { ApiWorkflow, IOSlot } from './types.js'
 
 /** 变量绑定失败的分类。 */
-export type VariableErrorCode = 'variable-unbound' | 'variable-type' | 'variable-unknown'
+export type VariableErrorCode = 'variable_unbound' | 'variable_type' | 'variable_unknown'
 
 /** 变量处理错误：带分类，便于 runner 映射成对外错误码。 */
 export class VariableError extends Error {
@@ -67,28 +67,28 @@ function coerce(slot: IOSlot, value: unknown): string | number | boolean {
   if (slot.type === 'number') {
     if (typeof value === 'number' && Number.isFinite(value)) return value
     if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value)
-    throw new VariableError('variable-type', `参数 ${slot.name} 需要数字，收到 ${JSON.stringify(value)}。`, { slot: slot.name })
+    throw new VariableError('variable_type', `参数 ${slot.name} 需要数字，收到 ${JSON.stringify(value)}。`, { slot: slot.name })
   }
   if (slot.type === 'boolean') {
     if (typeof value === 'boolean') return value
-    throw new VariableError('variable-type', `参数 ${slot.name} 需要 true / false，收到 ${JSON.stringify(value)}。`, { slot: slot.name })
+    throw new VariableError('variable_type', `参数 ${slot.name} 需要 true / false，收到 ${JSON.stringify(value)}。`, { slot: slot.name })
   }
   if (slot.type === 'enum') {
     const text = String(value)
     if (slot.options !== undefined && slot.options.length > 0 && !slot.options.includes(text)) {
-      throw new VariableError('variable-type', `参数 ${slot.name} 只接受：${slot.options.join(' / ')}。`, { slot: slot.name })
+      throw new VariableError('variable_type', `参数 ${slot.name} 只接受：${slot.options.join(' / ')}。`, { slot: slot.name })
     }
     return text
   }
   if (slot.type === 'image' || slot.type === 'mask') {
     if (typeof value !== 'string' || value.trim() === '') {
-      throw new VariableError('variable-type', `参数 ${slot.name} 需要图片路径。`, { slot: slot.name })
+      throw new VariableError('variable_type', `参数 ${slot.name} 需要图片路径。`, { slot: slot.name })
     }
     return value
   }
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  throw new VariableError('variable-type', `参数 ${slot.name} 需要字符串，收到 ${JSON.stringify(value)}。`, { slot: slot.name })
+  throw new VariableError('variable_type', `参数 ${slot.name} 需要字符串，收到 ${JSON.stringify(value)}。`, { slot: slot.name })
 }
 
 /**
@@ -112,7 +112,7 @@ export function applyVariables(
   const known = new Set(slots.map(slot => slot.name))
   const unknown = Object.keys(vars).filter(key => !known.has(key))
   if (unknown.length > 0) {
-    throw new VariableError('variable-unknown', `工作流没有这些参数：${unknown.join('、')}。`, { unknown })
+    throw new VariableError('variable_unknown', `工作流没有这些参数：${unknown.join('、')}。`, { unknown })
   }
 
   const missing: string[] = []
@@ -131,7 +131,7 @@ export function applyVariables(
   }
 
   if (missing.length > 0) {
-    throw new VariableError('variable-unbound', `缺少必填参数：${missing.join('、')}。`, { missing })
+    throw new VariableError('variable_unbound', `缺少必填参数：${missing.join('、')}。`, { missing })
   }
 
   return { workflow: substitute(copy, effective) as ApiWorkflow, effective }

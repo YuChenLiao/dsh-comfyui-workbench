@@ -128,11 +128,11 @@ test('变量：缺必填 / 未知参数 / 类型错误分别报错', () => {
 
   assert.throws(
     () => applyVariables(workflow, surface.inputs, { seed: 'not-a-number' }),
-    (error) => error instanceof VariableError && error.code === 'variable-type',
+    (error) => error instanceof VariableError && error.code === 'variable_type',
   )
   assert.throws(
     () => applyVariables(workflow, surface.inputs, { nope: 1 }),
-    (error) => error instanceof VariableError && error.code === 'variable-unknown',
+    (error) => error instanceof VariableError && error.code === 'variable_unknown',
   )
 
   // 必填：把 prompt 的空字符串当"未提供"
@@ -140,7 +140,7 @@ test('变量：缺必填 / 未知参数 / 类型错误分别报错', () => {
   const required = surface.inputs.map(slot => (slot.name === 'prompt' ? { ...slot, required: true, default: undefined } : slot))
   assert.throws(
     () => applyVariables(workflow, required, {}),
-    (error) => error instanceof VariableError && error.code === 'variable-unbound',
+    (error) => error instanceof VariableError && error.code === 'variable_unbound',
   )
 })
 

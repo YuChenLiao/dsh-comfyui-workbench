@@ -25,7 +25,10 @@ const ALLOWED = {
   host: [],
   assets: ['scan', 'host'],
   workflow: ['host'],
-  http: ['assets', 'scan', 'host', 'workflow'],
+  comfy: ['host', 'workflow'],
+  run: ['comfy', 'workflow', 'scan', 'host'],
+  tools: ['run', 'comfy', 'workflow', 'host'],
+  http: ['assets', 'scan', 'host', 'workflow', 'run', 'comfy'],
   client: [], // 客户端只依赖自身与 react / react-dom（由宿主注入）
 }
 
