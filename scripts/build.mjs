@@ -25,24 +25,27 @@ const hostJob = {
   logLevel: 'info',
 }
 
-/** 客户端：React 由宿主提供（__ModuleLoader__ 的 require），必须 external。 */
-const clientJob = fs.existsSync('src/client/index.tsx')
-  ? {
-      entryPoints: ['src/client/index.tsx'],
-      outfile: 'lib/client.js',
-      bundle: true,
-      format: 'iife',
-      globalName: '__DSH_WORKBENCH_CLIENT__',
-      platform: 'browser',
-      target: 'chrome120',
-      jsx: 'automatic',
-      external: ['react', 'react-dom', 'react/jsx-runtime'],
-      sourcemap: false,
-      logLevel: 'info',
-    }
-  : null
+/** 客户端：React 由宿主注入（factory 的 require），必须 external。
+ *  产物用 cjs 打底再由 banner/footer 包成 __ModuleLoader__ 的 factory ——
+ *  这样文件里没有任何 import，既能在浏览器里跑，也能被 node 直接 import 做 SSR 自检。 */
+const clientJob = {
+  entryPoints: ['src/client/index.tsx'],
+  outfile: 'lib/client.js',
+  bundle: true,
+  format: 'cjs',
+  platform: 'browser',
+  target: 'chrome120',
+  jsx: 'automatic',
+  external: ['react', 'react-dom', 'react/jsx-runtime'],
+  banner: {
+    js: 'window.__ModuleLoader__.load({ id: "dsh-comfyui-workbench", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+  },
+  footer: { js: 'return module.exports; } });' },
+  sourcemap: false,
+  logLevel: 'info',
+}
 
-const jobs = clientJob === null ? [hostJob] : [hostJob, clientJob]
+const jobs = [hostJob, clientJob]
 
 fs.mkdirSync('lib', { recursive: true })
 

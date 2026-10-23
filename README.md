@@ -63,13 +63,29 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 ## 开发
 
+全部源码用 TypeScript 编写，按域分目录；产物由 esbuild 打成两个单文件。
+
 ```sh
-node tests/lint.mjs      # 静态检查：事件回调标识符
-node tests/smoke.mjs     # 宿主 API 契约（真实 HTTP，不启动 DSH）
-node tests/render.mjs    # 客户端组件 SSR 渲染
+npm install          # 只装构建期依赖（typescript / esbuild / @types/*）
+npm run typecheck    # tsc --noEmit
+npm run build        # src/ → lib/index.js（宿主）+ lib/client.js（浏览器）
+npm test             # 架构 + 静态 + 宿主接口 + 客户端渲染
+npm run check        # typecheck + test
 ```
 
-三者合起来是 `npm test`。全部零依赖，只用 `node:*` 与 profile 里的 React。
+分层与依赖方向（`npm run arch` 会强制检查，反向依赖直接失败）：
+
+```text
+src/scan/     只读磁盘与 PNG 内嵌元数据      依赖：node:*
+src/host/     宿主最小面、logger、配置        依赖：node:*
+src/assets/   授权、扫描缓存、缩略图、去重、ZIP  依赖：scan / host
+src/http/     解析请求 → 调 service → 响应     依赖：assets / scan / host
+src/index.ts  装配                           依赖：全部
+src/client/   浏览器侧组件与 hook            依赖：react（由宿主注入）
+```
+
+客户端产物是 `window.__ModuleLoader__.load({ factory })` 形态，文件里没有任何 ESM import ——
+所以它既能在浏览器里跑，也能被 node 直接 import 做 SSR 自检（`tests/render.mjs` 就是这么用的）。
 
 ## License
 

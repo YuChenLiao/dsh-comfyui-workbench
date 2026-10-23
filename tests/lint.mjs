@@ -11,7 +11,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const target = process.argv[2] ?? path.join(here, '..', 'client.js')
+const target = process.argv[2] ?? path.join(here, '..', 'lib', 'client.js')
 const source = fs.readFileSync(target, 'utf8')
 
 const PROPERTY = 'on[A-Z][A-Za-z0-9]*'

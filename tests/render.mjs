@@ -35,7 +35,7 @@ globalThis.window = {
   },
 }
 
-await import('../client.js?cache-bust=' + Date.now())
+await import('../lib/client.js?cache-bust=' + Date.now())
 assert.ok(captured, 'client.js 应当向 ModuleLoader 注册 factory')
 assert.equal(captured.id, 'dsh-comfyui-workbench')
 
