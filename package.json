@@ -16,14 +16,16 @@
     "cordis.patch.yml",
     "icon.svg",
     "README.md",
-    "docs"
+    "docs",
+    "samples"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node tests/arch.mjs && node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs && node --test tests/workflow.test.mjs tests/store.test.mjs tests/runner.test.mjs",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "import": "node scripts/import.mjs"
   },
   "engines": {
     "node": ">=20"

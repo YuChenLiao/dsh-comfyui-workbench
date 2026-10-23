@@ -19,7 +19,7 @@
 
 工作流能力（0.1 已落地）：
 
-- **导入任意 API 格式工作流**：`dsh workbench import <file>`（或直接放进 `~/.dsh-comfyui-workbench/workflows/`）。UI 格式会被拒绝并提示用 ComfyUI 的 Export (API)。
+- **导入任意 API 格式工作流**：`node scripts/import.mjs <workflow.json>`（`--list` 看已有）。文件也可以直接放进 `~/.dsh-comfyui-workbench/workflows/`。UI 格式会被拒绝并提示用 ComfyUI 的 Export (API)。仓库里的 `samples/text2img-basic.json` 是一份可直接导入的示例。
 - **IO 面推断**：把几十 KB 的节点图压成"输入 + 输出 + 模型"。连线不算旋钮、模型名/vae/batch_size 不进输入、正负提示词按采样器连线自动命名。
 - **只展示输入输出**：`basic` 段只放提示词与图像输入，`seed/steps/cfg` 等折进"更多参数"。
 - **四个模型工具**：`comfyui_workflow_list`（含底模名与作用备注）、`comfyui_workflow_inspect`（不传 nodeId 给 IO 面与节点清单，传了给单节点完整配置）、`comfyui_run`、`comfyui_workflow_edit`（默认只影响下一次运行，写模板需 `persist` + `expectHash`）。
@@ -77,6 +77,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 ```sh
 npm install          # 只装构建期依赖（typescript / esbuild / @types/*）
+npm run build        # 先构建：import.mjs 与测试都基于 lib/ 产物
 npm run typecheck    # tsc --noEmit
 npm run build        # src/ → lib/index.js（宿主）+ lib/client.js（浏览器）
 npm test             # 架构 + 静态 + 宿主接口 + 客户端渲染
