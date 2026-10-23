@@ -51,6 +51,8 @@ export interface ToolDeps {
   overrides: Map<string, Override[]>
   /** 资产索引（运行成功后登记）。 */
   index: AssetIndex
+  /** 输出目录校验（注入，避免 tools 直接依赖 assets）。 */
+  assertWritable: (dir: string) => void
   logger?: LoggerLike | undefined
 }
 

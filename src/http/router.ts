@@ -56,6 +56,8 @@ export function createHandler(
   client: ComfyClient,
   /** 服务托管（状态与停止）。 */
   supervisor: ComfySupervisor,
+  /** 输出目录校验（由 index 注入，依赖授权根）。 */
+  assertWritable: (dir: string) => void,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
 
@@ -295,7 +297,7 @@ export function createHandler(
     '/file': handleFile,
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
-    '/run': createRunHandler({ client, workflowDir, settings }),
+    '/run': createRunHandler({ client, workflowDir, settings, assertWritable }),
     '/service': handleServiceStatus.bind(null, supervisor),
     '/service/stop': handleServiceStop.bind(null, supervisor),
   }

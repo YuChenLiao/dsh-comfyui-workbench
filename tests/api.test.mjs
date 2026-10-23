@@ -165,6 +165,39 @@ test('GET /assets：索引为空时返回空列表而不是报错', async () => 
   }
 })
 
+test('POST /run 拒绝授权范围外的输出目录', async () => {
+  const dirs = tmpDirs()
+  importWorkflowFile(dirs.workflows, SAMPLE)
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+
+  try {
+    const res = await fetch(`${app.origin}/comfyui-workbench/api/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workflowId: 'text2img-basic',
+        vars: { prompt: 'x' },
+        outputPath: path.join(os.tmpdir(), 'cwf-outside-should-not-exist'),
+      }),
+    })
+    const body = await res.json()
+    assert.equal(res.status, 400)
+    assert.equal(body.error, 'forbidden-output')
+    assert.match(body.message, /assetRoots/)
+
+    // 授权内的目录不受影响（走到真正执行阶段才会因没有 ComfyUI 失败）
+    const ok = await fetch(`${app.origin}/comfyui-workbench/api/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflowId: 'text2img-basic', vars: { prompt: 'x' }, outputPath: dirs.out, timeoutMs: 1000 }),
+    })
+    const okBody = await ok.json()
+    assert.notEqual(okBody.error, 'forbidden-output')
+  } finally {
+    await app.close()
+  }
+})
+
 test('工具注册：4 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })

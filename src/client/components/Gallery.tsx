@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { API } from '../api.js'
 import { runAction } from '../actions.js'
@@ -42,8 +42,6 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
 
   const gallery = useGalleryData({ visible, root, query, includeBare, mergeDuplicates })
   const { items, itemsRef, total, truncated, loading, loadingMore, hasMore, notice, setNotice } = gallery
-  const setNoticeRef = useRef(setNotice)
-  setNoticeRef.current = setNotice
 
   // 灯箱按路径寻址：删除或刷新后列表变了，也能重新定位到正确的那张。
   const activeIndex = activePath === null ? -1 : items.findIndex(entry => entry.path === activePath)

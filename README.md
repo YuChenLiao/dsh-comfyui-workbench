@@ -72,6 +72,11 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 资产库的扫描根默认已包含：当前工作目录、全部 workspace、`~/.dsh-comfyui-image/config.json` 里的 `outputDir`、进程 cwd。
 
+## 设计与现状
+
+- 设计方案：[docs/design.md](docs/design.md)（含 §12 实现状态对照，未实现的项在里面直说）
+- 变更记录：[CHANGELOG.md](CHANGELOG.md)
+
 ## 开发
 
 全部源码用 TypeScript 编写，按域分目录；产物由 esbuild 打成两个单文件。

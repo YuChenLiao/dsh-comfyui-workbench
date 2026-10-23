@@ -26,6 +26,8 @@ export function createRunHandler(deps: {
   client: ComfyClient
   workflowDir: string
   settings: Settings
+  /** 输出目录校验：必须在授权根内，否则等于给任意路径写入开后门。 */
+  assertWritable: (dir: string) => void
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: RunBody
@@ -57,6 +59,17 @@ export function createRunHandler(deps: {
     const timeoutMs = typeof body.timeoutMs === 'number' && Number.isFinite(body.timeoutMs)
       ? Math.min(3_600_000, Math.max(1_000, Math.round(body.timeoutMs)))
       : deps.settings.timeoutMs
+
+    try {
+      deps.assertWritable(outputPath)
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: 'forbidden-output',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
 
     try {
       const outcome = await runWorkflow({

@@ -54,6 +54,8 @@ export class AssetIndex {
   private rows = new Map<string, AssetRecord>()
   private loadedAt = 0
   private dirty = false
+  /** 自上次压实以来的追加次数。 */
+  private appends = 0
 
   constructor(file = indexPath()) {
     this.file = file

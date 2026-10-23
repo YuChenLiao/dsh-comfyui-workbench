@@ -15,17 +15,28 @@ export interface RootEntry {
 /** 根目录集合缓存：一屏缩略图会打几十次请求，每次重算 realpath 没必要。 */
 let rootsCache: { at: number; key: string; value: RootEntry[] } = { at: 0, key: '', value: [] }
 
+/** rootsOf 需要的配置面。 */
+export interface RootsSettings {
+  roots: string[]
+  /** 本插件的产物目录：用户配了就必须能扫到，否则"生成了却看不见"。 */
+  outputDir?: string | null | undefined
+  /** 额外纳入索引的目录。 */
+  assetRoots?: string[] | undefined
+}
+
 /**
  * 本插件允许读取的根目录集合。
  *
- * 来源：显式配置 → 默认工作目录 → 全部 workspace → comfyui 的 outputDir → 进程 cwd。
+ * 来源：显式配置 → 默认工作目录 → 全部 workspace → comfyui 的 outputDir → 进程 cwd
+ * → 本插件 outputDir → assetRoots。
  * 之所以不止一个：图片落在「生成时的项目根目录」，用户手上通常有好几个项目。
  *
  * @param ctx - 宿主上下文。
- * @param settings - 归一化配置（只用 roots）。
+ * @param settings - 归一化配置。
  */
-export function rootsOf(ctx: HostContext, settings: { roots: string[] }): RootEntry[] {
-  const cacheKey = settings.roots.join('|')
+export function rootsOf(ctx: HostContext, settings: RootsSettings): RootEntry[] {
+  const assetRoots = settings.assetRoots ?? []
+  const cacheKey = `${settings.roots.join('|')}|${settings.outputDir ?? ''}|${assetRoots.join('|')}`
   const now = Date.now()
   if (rootsCache.key === cacheKey && now - rootsCache.at < 2000) return rootsCache.value
 
@@ -56,6 +67,12 @@ export function rootsOf(ctx: HostContext, settings: { roots: string[] }): RootEn
   const outputDir = comfyImageOutputDir()
   if (outputDir !== undefined) candidates.push({ path: outputDir, kind: 'output' })
   candidates.push({ path: process.cwd(), kind: 'cwd' })
+
+  // 本插件自己的产物目录与额外根：不写进来的话，用户配了 outputDir 却看不到产物。
+  if (typeof settings.outputDir === 'string' && settings.outputDir !== '') {
+    candidates.push({ path: settings.outputDir, kind: 'output' })
+  }
+  for (const extra of assetRoots) candidates.push({ path: extra, kind: 'custom' })
 
   const seen = new Set<string>()
   const roots: RootEntry[] = []

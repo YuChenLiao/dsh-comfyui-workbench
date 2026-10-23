@@ -135,6 +135,12 @@ export function runTool(deps: ToolDeps): ToolSpec {
       }
 
       try {
+        deps.assertWritable(outputDir)
+      } catch (error) {
+        return { ok: false, code: 'forbidden_output', message: error instanceof Error ? error.message : String(error) }
+      }
+
+      try {
         const outcome = await runWorkflow({
           client: deps.client,
           workflow: loaded.workflow,

@@ -14,6 +14,8 @@
 import fs from 'node:fs'
 
 import { ComfyClient, ComfySupervisor } from './comfy/index.js'
+import { isAuthorized } from './assets/authorize.js'
+import { rootsOf } from './assets/roots.js'
 import { resolveSettings } from './host/config.js'
 import { resolveLogger } from './host/logger.js'
 import { pluginDataDir, workflowsDir } from './host/paths.js'
@@ -96,12 +98,26 @@ export function apply(ctx: HostContext, config: unknown): void {
 
   const assetIndex = new AssetIndex()
 
+  /**
+   * 输出目录必须落在授权根内。
+   *
+   * 默认输出目录（配置的 outputDir 或 workspace 根）本来就在 roots 里；
+   * 这条只挡"显式指定了一个根外路径"的情况 —— 那种写入等于给任意目录开后门。
+   */
+  const assertWritable = (dir: string): void => {
+    const roots = rootsOf(ctx, settings)
+    if (roots.length === 0) return // 还没有任何根（未进入 workspace）：交给 runner 的目录创建报错
+    if (!isAuthorized(dir, roots)) {
+      throw new Error(`输出目录不在授权范围内：${dir}。请在配置的 assetRoots 里加上它，或改用 workspace 内的目录。`)
+    }
+  }
+
   // ── HTTP 路由 ──
   const server = ctx.get?.('webServer') as WebServerLike | undefined
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {
@@ -125,6 +141,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     pollIntervalMs: settings.pollIntervalMs,
     overrides: new Map(),
     index: assetIndex,
+    assertWritable,
     logger,
   })) {
     track(tools.register(spec))
