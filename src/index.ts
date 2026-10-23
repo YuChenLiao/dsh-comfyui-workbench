@@ -12,13 +12,14 @@
  *   http/      解析请求 → 调 service → 写响应
  */
 import fs from 'node:fs'
+import path from 'node:path'
 
 import { ComfyClient, ComfySupervisor } from './comfy/index.js'
 import { isAuthorized } from './assets/authorize.js'
 import { rootsOf } from './assets/roots.js'
 import { resolveSettings } from './host/config.js'
 import { resolveLogger } from './host/logger.js'
-import { pluginDataDir, workflowsDir } from './host/paths.js'
+import { ensureDir, pluginDataDir, workflowsDir } from './host/paths.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
 import { AssetIndex } from './store/index.js'
@@ -69,6 +70,10 @@ export function apply(ctx: HostContext, config: unknown): void {
   /** 工作流目录：配置可覆盖，默认 $HOME/.dsh-comfyui-workbench/workflows。 */
   const flowDir = settings.workflowsDir ?? workflowsDir()
 
+  // 上传目录先建出来：rootsOf 只收已存在的目录，晚建会让刚传的图预览 403。
+  const uploadsDir = settings.uploadsDir ?? path.join(pluginDataDir(), 'uploads')
+  ensureDir(uploadsDir)
+
   // 服务托管：外部在跑就只用不托管；没跑且装了才拉起；只停自己拉起的那个。
   const supervisor = new ComfySupervisor({
     baseUrl: settings.baseUrl,
@@ -117,7 +122,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {

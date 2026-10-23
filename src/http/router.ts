@@ -23,6 +23,7 @@ import { mimeOf, readFullSidecar } from '../scan/index.js'
 import { pathsFromBody, readJsonBody, sendJson } from './respond.js'
 import { createRunHandler } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
+import { createUploadHandler } from './upload-api.js'
 import { handleWorkflowDetail, handleWorkflowList, workflowIdFromPath } from './workflows-api.js'
 
 /** API 前缀。统一挂在独立前缀下，避免和 SPA fallback 抢路径。 */
@@ -32,7 +33,7 @@ export const PREFIX = '/comfyui-workbench/api'
 type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => void | Promise<void>
 
 /** 需要写操作的子路径（其余一律只读）。 */
-const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop'])
+const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop', '/upload'])
 
 /** 这些只接受 POST（DELETE 语义上没有意义，不该被放行）。 */
 const POST_ONLY = new Set(['/run'])
@@ -58,6 +59,8 @@ export function createHandler(
   supervisor: ComfySupervisor,
   /** 输出目录校验（由 index 注入，依赖授权根）。 */
   assertWritable: (dir: string) => void,
+  /** 上传目录（参考图落这里）。 */
+  uploadsDir: string,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
 
@@ -300,6 +303,7 @@ export function createHandler(
     '/run': createRunHandler({ client, workflowDir, settings, assertWritable }),
     '/service': handleServiceStatus.bind(null, supervisor),
     '/service/stop': handleServiceStop.bind(null, supervisor),
+    '/upload': createUploadHandler(uploadsDir),
   }
 
   return async (req, res) => {

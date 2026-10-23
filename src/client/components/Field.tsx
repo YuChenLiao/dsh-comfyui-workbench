@@ -1,5 +1,6 @@
 import type { Translate } from '../i18n.js'
 import type { SurfaceSlot } from '../types.js'
+import { ImagePicker } from './ImagePicker.js'
 
 /** 一个输入控件。按 type 决定形态，不猜。 */
 export function Field(props: {
@@ -58,16 +59,8 @@ export function Field(props: {
       </select>
     )
   } else if (slot.type === 'image' || slot.type === 'mask') {
-    control = (
-      <input
-        id={id}
-        type="text"
-        className="cwf-input"
-        placeholder={t('fieldImagePlaceholder')}
-        value={value === undefined ? '' : String(value)}
-        onChange={event => onChange(event.target.value)}
-      />
-    )
+    // 图片输入不用文本框：手抄绝对路径是 2010 年的交互。
+    return <ImagePicker slot={slot} value={value} t={t} onChange={onChange} />
   } else {
     // string：单行框够用就行；提示词给多行。
     const multiline = /prompt|negative|text/i.test(slot.name)

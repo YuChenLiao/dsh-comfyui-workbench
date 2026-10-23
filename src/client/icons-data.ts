@@ -23,6 +23,7 @@ export const ICON_BODY = {
       chevronRight: '<path d="M9.4 5.6L16 12l-6.6 6.4"/>',
       minus: '<path d="M5.5 12h13"/>',
       plus: '<path d="M12 5.5v13"/><path d="M5.5 12h13"/>',
+      image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.6-4.4a2 2 0 0 1 2.7 0l2.1 2"/><path d="M13.5 15.5l1.9-1.8a2 2 0 0 1 2.7 0l1.4 1.3"/>',
       trash: '<path d="M4.5 6.8h15"/><path d="M9.4 6.8V4.9a1.4 1.4 0 0 1 1.4-1.4h2.4a1.4 1.4 0 0 1 1.4 1.4v1.9"/>'
         + '<path d="M6.6 6.8l.8 12a1.8 1.8 0 0 0 1.8 1.7h5.6a1.8 1.8 0 0 0 1.8-1.7l.8-12"/>'
         + '<path d="M10.3 10.4v6.2"/><path d="M13.7 10.4v6.2"/>',

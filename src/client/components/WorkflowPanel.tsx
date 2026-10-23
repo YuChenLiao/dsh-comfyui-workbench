@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { fetchWorkflowDetail, fetchWorkflowList, fileUrl, runDirect } from '../api.js'
 import { sendTextToComposer } from '../conversation.js'
+import { Icon } from '../icons.js'
 import type { Translate } from '../i18n.js'
 import type { DirectRunResult, Notice, SurfaceSlot, WorkflowListItem, WorkflowSurface } from '../types.js'
 import { Field } from './Field.js'
@@ -37,7 +38,7 @@ function instructionOf(workflowId: string, vars: Record<string, unknown>): strin
 }
 
 /**
- * 工作流面板：用户只看输入与输出。
+ * 工作流面板：左边填参数，右边常驻预览。
  *
  * 第一屏只有提示词与图像输入；`seed`/`steps`/`cfg` 都收在"更多参数"里。
  * 节点配置不在这里出现 —— 那是 `comfyui_workflow_inspect` 的事。
@@ -51,10 +52,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [result, setResult] = useState<DirectRunResult | null>(null)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [brokenCount, setBrokenCount] = useState(0)
 
-  // 列表：只在可见时拉，避免后台标签页反复请求。
   useEffect(() => {
     if (!visible) return undefined
     let alive = true
@@ -69,7 +68,6 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     return () => { alive = false }
   }, [visible])
 
-  // 选中即拉 IO 面，并把默认值灌进表单。
   useEffect(() => {
     if (selected === '') {
       setSurface(null)
@@ -90,7 +88,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
 
   useEffect(() => {
     if (notice === null) return undefined
-    const timer = setTimeout(() => setNotice(null), 3200)
+    const timer = setTimeout(() => setNotice(null), 3600)
     return () => clearTimeout(timer)
   }, [notice])
 
@@ -101,28 +99,32 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     [surface, vars],
   )
 
+  const setVar = (name: string, value: unknown): void => setVars(previous => ({ ...previous, [name]: value }))
+
   const submit = async (): Promise<void> => {
     if (surface === null || busy) return
     if (missing.length > 0) {
-      setNotice({ kind: 'err', text: `${t('needRequired')}${missing.map(slot => slot.name).join('、')}` })
+      setNotice({
+        kind: 'err',
+        text: `${t('needRequired')}${missing.map(slot => (slot.label !== '' ? slot.label : slot.name)).join('、')}`,
+      })
       return
     }
-
     setBusy(true)
     try {
       if (mode === 'conversation') {
         const ok = await sendTextToComposer(instructionOf(surface.workflowId, vars), { goToConversation })
-        setNotice(ok
-          ? { kind: 'ok', text: t('instructionFilled') }
-          : { kind: 'err', text: t('instructionFailed') })
+        setNotice(ok ? { kind: 'ok', text: t('instructionFilled') } : { kind: 'err', text: t('instructionFailed') })
       } else {
         const outcome = await runDirect({ workflowId: surface.workflowId, vars })
+        setResult(outcome)
         if (outcome.ok !== true) {
-          setNotice({ kind: 'err', text: `${outcome.message ?? '运行失败'}${outcome.hint === undefined ? '' : ` — ${outcome.hint}`}` })
-          setResult(outcome)
+          setNotice({ kind: 'err', text: `${outcome.message ?? t('runFailed')}${outcome.hint === undefined ? '' : ` — ${outcome.hint}`}` })
         } else {
-          setResult(outcome)
-          setNotice({ kind: 'ok', text: `完成：${outcome.artifacts?.length ?? 0} 个产物，用时 ${outcome.durationMs ?? 0} ms。` })
+          setNotice({
+            kind: 'ok',
+            text: t('runDone').replace('{n}', String(outcome.artifacts?.length ?? 0)).replace('{ms}', String(outcome.durationMs ?? 0)),
+          })
         }
       }
     } catch (error) {
@@ -136,102 +138,119 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     return (
       <div className="cwf-root">
         <div className="cwf-empty">
-          <p>{t('emptyWorkflows')}</p>
-          <p className="cwf-hint">{t('emptyWorkflowsHint')}</p>
+          <Icon name="album" size={26} />
+          <div className="cwf-empty-title">{t('emptyWorkflows')}</div>
+          <div>{t('emptyWorkflowsHint')}</div>
         </div>
       </div>
     )
   }
 
   const current = list.find(item => item.workflowId === selected)
+  const artifacts = result?.ok === true ? (result.artifacts ?? []) : []
+  const previewArtifact = artifacts[0]
+  // 没有产物时回退到表单里已选的输入图 —— 用户选完图立刻就能确认选对了。
+  const inputImageSlot = surface?.inputs.find(
+    slot => slot.type === 'image' && typeof vars[slot.name] === 'string' && vars[slot.name] !== '',
+  )
+  const previewPath = previewArtifact?.path ?? (inputImageSlot !== undefined ? String(vars[inputImageSlot.name]) : '')
+  const previewIsInput = previewArtifact === undefined && previewPath !== ''
 
   return (
     <div className="cwf-root">
-      <header className="cwf-bar">
-        <select
-          className="cwf-select"
-          value={selected}
-          onChange={event => setSelected(event.target.value)}
-          title={current?.description ?? ''}
-        >
-          <option value="">{t('selectWorkflow')}</option>
-          {list.map(item => (
-            <option key={item.workflowId} value={item.workflowId} title={item.description}>
-              {item.title}
-              {item.model === '' ? '' : ` · ${item.model}`}
-            </option>
-          ))}
-        </select>
-        <div className="cwf-modes" role="group" aria-label={t('run')}>
-          <button
-            type="button"
-            className={`cwf-chip${mode === 'conversation' ? ' on' : ''}`}
-            title={t('modeConversationHint')}
-            onClick={() => setMode('conversation')}
-          >{t('modeConversation')}</button>
-          <button
-            type="button"
-            className={`cwf-chip${mode === 'direct' ? ' on' : ''}`}
-            title={t('modeDirectHint')}
-            onClick={() => setMode('direct')}
-          >{t('modeDirect')}</button>
+      <div className="cwf-editor">
+        <div className="cwf-bar">
+          <select
+            className="cwf-select"
+            value={selected}
+            onChange={event => setSelected(event.target.value)}
+            title={current?.description ?? ''}
+            aria-label={t('selectWorkflow')}
+          >
+            <option value="">{t('selectWorkflow')}</option>
+            {list.map(item => (
+              <option key={item.workflowId} value={item.workflowId} title={item.description}>
+                {item.title}{item.model === '' ? '' : ` · ${item.model}`}
+              </option>
+            ))}
+          </select>
+          <div className="cwf-modes" role="group" aria-label={t('runModeLabel')}>
+            <button type="button" className={`cwf-mode${mode === 'conversation' ? ' on' : ''}`} title={t('modeConversationHint')} onClick={() => setMode('conversation')}>
+              {t('modeConversation')}
+            </button>
+            <button type="button" className={`cwf-mode${mode === 'direct' ? ' on' : ''}`} title={t('modeDirectHint')} onClick={() => setMode('direct')}>
+              {t('modeDirect')}
+            </button>
+          </div>
+          <button type="button" className="cwf-run" disabled={surface === null || busy} onClick={() => { void submit() }}>
+            {busy ? t('running') : t('run')}
+          </button>
         </div>
-        <button type="button" className="cwf-run" disabled={surface === null || busy} onClick={() => { void submit() }}>
-          {busy ? t('running') : t('run')}
-        </button>
-      </header>
 
-      {current !== undefined && current.description !== '' ? <p className="cwf-desc">{current.description}</p> : null}
-      {current !== undefined && current.description === '' ? (
-        <p className="cwf-desc cwf-desc-missing">{t('undescribedHint')}</p>
-      ) : null}
+        {current !== undefined && current.description !== '' ? <p className="cwf-desc">{current.description}</p> : null}
+        {current !== undefined && current.description === '' ? <p className="cwf-desc cwf-desc-weak">{t('undescribedHint')}</p> : null}
 
-      {surface !== null ? (
-        <div className="cwf-form">
-          {basic.map(slot => (
-            <Field
-              key={slot.name}
-              slot={slot}
-              value={vars[slot.name]}
-              t={t}
-              onChange={value => setVars(previous => ({ ...previous, [slot.name]: value }))}
-            />
-          ))}
-          {advanced.length > 0 ? (
-            <details className="cwf-advanced" open={showAdvanced} onToggle={event => setShowAdvanced((event.target as HTMLDetailsElement).open)}>
-              <summary>{t('moreParams')}（{advanced.length}）</summary>
-              <div className="cwf-grid2">
-                {advanced.map(slot => (
-                  <Field
-                    key={slot.name}
-                    slot={slot}
-                    value={vars[slot.name]}
-                    t={t}
-                    onChange={value => setVars(previous => ({ ...previous, [slot.name]: value }))}
-                  />
-                ))}
+        {surface !== null ? (
+          <div className="cwf-form">
+            {basic.map(slot => (
+              <Field key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
+            ))}
+            {advanced.length > 0 ? (
+              <details className="cwf-advanced">
+                <summary>{t('moreParams')} · {advanced.length}</summary>
+                <div className="cwf-advanced-body">
+                  <div className="cwf-grid2">
+                    {advanced.map(slot => (
+                      <Field key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
+                    ))}
+                  </div>
+                </div>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+
+        {brokenCount > 0 ? <p className="cwf-desc cwf-desc-weak">{t('brokenHint').replace('{n}', String(brokenCount))}</p> : null}
+        {notice !== null ? <div className={`cwf-notice${notice.kind === 'err' ? ' err' : ''}`}>{notice.text}</div> : null}
+      </div>
+
+      <div className="cwf-side">
+        <div className="cwf-preview">
+          <div className="cwf-preview-head">
+            <span>{previewIsInput ? t('previewInput') : t('previewOutput')}</span>
+            {previewArtifact?.width !== undefined && previewArtifact.height !== undefined
+              ? <span>{previewArtifact.width}×{previewArtifact.height}</span>
+              : null}
+          </div>
+          <div className="cwf-stage">
+            {previewPath !== '' ? (
+              <>
+                <img src={fileUrl(previewPath, !previewIsInput)} alt={previewPath} />
+                <div className="cwf-stage-meta">
+                  {previewArtifact !== undefined
+                    ? <span className="cwf-tag">{previewArtifact.digest}</span>
+                    : <span className="cwf-tag">{t('previewInputTag')}</span>}
+                </div>
+              </>
+            ) : (
+              <div className="cwf-stage-empty">
+                <Icon name="image" size={26} />
+                <div>{surface === null ? t('previewPickWorkflow') : t('previewEmpty')}</div>
               </div>
-            </details>
+            )}
+          </div>
+          {artifacts.length > 1 ? (
+            <div className="cwf-results">
+              {artifacts.map(artifact => (
+                <figure key={artifact.path} className="cwf-result">
+                  <img src={fileUrl(artifact.path, true)} alt={artifact.path} loading="lazy" />
+                  <figcaption>{artifact.digest}</figcaption>
+                </figure>
+              ))}
+            </div>
           ) : null}
         </div>
-      ) : null}
-
-      {result !== null && result.ok === true && (result.artifacts?.length ?? 0) > 0 ? (
-        <div className="cwf-output">
-          <div className="cwf-output-title">{t('outputTitle')}</div>
-          <div className="cwf-output-grid">
-            {(result.artifacts ?? []).map(artifact => (
-              <figure key={artifact.path} className="cwf-out-card">
-                <img src={fileUrl(artifact.path, true)} alt={artifact.path} loading="lazy" />
-                <figcaption>{artifact.digest}</figcaption>
-              </figure>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {brokenCount > 0 ? <p className="cwf-desc cwf-desc-missing">{t('brokenHint')}（{brokenCount}）</p> : null}
-      {notice !== null ? <div className={`cwf-notice${notice.kind === 'err' ? ' err' : ''}`}>{notice.text}</div> : null}
+      </div>
     </div>
   )
 }

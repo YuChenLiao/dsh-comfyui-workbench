@@ -63,10 +63,18 @@ function tmpDirs() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-api-'))
   const workflows = path.join(base, 'workflows')
   const out = path.join(base, 'out')
+  const uploads = path.join(base, 'uploads')
   fs.mkdirSync(workflows, { recursive: true })
   fs.mkdirSync(out, { recursive: true })
-  return { base, workflows, out }
+  fs.mkdirSync(uploads, { recursive: true })
+  return { base, workflows, out, uploads }
 }
+
+/** 1×1 透明 PNG。 */
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 const SAMPLE = path.join(process.cwd(), 'samples', 'text2img-basic.json')
 
@@ -185,14 +193,65 @@ test('POST /run 拒绝授权范围外的输出目录', async () => {
     assert.equal(body.error, 'forbidden-output')
     assert.match(body.message, /assetRoots/)
 
-    // 授权内的目录不受影响（走到真正执行阶段才会因没有 ComfyUI 失败）
+    // 授权内的目录不该被这一步拦下。用一个不存在的参数让它**在校验阶段**就失败，
+    // 免得测试真的去连 ComfyUI 跑一次生成（那会让单测依赖外部服务状态与 GPU）。
     const ok = await fetch(`${app.origin}/comfyui-workbench/api/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workflowId: 'text2img-basic', vars: { prompt: 'x' }, outputPath: dirs.out, timeoutMs: 1000 }),
+      body: JSON.stringify({ workflowId: 'text2img-basic', vars: { notAParameter: 1 }, outputPath: dirs.out }),
     })
     const okBody = await ok.json()
-    assert.notEqual(okBody.error, 'forbidden-output')
+    assert.equal(okBody.error === 'forbidden-output', false, '授权内的目录不该被判为越权')
+    assert.equal(okBody.code, 'variable_unknown', '应当走到参数校验这一步')
+  } finally {
+    await app.close()
+  }
+})
+
+test('POST /upload：二进制直传落到上传目录，返回尺寸', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads })
+  try {
+    const res = await fetch(`${app.origin}/comfyui-workbench/api/upload?filename=${encodeURIComponent('参考图.png')}`, {
+      method: 'POST',
+      headers: { 'content-type': 'image/png' },
+      body: TINY_PNG,
+    })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.ok, true)
+    assert.ok(typeof body.path === 'string' && fs.existsSync(body.path), '文件应当真的落盘')
+    assert.equal(body.bytes, TINY_PNG.length)
+    assert.equal(body.width, 1)
+    assert.equal(body.height, 1)
+    assert.ok(body.path.includes('参考图'), '文件名里的中文要保留')
+    // 落了盘就能预览：同一条 /file 通道读得到
+    const file = await fetch(`${app.origin}/comfyui-workbench/api/file?path=${encodeURIComponent(body.path)}`)
+    assert.equal(file.status, 200)
+  } finally {
+    await app.close()
+  }
+})
+
+test('POST /upload：不是图片就拒绝，扩展名不认也拒绝', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads })
+  try {
+    const fake = await fetch(`${app.origin}/comfyui-workbench/api/upload?filename=a.png`, {
+      method: 'POST',
+      headers: { 'content-type': 'image/png' },
+      body: Buffer.from('this is not an image'),
+    })
+    assert.equal(fake.status, 400)
+    assert.equal((await fake.json()).error, 'not-an-image')
+
+    const badExt = await fetch(`${app.origin}/comfyui-workbench/api/upload?filename=a.exe`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: TINY_PNG,
+    })
+    assert.equal(badExt.status, 400)
+    assert.equal((await badExt.json()).error, 'unsupported-type')
   } finally {
     await app.close()
   }

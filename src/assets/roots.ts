@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { HostContext } from '../host/types.js'
+import { pluginDataDir } from '../host/paths.js'
 import { canonical, comfyImageOutputDir } from './paths.js'
 
 /** 一个授权根目录。 */
@@ -22,6 +23,8 @@ export interface RootsSettings {
   outputDir?: string | null | undefined
   /** 额外纳入索引的目录。 */
   assetRoots?: string[] | undefined
+  /** 上传目录；缺省用数据目录下的 uploads。 */
+  uploadsDir?: string | null | undefined
 }
 
 /**
@@ -67,6 +70,12 @@ export function rootsOf(ctx: HostContext, settings: RootsSettings): RootEntry[] 
   const outputDir = comfyImageOutputDir()
   if (outputDir !== undefined) candidates.push({ path: outputDir, kind: 'output' })
   candidates.push({ path: process.cwd(), kind: 'cwd' })
+
+  // 上传的参考图：它们也是资产，必须能预览、能检索。
+  candidates.push({
+    path: settings.uploadsDir ?? path.join(pluginDataDir(), 'uploads'),
+    kind: 'upload',
+  })
 
   // 本插件自己的产物目录与额外根：不写进来的话，用户配了 outputDir 却看不到产物。
   if (typeof settings.outputDir === 'string' && settings.outputDir !== '') {
