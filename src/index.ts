@@ -64,6 +64,16 @@ export function apply(ctx: HostContext, config: unknown): void {
   const warn = logger?.warn ?? console.warn
   const info = logger?.info ?? console.info
 
+  /** 工作流目录：配置可覆盖，默认 $HOME/.dsh-comfyui-workbench/workflows。 */
+  const flowDir = settings.workflowsDir ?? workflowsDir()
+
+  // 构造客户端不产生连接，HTTP 路由与工具共用同一个实例（object_info 缓存也共用）。
+  const client = new ComfyClient({
+    baseUrl: settings.baseUrl,
+    headers: settings.headers,
+    requestTimeoutMs: settings.timeoutMs,
+  })
+
   const track = (dispose: (() => void) | void): void => {
     if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
       // 交给宿主在卸载时调用
@@ -78,7 +88,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {
@@ -94,15 +104,9 @@ export function apply(ctx: HostContext, config: unknown): void {
     return
   }
 
-  const client = new ComfyClient({
-    baseUrl: settings.baseUrl,
-    headers: settings.headers,
-    requestTimeoutMs: settings.timeoutMs,
-  })
-
   for (const spec of createTools({
     client,
-    workflowsDir: workflowsDir(),
+    workflowsDir: flowDir,
     outputDir: settings.outputDir ?? process.cwd(),
     timeoutMs: settings.timeoutMs,
     pollIntervalMs: settings.pollIntervalMs,

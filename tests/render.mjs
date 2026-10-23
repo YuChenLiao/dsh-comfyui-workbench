@@ -212,4 +212,29 @@ const partial = planPage([...page(0, 50), ...page(50, 10)], page(50, 60), 60, 20
 assert.equal(partial.items.length, 110)
 assert.equal(partial.more, true)
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine）')
+// ── 工作台外壳：两个页签 + 工作流面板空态 ──
+const { Workbench, WorkflowPanel } = mod.__test
+assert.ok(Workbench !== undefined, '应当导出 Workbench')
+assert.ok(WorkflowPanel !== undefined, '应当导出 WorkflowPanel')
+
+const shell = renderToStaticMarkup(React.createElement(Workbench, {
+  t,
+  visible: true,
+  goToConversation() {},
+  openSidebar: () => true,
+}))
+assert.match(shell, /role="tablist"/, '应当有页签条')
+assert.match(shell, />资产库</, '应当有资产库页签')
+assert.match(shell, />工作流</, '应当有工作流页签')
+assert.match(shell, /class="cfa-root"/, '默认停在资产库')
+
+// 空列表：给出导入指引而不是一片空白
+const panel = renderToStaticMarkup(React.createElement(WorkflowPanel, {
+  t,
+  visible: true,
+  goToConversation() {},
+}))
+assert.match(panel, /还没有工作流/, '空态要有明确文案')
+assert.match(panel, /scripts\/import\.mjs/, '空态要给出可执行的下一步')
+
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowPanel）')

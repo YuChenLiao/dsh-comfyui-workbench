@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Settings } from '../host/config.js'
 import type { AssetIndex, AssetStatus } from '../store/index.js'
 import { rebuildFromSidecars } from '../store/index.js'
+import type { ComfyClient } from '../comfy/index.js'
 import type { HostContext } from '../host/types.js'
 import { isAuthorized } from '../assets/authorize.js'
 import { rootsOf } from '../assets/roots.js'
@@ -20,6 +21,8 @@ import { ensureThumb } from '../assets/thumbs.js'
 import { buildZip } from '../assets/zip.js'
 import { mimeOf, readFullSidecar } from '../scan/index.js'
 import { pathsFromBody, readJsonBody, sendJson } from './respond.js'
+import { createRunHandler } from './run-api.js'
+import { handleWorkflowDetail, handleWorkflowList, workflowIdFromPath } from './workflows-api.js'
 
 /** API 前缀。统一挂在独立前缀下，避免和 SPA fallback 抢路径。 */
 export const PREFIX = '/comfyui-workbench/api'
@@ -28,7 +31,7 @@ export const PREFIX = '/comfyui-workbench/api'
 type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => void | Promise<void>
 
 /** 需要写操作的子路径（其余一律只读）。 */
-const WRITABLE = new Set(['/delete', '/delete-many', '/workflows', '/assets/rebuild'])
+const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run'])
 
 /**
  * 构造请求处理器。
@@ -43,6 +46,10 @@ export function createHandler(
   ctx: HostContext,
   settings: Settings,
   index: AssetIndex,
+  /** 工作流目录（可注入，测试用临时目录）。 */
+  workflowDir: string,
+  /** ComfyUI 客户端（direct 运行与预检用）。 */
+  client: ComfyClient,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
 
@@ -282,13 +289,32 @@ export function createHandler(
     '/file': handleFile,
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
-    '/workflows': handleWorkflows,
+    '/run': createRunHandler({ client, workflowDir, settings }),
   }
 
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       const sub = url.pathname.slice(PREFIX.length) || '/'
+
+      // ── 工作流：GET 列表 / POST 批量导出 / GET {id} 单份 ──
+      // 放通用分派之前：这里的方法语义与"writable 集合"不一致（同一路径两种方法）。
+      if (sub === '/workflows') {
+        if (req.method === 'GET' || req.method === 'HEAD') return handleWorkflowList(workflowDir, url, res)
+        if (req.method === 'POST') return handleWorkflows(url, res, req)
+        sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
+        return
+      }
+      const detailId = workflowIdFromPath(sub)
+      if (detailId !== undefined) {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这个接口是只读的。' })
+          return
+        }
+        handleWorkflowDetail(workflowDir, detailId, res)
+        return
+      }
+
       const writable = WRITABLE.has(sub)
       const methodOk = writable
         ? req.method === 'POST' || req.method === 'DELETE'

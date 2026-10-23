@@ -50,6 +50,48 @@ export function pasteFile(editor: HTMLElement, file: File): void {
 }
 
 /**
+ * 把一段文本粘进输入框。
+ *
+ * 与 `pasteFile` 同一条路：宿主的 paste 处理器接管后，文本成为草稿内容。
+ * 不用 `editor.textContent = …`：那样绕开宿主的编辑器状态，草稿不会被识别。
+ *
+ * @param editor - 输入框元素。
+ * @param text - 要插入的文本。
+ */
+export function pasteText(editor: HTMLElement, text: string): void {
+  const transfer = new DataTransfer()
+  transfer.setData('text/plain', text)
+  let event: Event | null = null
+  try {
+    event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer })
+  } catch {
+    event = null
+  }
+  if (event === null || (event as ClipboardEvent).clipboardData !== transfer) {
+    event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: transfer })
+  }
+  editor.dispatchEvent(event)
+}
+
+/** 把一段文本送进当前会话的输入框；找不到输入框时返回 false。 */
+export async function sendTextToComposer(text: string, actions: { goToConversation: () => void }): Promise<boolean> {
+  let editor = findComposerEditor()
+  if (editor === null) {
+    actions.goToConversation()
+    editor = await waitForEditor(1400)
+  }
+  if (editor === null) return false
+  try {
+    editor.focus()
+  } catch {
+    // 焦点拿不到不影响粘贴
+  }
+  pasteText(editor, text)
+  return true
+}
+
+/**
  * 把一张资产图加入当前对话的输入框草稿。
  *
  * 输入框找不到时先把图片复制到剪贴板，再报错 —— 用户至少还能手动粘一次。

@@ -1,4 +1,6 @@
 /** 宿主 API 前缀。与 src/http/router.ts 的 PREFIX 必须一致。 */
+import type { DirectRunResult, WorkflowListItem, WorkflowSurface } from './types.js'
+
 export const API = '/comfyui-workbench/api'
 
 /**
@@ -25,6 +27,49 @@ export async function apiJson(route: string, params?: Record<string, string>): P
     throw new Error(message)
   }
   return bag ?? {}
+}
+
+/** 工作流列表（IO 面摘要）。 */
+export async function fetchWorkflowList(): Promise<{ workflows: WorkflowListItem[]; broken?: string[] }> {
+  const data = await apiJson('/workflows')
+  return {
+    workflows: Array.isArray(data.workflows) ? (data.workflows as WorkflowListItem[]) : [],
+    ...(Array.isArray(data.broken) ? { broken: data.broken as string[] } : {}),
+  }
+}
+
+/** 单份工作流的完整 IO 面。 */
+export async function fetchWorkflowDetail(workflowId: string): Promise<WorkflowSurface> {
+  const data = await apiJson(`/workflows/${encodeURIComponent(workflowId)}`)
+  const surface = data.surface
+  if (surface === null || typeof surface !== 'object') throw new Error('宿主没有返回 IO 面。')
+  return surface as WorkflowSurface
+}
+
+/**
+ * 直接运行（direct 模式）。
+ *
+ * 走 HTTP 而不是工具：这条路不消耗模型往返，代价是图片不会进对话。
+ */
+export async function runDirect(input: {
+  workflowId: string
+  vars: Record<string, unknown>
+  outputPath?: string
+}): Promise<DirectRunResult> {
+  const res = await fetch(`${API}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object' ? (data as DirectRunResult) : null
+  if (bag === null) throw new Error(`运行失败：HTTP ${res.status}`)
+  return bag
 }
 
 /** 文件字节地址。`thumb` 为真时走缩略图。 */

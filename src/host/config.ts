@@ -25,6 +25,8 @@ export interface Settings {
   headers: Record<string, string>
   /** 产物落盘目录；null 表示用 workspace 根。 */
   outputDir: string | null
+  /** 工作流模板目录；null 表示用默认（~/.dsh-comfyui-workbench/workflows）。 */
+  workflowsDir: string | null
   /** 除 outputDir 外纳入索引的目录。 */
   assetRoots: string[]
   /** 未绑定变量是否报错（默认报错）。 */
@@ -106,6 +108,7 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     baseUrl: str(pick('baseUrl'), DEFAULT_BASE_URL).replace(/\/+$/, ''),
     headers: recordOf(raw.headers),
     outputDir: typeof outputDir === 'string' && outputDir.trim() !== '' ? outputDir.trim() : null,
+    workflowsDir: typeof raw.workflowsDir === 'string' && raw.workflowsDir.trim() !== '' ? raw.workflowsDir.trim() : null,
     assetRoots: listOf(raw.assetRoots),
     strictVars: raw.strictVars !== false,
     runMode: oneOf(raw.runMode, ['conversation', 'direct'] as const, 'conversation'),

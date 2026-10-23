@@ -12,6 +12,8 @@
 import { Card } from './components/Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from './components/Confirm.js'
 import { Gallery } from './components/Gallery.js'
+import { Workbench } from './components/Workbench.js'
+import { WorkflowPanel } from './components/WorkflowPanel.js'
 import { Lightbox } from './components/Lightbox.js'
 import { addToConversation, findComposerEditor, pasteFile } from './conversation.js'
 import { metaLine, planPage } from './format.js'
@@ -72,7 +74,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   const Tab = (tabProps?: { visible?: boolean }): React.ReactElement => (
-    <Gallery
+    <Workbench
       t={t}
       visible={tabProps === undefined || tabProps.visible !== false}
       embedded
@@ -122,7 +124,7 @@ export function apply(ctx: ClientContext): void {
     name: 'main',
     key: PANEL_ID,
   }, () => (
-    <Gallery t={t} visible goToConversation={goToConversation} openSidebar={openSidebar} />
+    <Workbench t={t} visible goToConversation={goToConversation} openSidebar={openSidebar} />
   )))
 
   console.info('[comfyui-workbench] 资产库界面已注册（侧边栏入口 + 主面板）')
@@ -131,6 +133,8 @@ export function apply(ctx: ClientContext): void {
 /** 自检导出：`tests/render.mjs` 靠它把组件挂起来渲染。 */
 export const __test = {
   Gallery,
+  Workbench,
+  WorkflowPanel,
   Card,
   Lightbox,
   ConfirmRemove,
