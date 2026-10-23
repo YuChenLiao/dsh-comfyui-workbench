@@ -58,7 +58,7 @@ const domainJob = (domain) => ({
   logLevel: 'info',
 })
 
-const jobs = [hostJob, clientJob, domainJob('workflow'), domainJob('store')]
+const jobs = [hostJob, clientJob, domainJob('workflow'), domainJob('store'), domainJob('run'), domainJob('comfy')]
 
 fs.mkdirSync('lib', { recursive: true })
 

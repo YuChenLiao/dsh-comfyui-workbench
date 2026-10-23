@@ -17,12 +17,22 @@
 - 同图副本合并（按 seed + 尺寸 + 提示词签名，不做内容哈希，避免编码差异漏合并）。
 - 元数据：优先读同名 `<文件>.json` sidecar，缺失时回退 PNG 内嵌工作流。
 
-0.1 待完成（进行中）：
+工作流能力（0.1 已落地）：
 
-- 执行任意 API 格式工作流（`{{var}}` 变量绑定、节点预检、错误分类）。
-- 工作流对用户只暴露**输入与输出**；节点细节留给模型按需查看与调参。
-- 资产谱系：产物 ↔ 工作流模板 ↔ 运行记录，可检索、可重跑。
-- 模型侧工具：`comfyui_workflow_list` / `comfyui_workflow_inspect` / `comfyui_run` / `comfyui_workflow_edit`。
+- **导入任意 API 格式工作流**：`dsh workbench import <file>`（或直接放进 `~/.dsh-comfyui-workbench/workflows/`）。UI 格式会被拒绝并提示用 ComfyUI 的 Export (API)。
+- **IO 面推断**：把几十 KB 的节点图压成"输入 + 输出 + 模型"。连线不算旋钮、模型名/vae/batch_size 不进输入、正负提示词按采样器连线自动命名。
+- **只展示输入输出**：`basic` 段只放提示词与图像输入，`seed/steps/cfg` 等折进"更多参数"。
+- **四个模型工具**：`comfyui_workflow_list`（含底模名与作用备注）、`comfyui_workflow_inspect`（不传 nodeId 给 IO 面与节点清单，传了给单节点完整配置）、`comfyui_run`、`comfyui_workflow_edit`（默认只影响下一次运行，写模板需 `persist` + `expectHash`）。
+- **执行链**：节点预检（缺节点在提交前失败）→ 提交 → 轮询 → 超时必发 `/interrupt` → 遍历 `history.outputs` 取产物 → 写 sidecar（`dsh-comfyui-image` 字段超集）。
+- **图片随工具响应返回**，并在文本里声明**原始像素尺寸** —— 只给压缩图会让模型以为原图就那么小，下一轮按错的尺寸设参数。
+- **资产索引**：JSONL，可删可重建（真源是产物旁的 sidecar）；`GET /assets` 支持 q / workflow / tag / kind / status / 游标分页。
+
+0.2 计划：
+
+- 客户端工作流表单（只有输入输出）、工作流选择器。
+- 两条对话回路：参考图转提示词、点生成即入对话。
+- ComfyUI 服务托管（自动检测、按需拉起）。
+- better-sidebar 页签、相册迁移与卸载。
 
 ## 兼容插件
 
