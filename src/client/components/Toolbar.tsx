@@ -29,7 +29,7 @@ export function Toolbar(props: ToolbarProps): React.ReactElement {
     <header className="cfa-bar">
       <div className="cfa-head">
         <Icon name="album" size={18} />
-        <span className="cfa-title">{t('title')}</span>
+        <span className="cfa-title">{t('tabAssets')}</span>
         {total > 0 ? <span className="cfa-count">{String(total)}</span> : null}
       </div>
       <div className="cfa-tools">
