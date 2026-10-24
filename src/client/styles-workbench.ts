@@ -73,6 +73,7 @@ export const WORKBENCH_CSS = [
 .cwf-field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .cwf-field-label{font-size:.82em;color:var(--w-muted);display:flex;align-items:center;gap:5px;min-height:16px}
 .cwf-req{color:var(--w-danger);font-weight:600}
+.cwf-field-type{font-size:.7em;opacity:.65;border:1px solid var(--w-line);padding:0 4px;border-radius:4px;letter-spacing:.02em}
 .cwf-icon-btn{appearance:none;border:0;background:transparent;color:var(--w-muted);padding:6px;border-radius:8px;cursor:pointer;display:grid;place-items:center;transition:background-color .12s ease,color .12s ease}
 .cwf-icon-btn:hover{background:var(--w-bg);color:var(--w-text)}
 .cwf-icon-danger:hover{color:var(--w-danger)}
@@ -103,10 +104,10 @@ export const WORKBENCH_CSS = [
 .cwf-meta{font-size:.78em;color:var(--w-muted);line-height:1.6;padding:2px 0}
 
 .cwf-dock{position:sticky;bottom:0;padding:10px 0 14px;background:linear-gradient(to top,var(--w-bg) 70%,transparent);flex-shrink:0}
-.cwf-generate{width:100%;appearance:none;border:1px solid transparent;border-radius:12px;padding:12px 16px;font-size:.98em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--w-text);color:var(--w-bg);transition:opacity .12s ease}
-.cwf-generate:hover:not(:disabled){opacity:.86}
-.cwf-generate:disabled{opacity:.5;cursor:not-allowed}
-.cwf-kbd{margin-left:auto;font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:5px;padding:0 5px;line-height:1.5}
+.cwf-dock .cwf-generate{width:100%;appearance:none;border:1px solid transparent;border-radius:12px;padding:12px 16px;font-size:.98em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--w-text);color:var(--w-bg);transition:opacity .12s ease}
+.cwf-dock .cwf-generate:hover:not(:disabled){opacity:.86}
+.cwf-dock .cwf-generate:disabled{opacity:.5;cursor:not-allowed}
+.cwf-dock .cwf-kbd{margin-left:auto;font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:5px;padding:0 5px;line-height:1.5}
 
 .cwf-warn{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding:9px 11px;border:1px solid var(--w-line);border-left:3px solid var(--w-danger);border-radius:10px;background:var(--w-surface);font-size:.84em;line-height:1.55}
 .cwf-warn svg{color:var(--w-danger);flex-shrink:0;margin-top:2px}
@@ -115,8 +116,8 @@ export const WORKBENCH_CSS = [
 .cwf-empty-title{color:var(--w-text);font-size:1.05em}
 .cwf-notice{padding:8px 11px;border-radius:9px;background:var(--w-surface);border:1px solid var(--w-line);font-size:.84em}
 .cwf-notice.err{color:var(--w-danger)}
-.cwf-link{appearance:none;border:0;background:transparent;color:var(--w-muted);font-size:.8em;padding:2px 0;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px}
-.cwf-link:hover{color:var(--w-text)}
+.cwf-field .cwf-link{appearance:none;border:0;background:transparent;color:var(--w-muted);font-size:.8em;padding:2px 0;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.cwf-field .cwf-link:hover{color:var(--w-text)}
 .cwf-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}`,
 
   // ── 窄面板：单列 ──
