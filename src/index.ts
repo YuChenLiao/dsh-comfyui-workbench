@@ -76,7 +76,19 @@ export function apply(ctx: HostContext, config: unknown): void {
   ensureDir(uploadsDir)
   // 产物默认落到插件数据目录，而不是 process.cwd() —— dsh 进程的 cwd 是 profile 目录，
   // 往那里写图等于污染宿主自己的安装树。
-  const outputDir = settings.outputDir ?? path.join(pluginDataDir(), 'outputs')
+  // 产物默认落到当前工作区（`<workspace>/comfyui-output`），而不是插件私有目录 ——
+  // 图就该出现在用户正在做的项目里，不该逼用户再去别处找、或者让模型复制一份。
+  const workspaceDir = (() => {
+    try {
+      const wd = ctx.get?.('workingDirectory') as { defaultDirectory?: unknown } | undefined
+      const dir = wd?.defaultDirectory
+      return typeof dir === 'string' && dir !== '' ? dir : undefined
+    } catch {
+      return undefined
+    }
+  })()
+  const outputDir = settings.outputDir
+    ?? (workspaceDir === undefined ? path.join(pluginDataDir(), 'outputs') : path.join(workspaceDir, 'comfyui-output'))
   ensureDir(outputDir)
 
   // 服务托管：外部在跑就只用不托管；没跑且装了才拉起；只停自己拉起的那个。
@@ -119,8 +131,9 @@ export function apply(ctx: HostContext, config: unknown): void {
    * 默认输出目录（配置的 outputDir 或 workspace 根）本来就在 roots 里；
    * 这条只挡"显式指定了一个根外路径"的情况 —— 那种写入等于给任意目录开后门。
    */
+  const rootsSettings = { ...settings, resolvedOutputDir: outputDir }
   const assertWritable = (dir: string): void => {
-    const roots = rootsOf(ctx, settings)
+    const roots = rootsOf(ctx, rootsSettings)
     if (roots.length === 0) return // 还没有任何根（未进入 workspace）：交给 runner 的目录创建报错
     if (!isAuthorized(dir, roots)) {
       throw new Error(`输出目录不在授权范围内：${dir}。请在配置的 assetRoots 里加上它，或改用 workspace 内的目录。`)

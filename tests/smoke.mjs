@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import zlib from 'node:zlib'
 
-import { apply } from '../lib/index.js'
+
 
 /** CRC32（PNG chunk 需要）。 */
 function crc32(buffer) {
@@ -61,6 +61,11 @@ function buildPng(textGraph, width = 1, height = 1) {
 }
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cfa-smoke-'))
+// 插件的数据目录由 USERPROFILE 决定；不隔离的话 roots 会扫到本机真实产物
+process.env.USERPROFILE = root
+process.env.HOME = root
+
+const { apply } = await import('../lib/index.js')
 const nested = path.join(root, 'out')
 fs.mkdirSync(nested, { recursive: true })
 

@@ -10,8 +10,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { apply } from '../lib/index.js'
 import { importWorkflowFile } from '../lib/workflow.js'
+
+// 插件的默认目录（uploads / outputs / 索引）都挂在主目录下，测试必须隔离，
+// 否则会扫到本机真实数据（上一轮就被真实产物绊过）。
+const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-home-'))
+process.env.USERPROFILE = isoHome
+process.env.HOME = isoHome
+const { apply } = await import('../lib/index.js')
 
 /** 起一个只含必要服务的假宿主。 */
 async function boot(config) {

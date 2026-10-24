@@ -25,6 +25,8 @@ export interface RootsSettings {
   assetRoots?: string[] | undefined
   /** 上传目录；缺省用数据目录下的 uploads。 */
   uploadsDir?: string | null | undefined
+  /** 解析后的实际产物目录（插件启动时算好，通常在工作区下）。 */
+  resolvedOutputDir?: string | undefined
 }
 
 /**
@@ -76,10 +78,12 @@ export function rootsOf(ctx: HostContext, settings: RootsSettings): RootEntry[] 
     path: settings.uploadsDir ?? path.join(pluginDataDir(), 'uploads'),
     kind: 'upload',
   })
-  // 默认产物目录：不在这里出现的话，用户跑完看不到自己刚生成的图。
-  if (settings.outputDir === undefined || settings.outputDir === null) {
-    candidates.push({ path: path.join(pluginDataDir(), 'outputs'), kind: 'output' })
+  // 产物目录：插件启动时解析好的那个（默认在工作区下）+ 历史遗留的数据目录。
+  // 两个都要收 —— 老图还在旧的 outputs 里，不能因为换了默认位置就看不见。
+  if (typeof settings.resolvedOutputDir === 'string' && settings.resolvedOutputDir !== '') {
+    candidates.push({ path: settings.resolvedOutputDir, kind: 'output' })
   }
+  candidates.push({ path: path.join(pluginDataDir(), 'outputs'), kind: 'output' })
 
   // 本插件自己的产物目录与额外根：不写进来的话，用户配了 outputDir 却看不到产物。
   if (typeof settings.outputDir === 'string' && settings.outputDir !== '') {

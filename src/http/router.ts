@@ -66,7 +66,8 @@ export function createHandler(
   /** 默认产物目录。 */
   defaultOutputDir: string,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, settings)
+  // 产物目录已经由 index 解析好（默认在工作区下），传进来让授权根也包含它。
+  const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, { ...settings, resolvedOutputDir: defaultOutputDir })
 
   const handleRoots = (_url: URL, res: ServerResponse): void => {
     const list = roots()
