@@ -13,10 +13,17 @@ export interface WorkflowPanelProps {
   goToConversation: () => void
 }
 
-/** 用默认值初始化变量表。 */
+/**
+ * 用默认值初始化变量表。
+ *
+ * 图片类**不预填**：模板里那张图是作者机器上的路径或 ComfyUI input 里的文件名，
+ * 直接显示成"已选"会让人以为选了张有用图，跑起来才发现不对。
+ * 空着让用户自己拖一张；不填时服务端仍会用模板原值（submitWorkflow 会处理路径）。
+ */
 function initialVars(inputs: readonly SurfaceSlot[]): Record<string, unknown> {
   const vars: Record<string, unknown> = {}
   for (const slot of inputs) {
+    if (slot.type === 'image' || slot.type === 'mask') continue
     if (slot.default !== undefined) vars[slot.name] = slot.default
   }
   return vars
