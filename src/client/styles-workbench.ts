@@ -70,6 +70,24 @@ export const WORKBENCH_CSS = [
 .cwf-pairs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .cwf-field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .cwf-field-label{font-size:.82em;color:var(--w-muted);display:flex;align-items:center;gap:5px;min-height:16px}
+.cwf-req{color:var(--w-danger);font-weight:600}
+.cwf-icon-btn{appearance:none;border:0;background:transparent;color:var(--w-muted);padding:6px;border-radius:8px;cursor:pointer;display:grid;place-items:center;transition:background-color .12s ease,color .12s ease}
+.cwf-icon-btn:hover{background:var(--w-bg);color:var(--w-text)}
+.cwf-icon-danger:hover{color:var(--w-danger)}
+.cwf-drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:118px;padding:16px;border:1.5px dashed var(--w-line);border-radius:12px;background:var(--w-surface);cursor:pointer;text-align:center;transition:border-color .14s ease,background-color .14s ease}
+.cwf-drop:hover{border-color:var(--w-muted)}
+.cwf-drop.over{border-color:var(--w-accent);background:var(--w-bg)}
+.cwf-drop.busy{opacity:.7;cursor:progress}
+.cwf-drop-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--w-bg);border:1px solid var(--w-line);color:var(--w-muted)}
+.cwf-drop-title{font-size:.92em;color:var(--w-text)}
+.cwf-drop-hint{font-size:.8em;color:var(--w-muted);line-height:1.5}
+.cwf-picked{display:flex;align-items:center;gap:10px;border:1px solid var(--w-line);border-radius:12px;background:var(--w-surface);padding:8px;min-width:0}
+.cwf-picked-thumb{width:56px;height:56px;flex-shrink:0;border-radius:8px;overflow:hidden;background:var(--w-sunken);display:grid;place-items:center}
+.cwf-picked-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.cwf-picked-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cwf-picked-name{font-size:.9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwf-picked-sub{font-size:.78em;color:var(--w-muted);font-variant-numeric:tabular-nums}
+.cwf-picked-actions{display:flex;gap:2px;flex-shrink:0}
 .cwf-input{width:100%;min-width:0;border-radius:10px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.92em;padding:8px 10px}
 .cwf-input:focus{border-color:var(--w-accent);background:var(--w-bg);outline:none}
 .cwf-hint{font-size:.78em;color:var(--w-muted);opacity:.9}
@@ -83,8 +101,8 @@ export const WORKBENCH_CSS = [
 .cwf-meta{font-size:.78em;color:var(--w-muted);line-height:1.6;padding:2px 0}
 
 .cwf-dock{position:sticky;bottom:0;padding:10px 0 14px;background:linear-gradient(to top,var(--w-bg) 70%,transparent);flex-shrink:0}
-.cwf-generate{width:100%;appearance:none;border:1px solid transparent;border-radius:12px;padding:12px 16px;font-size:.98em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--dsw-alias-button-primary-fill,var(--w-accent));color:var(--dsw-alias-label-primary-foreground,#fff);transition:background-color .12s ease,opacity .12s ease}
-.cwf-generate:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,color-mix(in srgb,var(--w-accent) 86%,#000))}
+.cwf-generate{width:100%;appearance:none;border:1px solid transparent;border-radius:12px;padding:12px 16px;font-size:.98em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--w-text);color:var(--w-bg);transition:opacity .12s ease}
+.cwf-generate:hover:not(:disabled){opacity:.86}
 .cwf-generate:disabled{opacity:.5;cursor:not-allowed}
 .cwf-kbd{margin-left:auto;font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:5px;padding:0 5px;line-height:1.5}
 
