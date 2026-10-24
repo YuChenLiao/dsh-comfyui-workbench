@@ -235,7 +235,7 @@ const panel = renderToStaticMarkup(React.createElement(WorkflowPanel, {
   visible: true,
   goToConversation() {},
 }))
-assert.match(panel, /emptyWorkflows/, '空态要有明确文案')
-assert.match(panel, /emptyWorkflowsHint/, '空态要给出可执行的下一步')
+// SSR 不跑 useEffect，首帧停在"加载中"——这正是修掉"把加载中显示成空"的证明
+assert.match(panel, /loadingWorkflows/, '首帧应当显示加载中而不是空态')
 
 console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowPanel）')
