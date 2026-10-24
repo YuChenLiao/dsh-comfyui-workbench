@@ -69,9 +69,9 @@ test('出图完成后把通知塞回会话（含产物路径）', async () => {
     assert.equal(messages.length, 1, '应当恰好通知一次')
     const message = messages[0]
     assert.equal(message.role, 'user')
-    assert.equal(message.source.kind, 'plugin')
-    assert.equal(message.source.form, 'notice')
-    assert.ok(message.source.summary.length > 0 && message.source.summary.length <= 120)
+    // v4 要求 producer 自己的 kind：`plugin` 会被拒，必须是 `plugin:<包名>`
+    // （这正是之前通知发不出去、把会话卡住的原因）
+    assert.equal(message.source.kind, 'plugin:dsh-comfyui-workbench')
     assert.match(message.content[0].text, /出图完成/)
     assert.match(message.content[0].text, /\.png/, '通知里要带产物路径')
     assert.ok(fs.existsSync(path.join(out, 'n.png')), '产物要落盘')

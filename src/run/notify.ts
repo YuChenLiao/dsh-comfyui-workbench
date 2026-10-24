@@ -5,6 +5,17 @@ import type { LoggerLike } from '../host/types.js'
 import { checkRun, collectArtifacts, recallRun } from './runner.js'
 
 /**
+ * 插件通知的 source kind。
+ *
+ * 会话格式 v4 拒绝 `kind: 'plugin'`：`message-sources.ts` 要求每条消息带 producer
+ * 自己的 kind，插件消息的统一形状是 `plugin:<包名>`（正是 v3→v4 迁移把
+ * `{ kind: 'plugin', plugin: ... }` 改写成的东西）。写成 `kind: 'plugin'` 会让
+ * `followup` 在落事件时抛 `SessionFormatError`，通知永远发不出去，而且异常发生在
+ * agent 的 inbox 写入路径上，会把发起会话的驱动留在异常态。
+ */
+const NOTICE_SOURCE_KIND = 'plugin:dsh-comfyui-workbench'
+
+/**
  * 能给会话塞消息的对象（宿主 Agent 上只用到这一个方法）。
  *
  * 宿主 `Agent.followup(message)` 会排一轮普通回合并唤醒驱动 —— 子代理就是这样
@@ -15,7 +26,7 @@ export interface NotifyTarget {
     id: string
     role: 'user'
     content: Array<{ type: 'text'; text: string }>
-    source: { kind: 'plugin'; plugin: string; form: 'notice'; summary: string }
+    source: { kind: string }
   }) => void
 }
 
@@ -28,21 +39,30 @@ interface Watcher {
 /** 活跃的等待者：promptId → watcher。插件卸载时统一清掉。 */
 const watchers = new Map<string, Watcher>()
 
-/** 宿主对 notice 摘要的长度上限。 */
-const SUMMARY_MAX = 120
-
 /** 构造一条插件通知消息。 */
-function noticeMessage(text: string, summary: string): Parameters<NotifyTarget['followup']>[0] {
+function noticeMessage(text: string): Parameters<NotifyTarget['followup']>[0] {
   return {
     id: crypto.randomUUID(),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: {
-      kind: 'plugin',
-      plugin: 'dsh-comfyui-workbench',
-      form: 'notice',
-      summary: summary.length > SUMMARY_MAX ? `${summary.slice(0, SUMMARY_MAX - 1)}…` : summary,
-    },
+    source: { kind: NOTICE_SOURCE_KIND },
+  }
+}
+
+/**
+ * 投递一条通知：失败只记日志。
+ *
+ * 会话可能已经被关闭、被压缩替换，或宿主拒绝了这次写入；通知是尽力而为的旁路，
+ * 不能让它把插件的定时器或宿主的驱动带崩。
+ * @param target - 会话 Agent。
+ * @param text - 通知正文。
+ * @param logger - 可选日志。
+ */
+function deliver(target: NotifyTarget, text: string, logger?: LoggerLike | undefined): void {
+  try {
+    target.followup(noticeMessage(text))
+  } catch (error) {
+    logger?.warn?.(`[notify] 通知未送达：${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -89,10 +109,11 @@ export function watchRun(options: {
         if (!state.done || state.entry === undefined) {
           if (Date.now() - startedAt > maxWaitMs) {
             stop()
-            target.followup(noticeMessage(
+            deliver(
+              target,
               `工作流仍在跑（promptId ${promptId}），已经等了 ${Math.round((Date.now() - startedAt) / 60000)} 分钟，先不盯了。\n需要结果时让模型用 comfyui_run 传这个 promptId。`,
-              '工作流超时未完成，已停止等待',
-            ))
+              options.logger,
+            )
           }
           return
         }
@@ -115,19 +136,12 @@ export function watchRun(options: {
             : ''
           lines.push(`- ${artifact.path}${size} · ${Math.round(artifact.bytes / 1024)} KB`)
         }
-        target.followup(noticeMessage(lines.join('\n'), `工作流 ${context.workflowId} 出图完成（${outcome.artifacts.length} 个产物）`))
+        deliver(target, lines.join('\n'), options.logger)
       } catch (error) {
         stop()
         const message = error instanceof Error ? error.message : String(error)
         options.logger?.warn?.(`[notify] ${promptId} 等待失败：${message}`)
-        try {
-          target.followup(noticeMessage(
-            `工作流执行失败（promptId ${promptId}）：${message}`,
-            '工作流执行失败',
-          ))
-        } catch {
-          // 会话可能已经关了，静默即可
-        }
+        deliver(target, `工作流执行失败（promptId ${promptId}）：${message}`, options.logger)
       }
     })()
   }, intervalMs)
