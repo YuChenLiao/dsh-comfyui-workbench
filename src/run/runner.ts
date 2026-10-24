@@ -273,21 +273,27 @@ export async function collectArtifacts(
   context: PendingContext,
 ): Promise<RunOutcome> {
   const all = fileRefsOf(entry.outputs, context.workflow)
-  // 有存盘节点就只收存盘的：预览节点存的是 temp 图（常见于"缩放后的输入图"），
-  // 收下来会让产物目录里混进参考图。只有全是预览节点时才退而求其次。
-  const saved = all.filter(ref => ref.kind === 'save')
-  const refs = saved.length > 0 ? saved : all
-  const skipped = saved.length > 0 ? all.length - saved.length : 0
+
+  // 两类都要排掉：预览节点的产物，以及 type=temp 的文件（ComfyUI 会把 temp 清掉，
+  // 拿去下载经常 404）。只有工作流一个正式产物都没有时，才退回来用它们。
+  const durable = all.filter(ref => ref.kind === 'save' && ref.type !== 'temp')
+  const fallback = all.filter(ref => ref.kind === 'save')
+  const refs = durable.length > 0 ? durable : (fallback.length > 0 ? fallback : all)
+  const skipped = all.length - refs.length
   if (refs.length === 0) throw noOutput(true)
 
   ensureDir(context.outputDir)
   const artifacts: Artifact[] = []
+  const unreadable: string[] = []
   for (const ref of refs) {
     let bytes: Buffer
     try {
       bytes = await client.view({ filename: ref.filename, subfolder: ref.subfolder, type: ref.type })
     } catch (error) {
-      throw outputUnreadable(ref.filename, error)
+      // 单个文件取不到不该拖垮整次运行：ComfyUI 的 temp 会过期，输出目录也可能被清理。
+      // 只要还有别的产物能取到，就照常交付，把失败的那些写进说明。
+      unreadable.push(`${ref.filename}（${error instanceof Error ? error.message : String(error)}）`)
+      continue
     }
     const target = targetFor(context.outputDir, ref.filename)
     fs.writeFileSync(target, bytes)
@@ -301,6 +307,10 @@ export async function collectArtifacts(
       }
     }
     artifacts.push(artifact)
+  }
+
+  if (artifacts.length === 0) {
+    throw outputUnreadable(refs[0]?.filename ?? '', new Error(`全部 ${refs.length} 个产物都取不回：${unreadable.join('；')}`))
   }
 
   const durationMs = Date.now() - context.submittedAt
@@ -338,7 +348,10 @@ export async function collectArtifacts(
     artifacts,
     durationMs,
     effective: context.effective,
-    notes: skipped > 0 ? [`已跳过 ${skipped} 张预览图：它们来自 PreviewImage 之类的节点，是 ComfyUI 的临时输出，不是产物。`] : [],
+    notes: [
+      ...(skipped > 0 ? [`已跳过 ${skipped} 张预览图：它们来自 PreviewImage 之类的节点，是 ComfyUI 的临时输出，不是产物。`] : []),
+      ...(unreadable.length > 0 ? [`有 ${unreadable.length} 个产物取不回，已跳过：${unreadable.join('；')}`] : []),
+    ],
     ...(metadataPath === undefined ? {} : { metadataPath }),
   }
 }

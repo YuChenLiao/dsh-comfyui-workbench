@@ -43,6 +43,7 @@ async function fakeComfy(plan) {
       return json(200, entry === undefined ? {} : { p1: entry })
     }
     if (url.pathname === '/view') {
+      if (plan.onView !== undefined) return plan.onView(url, res, json)
       res.writeHead(200, { 'Content-Type': 'image/png' })
       return res.end(PNG)
     }
@@ -161,6 +162,49 @@ test('预览节点的输出不算产物（SaveImage 优先）', async () => {
     assert.ok(outcome.artifacts[0].path.endsWith('out.png'))
     assert.ok(!fs.existsSync(path.join(outputDir, 'scaled-input.png')), '预览图不该落进产物目录')
     assert.ok(outcome.notes.some(note => note.includes('预览图')), '要说明跳过了预览图')
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('产物取不回时不拖垮整次运行（temp 被清理）', async () => {
+  const wf = workflow()
+  const slots = await slotsOf(wf)
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    onHistory: () => ({
+      status: { completed: true },
+      outputs: {
+        9: { images: [{ filename: 'out.png', subfolder: '', type: 'output' }] },
+        // 另一个存盘节点，文件已被清理（正式产物，不是 temp —— 要测的是容错而不是过滤）
+        11: { images: [{ filename: 'gone.png', subfolder: '', type: 'output' }] },
+      },
+    }),
+    onView: (url, res, json) => {
+      if (url.searchParams.get('filename') === 'gone.png') return json(404, { error: 'not found' })
+      res.writeHead(200, { 'Content-Type': 'image/png' })
+      return res.end(PNG)
+    },
+  })
+
+  try {
+    const outputDir = tmpOut()
+    const outcome = await runWorkflow({
+      client: new ComfyClient({ baseUrl: comfy.baseUrl }),
+      workflow: wf,
+      slots,
+      vars: { prompt: 'a cat', seed: 42 },
+      outputDir,
+      timeoutMs: 5_000,
+      pollIntervalMs: 10,
+      workflowId: 't',
+      workflowHash: 'h1',
+    })
+
+    assert.equal(outcome.ok, true, '一张取不回不等于整次失败')
+    assert.equal(outcome.artifacts.length, 1)
+    assert.ok(outcome.artifacts[0].path.endsWith('out.png'))
+    assert.ok(outcome.notes.some(note => note.includes('取不回')), '要在说明里交代跳过了哪个')
   } finally {
     await comfy.close()
   }
