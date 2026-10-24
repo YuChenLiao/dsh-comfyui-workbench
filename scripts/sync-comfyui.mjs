@@ -115,7 +115,8 @@ for (const file of files) {
   writeWorkflow(outDir, id, workflow)
   imported += 1
   const dup = existing.has(id) ? '（覆盖同名）' : ''
-  console.log(`✓ ${base} → ${id}${dup}${notes.length > 0 ? `　注：${notes.join('；')}` : ''}`)
+  const noteText = notes.length === 0 ? '' : `　注：${notes.slice(0, 3).join('；')}${notes.length > 3 ? `…（另 ${notes.length - 3} 条）` : ''}`
+  console.log(`✓ ${base} → ${id}${dup}${noteText}`)
 }
 
 console.log(`\n共 ${files.length} 个文件：导入 ${imported}，其中 API 格式原样 ${copied}，跳过 ${skipped}。`)

@@ -6,7 +6,8 @@ interface UiNode {
   type?: unknown
   title?: unknown
   mode?: unknown
-  inputs?: Array<{ name?: unknown; link?: unknown }>
+  inputs?: Array<{ name?: unknown; type?: unknown; link?: unknown }>
+  outputs?: Array<{ name?: unknown; type?: unknown; links?: unknown }>
   widgets_values?: unknown
   [key: string]: unknown
 }
@@ -52,15 +53,21 @@ function isWidget(decl: unknown): boolean {
  * ComfyUI 前端就是按这个顺序把 `widgets_values` 逐个配上去的，所以顺序必须与
  * `required` 后接 `optional` 的键序一致 —— 顺序错了会把 steps 填进 cfg。
  */
-function widgetNamesOf(spec: NodeInputSpec): string[] {
-  const names: string[] = []
+/** 该输入是否是可选项列表（COMBO）。 */
+function comboOptionsOf(decl: unknown): string[] | undefined {
+  if (!Array.isArray(decl) || decl.length === 0) return undefined
+  return Array.isArray(decl[0]) ? (decl[0] as string[]) : undefined
+}
+
+function widgetSpecsOf(spec: NodeInputSpec): Map<string, unknown> {
+  const out = new Map<string, unknown>()
   for (const bag of [spec.required, spec.optional]) {
     if (bag === undefined || bag === null) continue
     for (const [name, decl] of Object.entries(bag)) {
-      if (isWidget(decl)) names.push(name)
+      if (isWidget(decl)) out.set(name, decl)
     }
   }
-  return names
+  return out
 }
 
 /** link 表：linkId → 源节点与源槽位。 */
@@ -99,11 +106,37 @@ function resolveOrigin(
     const inner = node.inputs?.find(input => typeof input.link === 'number')
     return typeof inner?.link === 'number' ? resolveOrigin(inner.link, byId, links, depth + 1) : undefined
   }
+
+  // bypass（mode 4）在 ComfyUI 里的语义是"直通"：输出等于类型匹配的那个输入。
+  // 直接删掉节点会留下悬空引用，所以这里顺着它的输入继续往上找。
+  if (node.mode === 4) {
+    const forwarded = bypassSourceOf(node, origin.slot)
+    return forwarded === undefined ? undefined : resolveOrigin(forwarded, byId, links, depth + 1)
+  }
   if (type === 'PrimitiveNode') {
     const values = Array.isArray(node.widgets_values) ? node.widgets_values : []
     return { kind: 'value', value: values[0] }
   }
   return { kind: 'link', nodeId: origin.nodeId, slot: origin.slot }
+}
+
+/**
+ * bypass 节点的直通源：按输出槽的类型，找第一个类型相同的已连线输入。
+ *
+ * ComfyUI 界面就是这么做的（旁路节点的输出直接由同类型输入顶替）。
+ */
+function bypassSourceOf(node: UiNode, outputSlot: number): number | undefined {
+  const outputs = node.outputs
+  if (!Array.isArray(outputs)) return undefined
+  const slot = outputs[outputSlot] as { type?: unknown } | undefined
+  const wanted = typeof slot?.type === 'string' ? slot.type : ''
+  if (wanted === '') return undefined
+  for (const input of node.inputs ?? []) {
+    const type = typeof input.type === 'string' ? input.type : ''
+    if (type !== wanted) continue
+    if (typeof input.link === 'number') return input.link
+  }
+  return undefined
 }
 
 /** 把 widgets_values 按 widget 名配对（含 seed 后面那个 control_after_generate 槽位）。 */
@@ -149,14 +182,21 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
 
   const workflow: ApiWorkflow = {}
   let skipped = 0
+  let muted = 0
+  let placeholders = 0
+  let bypassed = 0
 
   for (const node of nodes) {
     const type = typeof node.type === 'string' ? node.type : ''
     if (type === '') continue
     if (UI_ONLY.has(type)) continue
-    // mode: 0=正常, 2=静音, 4=旁路。后两种在 UI 里不参与执行。
+    // mode: 0=正常, 2=静音, 4=旁路。两者都不写进提交：
+    // - 旁路：下游对它的引用由 resolveOrigin 顺到它同类型的输入上（直通）；
+    //   若把它也提交，它会成为没有下游的孤立节点被执行，反而报类型错。
+    // - 静音：真不执行。
     if (node.mode === 2 || node.mode === 4) {
-      notes.push(`节点 ${node.id}（${type}）在 UI 里被静音/旁路，已跳过。`)
+      if (node.mode === 2) muted += 1
+      else bypassed += 1
       continue
     }
 
@@ -181,9 +221,21 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
     }
 
     // 2. widget 值。
-    const names = widgetNamesOf(specInput)
-    for (const [name, value] of Object.entries(widgetValuesOf(node, names))) {
+    const specs = widgetSpecsOf(specInput)
+    for (const [name, value] of Object.entries(widgetValuesOf(node, [...specs.keys()]))) {
       if (name in inputs) continue // 连线优先
+
+      // UI 里有些 combo 的"当前值"其实是提示文案（"Select Wildcard 🟢 Full Cache"、
+      // "Select the LoRA to add to the text"），提交上去 ComfyUI 会判 value_not_in_list。
+      // 不在候选里的就丢掉，让它用节点默认。
+      const options = comboOptionsOf(specs.get(name))
+      if (options !== undefined && typeof value === 'string' && value !== '' && !options.includes(value)) {
+        // 占位值不能用；但整个删掉会让必填项缺失，所以退到第一个有效选项。
+        const fallback = options[0]
+        placeholders += 1
+        if (fallback !== undefined) inputs[name] = fallback
+        continue
+      }
       inputs[name] = value
     }
 
@@ -195,6 +247,9 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
   }
 
   if (skipped > 0) notes.push(`${skipped} 个节点的定义缺失，转换结果可能无法直接运行。`)
+  if (muted > 0) notes.push(`${muted} 个节点在 UI 里被静音（不执行），已跳过。`)
+  if (bypassed > 0) notes.push(`${bypassed} 个节点在 UI 里被旁路，已按直通接续下游。`)
+  if (placeholders > 0) notes.push(`${placeholders} 个下拉框的当前值是界面提示语（不是有效选项），已按节点默认处理。`)
   if (Object.keys(workflow).length === 0) notes.push('转换后没有任何节点可提交。')
 
   return { workflow, notes }
