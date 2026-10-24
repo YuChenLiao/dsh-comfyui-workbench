@@ -1,3 +1,4 @@
+import { availableModels, missingModels, suggestModels } from '../comfy/index.js'
 import { readEntry } from '../workflow/index.js'
 import type { ApiNode, IOSlot, ModelRef, WorkflowIOSurface } from '../workflow/types.js'
 import { asString, jsonOutput } from './types.js'
@@ -118,11 +119,19 @@ export function workflowInspectTool(deps: ToolDeps): ToolSpec {
 
       // 预检：拿不到节点清单时降级成"不预检"，不要因此看不到 IO 面。
       let missing: string[] = []
+      let absentModels: string[] = []
+      let modelHint = ''
       try {
         const info = await deps.client.objectInfo()
         const known = new Set(Object.keys(info))
         if (known.size > 0) {
           missing = [...new Set(Object.values(entry.workflow).map(node => String(node.class_type ?? '')).filter(name => name !== '' && !known.has(name)))]
+          const available = availableModels(info)
+          absentModels = missingModels(entry.surface.models, available)
+          if (absentModels.length > 0) {
+            const primary = entry.surface.models.find(model => model.primary === true) ?? entry.surface.models[0]
+            modelHint = `本机没有：${absentModels.join('、')}。可用的替代：${suggestModels(available, primary?.kind ?? 'checkpoint').join('、') || '（一个都没有）'}`
+          }
         }
       } catch (error) {
         deps.logger?.warn?.(`[${workflowId}] 预检跳过：${error instanceof Error ? error.message : String(error)}`)
@@ -131,6 +140,7 @@ export function workflowInspectTool(deps: ToolDeps): ToolSpec {
       return {
         ok: true,
         ...surfaceView(entry.surface, missing),
+        ...(absentModels.length === 0 ? {} : { missingModels: absentModels, modelHint }),
         nodes: nodeList(entry.workflow),
         hint: '要看某个节点的具体参数，用同一个工具加 nodeId。',
       }

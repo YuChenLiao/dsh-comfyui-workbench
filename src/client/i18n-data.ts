@@ -104,6 +104,7 @@ export const DICT = {
         runModeLabel: '运行方式',
         runDone: '完成：{n} 个产物，用时 {ms} ms',
         runFailed: '运行失败',
+        missingModels: '本机没有这些模型：{names}，直接跑会失败。',
         submitted: '已提交，正在出图…',
       },
       en: {
@@ -186,6 +187,7 @@ export const DICT = {
         runModeLabel: 'Run mode',
         runDone: 'Done: {n} artifact(s) in {ms} ms',
         runFailed: 'Run failed',
+        missingModels: 'Missing on this machine: {names} — running it will fail.',
         submitted: 'Submitted — generating…',
         tabAssets: 'Assets',
         tabWorkflow: 'Workflow',

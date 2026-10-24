@@ -1,3 +1,4 @@
+import { availableModels, missingModels, suggestModels } from '../comfy/index.js'
 import { listEntries } from '../workflow/index.js'
 import type { WorkflowIOSurface } from '../workflow/types.js'
 import { asString, jsonOutput } from './types.js'
@@ -48,8 +49,29 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
     async execute(args) {
       const query = asString(args.q).trim().toLowerCase()
       const { entries, broken } = listEntries(deps.workflowsDir)
+
+      // 本机有哪些模型：拿不到 object_info（ComfyUI 离线）就跳过这项检查，
+      // 而不是把"没联网"报成"缺模型"。
+      let available: Set<string> | null = null
+      try {
+        available = availableModels(await deps.client.objectInfo())
+      } catch {
+        available = null
+      }
+
       const items = entries
-        .map(entry => toListItem(entry.surface))
+        .map(entry => {
+          const item = toListItem(entry.surface)
+          if (available === null) return item
+          const missing = missingModels(entry.surface.models, available)
+          if (missing.length === 0) return item
+          const primary = entry.surface.models.find(model => model.primary === true) ?? entry.surface.models[0]
+          return {
+            ...item,
+            missingModels: missing,
+            modelHint: `本机没有：${missing.join('、')}。可用的替代：${suggestModels(available, primary?.kind ?? 'checkpoint').join('、') || '（一个都没有）'}`,
+          }
+        })
         .filter(item => {
           if (query === '') return true
           const haystack = `${String(item.title)} ${String(item.description)} ${String((item.models as { primary?: unknown }).primary)}`.toLowerCase()

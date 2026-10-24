@@ -45,7 +45,10 @@ export const WORKBENCH_CSS = [
 .cwf-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--w-muted);padding:48px 24px}
 .cwf-empty-title{color:var(--w-text);font-size:1.05em}
 .cwf-notice{flex-shrink:0;padding:8px 12px;border-radius:8px;background:var(--w-surface);border:1px solid var(--w-line);font-size:.88em;display:flex;gap:8px;align-items:center}
-.cwf-notice.err{color:var(--w-danger)}`,
+.cwf-notice.err{color:var(--w-danger)}
+.cwf-warn{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--w-line);border-left:3px solid var(--w-danger);border-radius:8px;background:var(--w-surface);font-size:.86em;line-height:1.6;color:var(--w-text)}
+.cwf-warn svg{color:var(--w-danger);flex-shrink:0;margin-top:2px}
+.cwf-warn-hint{color:var(--w-muted);flex-basis:100%}`,
 
   // ── 表单 ──
   `.cwf-form{display:flex;flex-direction:column;gap:16px}

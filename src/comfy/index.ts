@@ -21,6 +21,7 @@ export {
 export type { RunErrorCode } from './errors.js'
 export { ComfySupervisor, detectInstallation } from './supervisor.js'
 export { ensureComfyImage, materializeImages } from './upload.js'
+export { availableModels, missingModels, suggestModels } from './models.js'
 export type { UploadedImage } from './upload.js'
 export type { ServiceState, ServiceStatus, SupervisorOptions } from './supervisor.js'
 export type { FileRef, HistoryEntry, ObjectInfo, ObjectInfoNode } from './types.js'

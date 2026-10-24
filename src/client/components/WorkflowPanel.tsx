@@ -243,6 +243,13 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
           </button>
         </div>
 
+        {current?.missingModels !== undefined && current.missingModels.length > 0 ? (
+          <div className="cwf-warn">
+            <Icon name="close" size={14} />
+            <span>{t('missingModels').replace('{names}', current.missingModels.join('、'))}</span>
+            {current.modelHint !== undefined ? <span className="cwf-warn-hint">{current.modelHint}</span> : null}
+          </div>
+        ) : null}
         {current !== undefined && current.description !== '' ? <p className="cwf-desc">{current.description}</p> : null}
         {current !== undefined && current.description === '' ? <p className="cwf-desc cwf-desc-weak">{t('undescribedHint')}</p> : null}
 
