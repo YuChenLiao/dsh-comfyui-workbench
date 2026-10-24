@@ -246,7 +246,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
 
         return {
           ok: true,
-          workflowId: loaded.workflowId,
+          workflowId: outcome.workflowId !== '' ? outcome.workflowId : loaded.workflowId,
           promptId: outcome.promptId,
           durationMs: outcome.durationMs,
           artifacts: outcome.artifacts,
@@ -278,6 +278,7 @@ function formatOutcome(
   return {
     ok: true,
     promptId: outcome.promptId,
+    workflowId: outcome.workflowId,
     durationMs: outcome.durationMs,
     artifacts: outcome.artifacts,
     effectiveVars: outcome.effective,

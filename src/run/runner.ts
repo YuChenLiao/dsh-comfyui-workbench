@@ -31,6 +31,8 @@ export interface Artifact {
 export interface RunOutcome {
   ok: true
   promptId: string
+  /** 提交时记下的工作流 id（续查时从登记表取回，取不到就是 unknown）。 */
+  workflowId: string
   artifacts: Artifact[]
   durationMs: number
   effective: Record<string, unknown>
@@ -309,6 +311,7 @@ export async function collectArtifacts(
   return {
     ok: true,
     promptId,
+    workflowId: context.workflowId,
     artifacts,
     durationMs,
     effective: context.effective,
