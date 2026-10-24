@@ -77,6 +77,8 @@ export interface PendingContext {
   effective: Record<string, unknown>
   writeMetadata: boolean
   submittedAt: number
+  /** 提交时的工作流：续查要靠它区分 SaveImage 与 PreviewImage。 */
+  workflow?: ApiWorkflow | undefined
 }
 
 /** 进程内登记表：promptId → 上下文。插件重启即丢，丢了不影响 ComfyUI 侧的结果。 */
@@ -112,13 +114,26 @@ function requiredNodes(workflow: ApiWorkflow): string[] {
   return [...set]
 }
 
-/** history.outputs → 文件引用。不按节点名匹配，遍历所有键。 */
+/**
+ * 输出节点是"存盘"还是"预览"。
+ *
+ * 预览节点（`PreviewImage` 之类）在 ComfyUI 里把图写进 temp，只是给你在界面上看一眼——
+ * MOSS 图生图就有一个接在"对齐到 1MP"之后，于是**参考图**也被当成产物收了下来。
+ * 认不出的节点按"存盘"处理，宁可多收也不要漏。
+ */
+function outputKindOf(classType: string): 'save' | 'preview' {
+  return /^(preview|image\s*comparer)/i.test(classType) ? 'preview' : 'save'
+}
+
+/** history.outputs → 文件引用。按节点类型标出存盘/预览，遍历所有键。 */
 function fileRefsOf(
   outputs: Record<string, Record<string, unknown>> | undefined,
-): Array<{ filename: string; subfolder: string; type: string }> {
-  const found: Array<{ filename: string; subfolder: string; type: string }> = []
+  workflow?: ApiWorkflow | undefined,
+): Array<{ filename: string; subfolder: string; type: string; nodeId: string; kind: 'save' | 'preview' }> {
+  const found: Array<{ filename: string; subfolder: string; type: string; nodeId: string; kind: 'save' | 'preview' }> = []
   if (outputs === undefined) return found
-  for (const bag of Object.values(outputs)) {
+  for (const [nodeId, bag] of Object.entries(outputs)) {
+    const kind = outputKindOf(String(workflow?.[nodeId]?.class_type ?? ''))
     if (bag === null || typeof bag !== 'object') continue
     for (const value of Object.values(bag)) {
       const list = Array.isArray(value) ? value : [value]
@@ -130,6 +145,8 @@ function fileRefsOf(
           filename: ref.filename,
           subfolder: typeof ref.subfolder === 'string' ? ref.subfolder : '',
           type: typeof ref.type === 'string' ? ref.type : 'output',
+          nodeId,
+          kind,
         })
       }
     }
@@ -226,6 +243,7 @@ export async function submitWorkflow(
     effective: applied.effective,
     writeMetadata: options.writeMetadata !== false,
     submittedAt: Date.now(),
+    workflow: options.workflow,
   })
 
   return { promptId, effective: applied.effective, notes }
@@ -254,7 +272,12 @@ export async function collectArtifacts(
   entry: HistoryEntry,
   context: PendingContext,
 ): Promise<RunOutcome> {
-  const refs = fileRefsOf(entry.outputs)
+  const all = fileRefsOf(entry.outputs, context.workflow)
+  // 有存盘节点就只收存盘的：预览节点存的是 temp 图（常见于"缩放后的输入图"），
+  // 收下来会让产物目录里混进参考图。只有全是预览节点时才退而求其次。
+  const saved = all.filter(ref => ref.kind === 'save')
+  const refs = saved.length > 0 ? saved : all
+  const skipped = saved.length > 0 ? all.length - saved.length : 0
   if (refs.length === 0) throw noOutput(true)
 
   ensureDir(context.outputDir)
@@ -315,7 +338,7 @@ export async function collectArtifacts(
     artifacts,
     durationMs,
     effective: context.effective,
-    notes: [],
+    notes: skipped > 0 ? [`已跳过 ${skipped} 张预览图：它们来自 PreviewImage 之类的节点，是 ComfyUI 的临时输出，不是产物。`] : [],
     ...(metadataPath === undefined ? {} : { metadataPath }),
   }
 }

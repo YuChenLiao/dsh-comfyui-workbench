@@ -127,6 +127,45 @@ test('正常链路：预检 → 提交 → 轮询 → 取图 → 落盘 + sideca
   }
 })
 
+test('预览节点的输出不算产物（SaveImage 优先）', async () => {
+  const wf = workflow()
+  // MOSS 图生图就有一个预览节点接在"对齐到 1MP"后面，收下来会把参考图当产物
+  wf[13] = { class_type: 'PreviewImage', inputs: { images: ['3', 0] } }
+  const slots = await slotsOf(wf)
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {}, PreviewImage: {} },
+    onHistory: () => ({
+      status: { completed: true },
+      outputs: {
+        9: { images: [{ filename: 'out.png', subfolder: '', type: 'output' }] },
+        13: { images: [{ filename: 'scaled-input.png', subfolder: '', type: 'temp' }] },
+      },
+    }),
+  })
+
+  try {
+    const outputDir = tmpOut()
+    const outcome = await runWorkflow({
+      client: new ComfyClient({ baseUrl: comfy.baseUrl }),
+      workflow: wf,
+      slots,
+      vars: { prompt: 'a cat', seed: 42 },
+      outputDir,
+      timeoutMs: 5_000,
+      pollIntervalMs: 10,
+      workflowId: 't',
+      workflowHash: 'h1',
+    })
+
+    assert.equal(outcome.artifacts.length, 1, '只该收 SaveImage 那张')
+    assert.ok(outcome.artifacts[0].path.endsWith('out.png'))
+    assert.ok(!fs.existsSync(path.join(outputDir, 'scaled-input.png')), '预览图不该落进产物目录')
+    assert.ok(outcome.notes.some(note => note.includes('预览图')), '要说明跳过了预览图')
+  } finally {
+    await comfy.close()
+  }
+})
+
 test('缺节点：在提交之前失败（B12）', async () => {
   const wf = workflow()
   const slots = await slotsOf(wf)
