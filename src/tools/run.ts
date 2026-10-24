@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { resumeRun, submitWorkflow, waitForRun } from '../run/index.js'
+import { resumeRun, submitWorkflow, waitForRun, watchRun } from '../run/index.js'
+import type { NotifyTarget } from '../run/index.js'
 import type { PendingRun, RunOutcome } from '../run/index.js'
 import type { Artifact } from '../run/index.js'
 import { buildSurface, readEntry } from '../workflow/index.js'
@@ -127,7 +128,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
         return blocks
       },
     },
-    async execute(args) {
+    async execute(args, exec) {
       // 续查：上一次调用超时返回 pending 后，用 promptId 回来问结果。
       const resumeId = asString(args.promptId).trim()
       if (resumeId !== '') {
@@ -178,13 +179,28 @@ export function runTool(deps: ToolDeps): ToolSpec {
         // 默认异步：提交完就把控制权交回对话。出图要几分钟，
         // 让工具调用一直挂着会让用户以为连接断了。
         if (args.wait !== true) {
+          // 有 agent 就挂一个后台等待者：出图后由它调 Agent.followup 把结果塞回
+          // 这个会话（与子代理回传同一条通道），用户不用再问一次。
+          const agent = exec?.agent as NotifyTarget | undefined
+          const canNotify = agent !== undefined && typeof agent.followup === 'function'
+          if (canNotify) {
+            watchRun({
+              client: deps.client,
+              target: agent,
+              promptId: submitted.promptId,
+              outputDir,
+              ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+            })
+          }
           return {
             ok: true,
             pending: true,
             promptId: submitted.promptId,
             waitedMs: 0,
             message: `已提交（promptId ${submitted.promptId}），ComfyUI 正在出图。`,
-            hint: '出图要几分钟。稍后用 comfyui_run 传 promptId 就能取结果；这次调用结束后任务不会中断。',
+            hint: canNotify
+              ? '出图完成后我会在这个对话里主动通知你（含产物路径）；也可以随时用 comfyui_run 传 promptId 手动查。'
+              : '出图要几分钟。稍后用 comfyui_run 传 promptId 就能取结果；这次调用结束后任务不会中断。',
             notes: submitted.notes,
           }
         }

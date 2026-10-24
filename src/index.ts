@@ -23,6 +23,7 @@ import { ensureDir, pluginDataDir, workflowsDir } from './host/paths.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
 import { AssetIndex } from './store/index.js'
+import { stopAllWatchers } from './run/index.js'
 import { createTools } from './tools/index.js'
 import type { ToolSpec } from './tools/index.js'
 
@@ -88,7 +89,12 @@ export function apply(ctx: HostContext, config: unknown): void {
     idleShutdownMs: settings.idleShutdownMs,
     logger,
   })
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => supervisor.dispose(), `${name}: supervisor`)
+  if (typeof ctx.effect === 'function') {
+    ctx.effect(() => () => {
+      supervisor.dispose()
+      stopAllWatchers()
+    }, `${name}: supervisor`)
+  }
 
   // 构造客户端不产生连接，HTTP 路由与工具共用同一个实例（object_info 缓存也共用）。
   const client = new ComfyClient({

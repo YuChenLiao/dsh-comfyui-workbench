@@ -24,13 +24,19 @@ export interface ToolOutput {
   render: (args: unknown, value: unknown) => ToolBlock[]
 }
 
+/** 执行上下文：宿主在调用时给的会话信息（只用到 agent）。 */
+export interface ToolExec {
+  /** 发起这次调用的 Agent；有它就能把结果通知回对话。 */
+  agent?: unknown
+}
+
 /** 工具规格（形状对齐 memory-ledger 的 ToolSpec）。 */
 export interface ToolSpec {
   name: string
   description: string
   parameters: Record<string, unknown>
   output: ToolOutput
-  execute: (args: Record<string, unknown>) => Promise<unknown>
+  execute: (args: Record<string, unknown>, exec?: ToolExec) => Promise<unknown>
 }
 
 /** 一次节点级参数覆盖（只作用于下一次运行，不写模板）。 */
