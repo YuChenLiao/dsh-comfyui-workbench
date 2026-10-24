@@ -1,9 +1,13 @@
+import { availableModels, missingModels, suggestModels } from '../comfy/index.js'
 import { listEntries, readEntry } from '../workflow/index.js'
 import type { WorkflowIOSurface } from '../workflow/types.js'
 import { sendJson } from './respond.js'
 
 /** 列表项：UI 与模型看到的是同一份数据，只是用法不同。 */
-function toListItem(surface: WorkflowIOSurface): Record<string, unknown> {
+function toListItem(
+  surface: WorkflowIOSurface,
+  available: ReadonlySet<string> | null,
+): Record<string, unknown> {
   const primary = surface.models.find(model => model.primary === true) ?? surface.models[0]
   return {
     workflowId: surface.workflowId,
@@ -19,6 +23,17 @@ function toListItem(surface: WorkflowIOSurface): Record<string, unknown> {
     outputs: surface.outputs.map(slot => ({ kind: slot.kind, count: slot.count })),
     nodes: surface.meta.nodeCount,
     workflowHash: surface.workflowHash,
+    ...(available === null
+      ? {}
+      : (() => {
+          const missing = missingModels(surface.models, available)
+          if (missing.length === 0) return {}
+          const primary = surface.models.find(model => model.primary === true) ?? surface.models[0]
+          return {
+            missingModels: missing,
+            modelHint: `本机没有：${missing.join('、')}。可用的替代：${suggestModels(available, primary?.kind ?? 'checkpoint').join('、') || '（一个都没有）'}`,
+          }
+        })()),
   }
 }
 
@@ -28,12 +43,17 @@ function toListItem(surface: WorkflowIOSurface): Record<string, unknown> {
  * 只给 IO 面，不给节点图 —— 浏览器端不需要拓扑，给它等于把几十 KB JSON
  * 送进内存与 devtools。节点细节走工具（`comfyui_workflow_inspect`）。
  */
-export function handleWorkflowList(dir: string, _url: URL, res: import('node:http').ServerResponse): void {
+export async function handleWorkflowList(
+  dir: string,
+  _url: URL,
+  res: import('node:http').ServerResponse,
+  available: ReadonlySet<string> | null,
+): Promise<void> {
   const { entries, broken } = listEntries(dir)
   sendJson(res, 200, {
     ok: true,
     count: entries.length,
-    workflows: entries.map(entry => toListItem(entry.surface)),
+    workflows: entries.map(entry => toListItem(entry.surface, available)),
     ...(broken.length > 0 ? { broken } : {}),
   })
 }

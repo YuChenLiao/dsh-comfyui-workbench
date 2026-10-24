@@ -26,7 +26,9 @@
     "test": "node tests/arch.mjs && node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs && node --test tests/workflow.test.mjs tests/store.test.mjs tests/runner.test.mjs tests/api.test.mjs tests/notify.test.mjs tests/supervisor.test.mjs",
     "check": "npm run typecheck && npm test",
     "import": "node scripts/import.mjs",
-    "migrate": "node scripts/migrate-album.mjs"
+    "migrate": "node scripts/migrate-album.mjs",
+    "accept": "node scripts/acceptance.mjs",
+    "accept:full": "node scripts/acceptance.mjs --run"
   },
   "engines": {
     "node": ">=20"

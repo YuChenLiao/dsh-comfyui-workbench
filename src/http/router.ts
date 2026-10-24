@@ -6,6 +6,7 @@ import type { Settings } from '../host/config.js'
 import type { AssetIndex, AssetStatus } from '../store/index.js'
 import { rebuildFromSidecars } from '../store/index.js'
 import type { ComfyClient, ComfySupervisor } from '../comfy/index.js'
+import { availableModels } from '../comfy/index.js'
 import type { HostContext } from '../host/types.js'
 import { isAuthorized } from '../assets/authorize.js'
 import { rootsOf } from '../assets/roots.js'
@@ -318,7 +319,16 @@ export function createHandler(
       // ── 工作流：GET 列表 / POST 批量导出 / GET {id} 单份 ──
       // 放通用分派之前：这里的方法语义与"writable 集合"不一致（同一路径两种方法）。
       if (sub === '/workflows') {
-        if (req.method === 'GET' || req.method === 'HEAD') return handleWorkflowList(workflowDir, url, res)
+        if (req.method === 'GET' || req.method === 'HEAD') {
+          // 拿不到 object_info（ComfyUI 离线）就不标缺失，避免把"离线"说成"缺模型"。
+          let available: Set<string> | null = null
+          try {
+            available = availableModels(await client.objectInfo())
+          } catch {
+            available = null
+          }
+          return handleWorkflowList(workflowDir, url, res, available)
+        }
         if (req.method === 'POST') return handleWorkflows(url, res, req)
         sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
         return
