@@ -12,7 +12,7 @@ export function createConfigHandler(deps: {
   uploadsDir: string
   workflowsDir: string
   /** 产物目录是怎么定下来的：配置 / 工作区 / 数据目录。 */
-  outputSource?: 'config' | 'workspace' | 'data'
+  outputSource?: 'config' | 'env' | 'service' | 'cwd' | 'data'
 }): (url: URL, res: import('node:http').ServerResponse) => void {
   return (_url, res) => {
     sendJson(res, 200, {

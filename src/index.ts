@@ -20,7 +20,10 @@ import { rootsOf } from './assets/roots.js'
 import { resolveSettings } from './host/config.js'
 import { resolveLogger } from './host/logger.js'
 import { ensureDir, pluginDataDir, workflowsDir } from './host/paths.js'
-import { workspaceDirOf } from './host/workspace.js'
+import { resolveOutputDir, workspaceDirOf } from './host/workspace.js'
+
+// 供测试与诊断使用：产物目录的解析规则要能被单独验证。
+export { resolveOutputDir, workspaceDirOf } from './host/workspace.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
 import { AssetIndex } from './store/index.js'
@@ -79,12 +82,11 @@ export function apply(ctx: HostContext, config: unknown): void {
   // 往那里写图等于污染宿主自己的安装树。
   // 产物默认落到当前工作区（`<workspace>/comfyui-output`），而不是插件私有目录 ——
   // 图就该出现在用户正在做的项目里，不该逼用户再去别处找、或者让模型复制一份。
-  const workspaceDir = workspaceDirOf(ctx)
-  const outputDir = settings.outputDir
-    ?? (workspaceDir === undefined ? path.join(pluginDataDir(), 'outputs') : path.join(workspaceDir, 'comfyui-output'))
-  const outputSource: 'config' | 'workspace' | 'data' = settings.outputDir !== null
-    ? 'config'
-    : (workspaceDir === undefined ? 'data' : 'workspace')
+  const workspaceGuess = workspaceDirOf(ctx)
+  const resolved = resolveOutputDir(settings.outputDir, workspaceGuess, pluginDataDir())
+  const outputDir = resolved.dir
+  const outputSource = resolved.source
+  // 目录不存在就建出来：探测到工作区后落到 <工作区>/comfyui-output。
   ensureDir(outputDir)
 
   // 服务托管：外部在跑就只用不托管；没跑且装了才拉起；只停自己拉起的那个。

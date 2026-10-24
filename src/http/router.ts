@@ -66,7 +66,7 @@ export function createHandler(
   /** 默认产物目录。 */
   defaultOutputDir: string,
   /** 产物目录的来源（配置 / 工作区 / 数据目录），只用于展示与诊断。 */
-  outputSource: 'config' | 'workspace' | 'data' = 'config',
+  outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data' = 'config',
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   // 产物目录已经由 index 解析好（默认在工作区下），传进来让授权根也包含它。
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, { ...settings, resolvedOutputDir: defaultOutputDir })
