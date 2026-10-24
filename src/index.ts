@@ -20,6 +20,7 @@ import { rootsOf } from './assets/roots.js'
 import { resolveSettings } from './host/config.js'
 import { resolveLogger } from './host/logger.js'
 import { ensureDir, pluginDataDir, workflowsDir } from './host/paths.js'
+import { workspaceDirOf } from './host/workspace.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
 import { AssetIndex } from './store/index.js'
@@ -78,17 +79,12 @@ export function apply(ctx: HostContext, config: unknown): void {
   // 往那里写图等于污染宿主自己的安装树。
   // 产物默认落到当前工作区（`<workspace>/comfyui-output`），而不是插件私有目录 ——
   // 图就该出现在用户正在做的项目里，不该逼用户再去别处找、或者让模型复制一份。
-  const workspaceDir = (() => {
-    try {
-      const wd = ctx.get?.('workingDirectory') as { defaultDirectory?: unknown } | undefined
-      const dir = wd?.defaultDirectory
-      return typeof dir === 'string' && dir !== '' ? dir : undefined
-    } catch {
-      return undefined
-    }
-  })()
+  const workspaceDir = workspaceDirOf(ctx)
   const outputDir = settings.outputDir
     ?? (workspaceDir === undefined ? path.join(pluginDataDir(), 'outputs') : path.join(workspaceDir, 'comfyui-output'))
+  const outputSource: 'config' | 'workspace' | 'data' = settings.outputDir !== null
+    ? 'config'
+    : (workspaceDir === undefined ? 'data' : 'workspace')
   ensureDir(outputDir)
 
   // 服务托管：外部在跑就只用不托管；没跑且装了才拉起；只停自己拉起的那个。
@@ -145,7 +141,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir, outputDir)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir, outputDir, outputSource)
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {
