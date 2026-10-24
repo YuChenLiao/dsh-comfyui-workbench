@@ -51,8 +51,9 @@ export class ComfyClient {
     path: string,
     init: RequestInit = {},
     timeoutMs = this.requestTimeoutMs,
+    skipEnsure = false,
   ): Promise<Response> {
-    if (this.ensure !== undefined) {
+    if (this.ensure !== undefined && !skipEnsure) {
       const ready = await this.ensure()
       if (!ready) throw comfyUnreachable(this.baseUrl, new Error('服务未就绪，自动拉起也失败了'))
     }
@@ -81,9 +82,12 @@ export class ComfyClient {
    *
    * @param refresh - 强制重新拉（用户显式刷新时用）。
    */
-  async objectInfo(refresh = false): Promise<ObjectInfo> {
+  async objectInfo(
+    refresh = false,
+    options?: { timeoutMs?: number; skipEnsure?: boolean },
+  ): Promise<ObjectInfo> {
     if (!refresh && this.infoCache !== null) return this.infoCache
-    const res = await this.request('/object_info', { method: 'GET' })
+    const res = await this.request('/object_info', { method: 'GET' }, options?.timeoutMs, options?.skipEnsure === true)
     if (res.status === 401 || res.status === 403) throw authFailed(this.baseUrl, res.status)
     if (!res.ok) throw comfyUnreachable(this.baseUrl, new Error(`/object_info 返回 ${res.status}`))
     const parsed: unknown = await res.json()

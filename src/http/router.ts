@@ -329,9 +329,11 @@ export function createHandler(
       if (sub === '/workflows') {
         if (req.method === 'GET' || req.method === 'HEAD') {
           // 拿不到 object_info（ComfyUI 离线）就不标缺失，避免把"离线"说成"缺模型"。
+          // 只做"顺手标一下缺什么模型"，不能因此把列表拖慢：
+          // ComfyUI 离线时探活会等满超时，甚至触发自动拉起，用户看到的就是空列表。
           let available: Set<string> | null = null
           try {
-            available = availableModels(await client.objectInfo())
+            available = availableModels(await client.objectInfo(false, { timeoutMs: 2_000, skipEnsure: true }))
           } catch {
             available = null
           }

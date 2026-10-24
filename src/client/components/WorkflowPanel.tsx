@@ -75,6 +75,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
   const [outputDir, setOutputDir] = useState('')
   const [picked, setPicked] = useState('')
   const [online, setOnline] = useState<boolean | null>(null)
+  /** 列表还在拉：不能把"加载中"显示成"还没有工作流"。 */
+  const [loadingList, setLoadingList] = useState(true)
   const pollRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
         setSelected(current => (current === '' && data.workflows.length === 1 ? (data.workflows[0]?.workflowId ?? '') : current))
       })
       .catch(error => { if (alive) setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) }) })
+      .finally(() => { if (alive) setLoadingList(false) })
     return () => { alive = false }
   }, [visible])
 
@@ -233,6 +236,15 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
       setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
       setOnline(false)
     }
+  }
+
+  if (loadingList) {
+    return (
+      <div className="cwf-empty">
+        <Icon name="refresh" size={24} />
+        <div className="cwf-empty-title">{t('loadingWorkflows')}</div>
+      </div>
+    )
   }
 
   if (list.length === 0) {
