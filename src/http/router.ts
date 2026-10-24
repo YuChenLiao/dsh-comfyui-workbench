@@ -38,7 +38,7 @@ type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => void | Pro
 const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop', '/upload'])
 
 /** 这些只接受 POST（DELETE 语义上没有意义，不该被放行）。 */
-const POST_ONLY = new Set(['/run'])
+const POST_ONLY = new Set(['/run', '/free'])
 
 /**
  * 构造请求处理器。
@@ -305,6 +305,14 @@ export function createHandler(
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
     '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir }),
+    '/free': async (_url, res) => {
+      try {
+        await client.free()
+        sendJson(res, 200, { ok: true })
+      } catch (error) {
+        sendJson(res, 200, { ok: false, message: error instanceof Error ? error.message : String(error) })
+      }
+    },
     '/service': handleServiceStatus.bind(null, supervisor),
     '/service/stop': handleServiceStop.bind(null, supervisor),
     '/upload': createUploadHandler(uploadsDir),

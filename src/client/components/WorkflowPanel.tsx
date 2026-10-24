@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { fetchConfig, fetchWorkflowDetail, fetchWorkflowList, fileUrl, pollRun, runDirect } from '../api.js'
+import { fetchConfig, fetchWorkflowDetail, fetchWorkflowList, fileUrl, freeMemory, pollRun, runDirect } from '../api.js'
 import type { HostConfig } from '../api.js'
 import { sendTextToComposer } from '../conversation.js'
 import { Icon } from '../icons.js'
 import type { Translate } from '../i18n.js'
 import type { DirectRunResult, Notice, SurfaceSlot, WorkflowListItem, WorkflowSurface } from '../types.js'
 import { Field } from './Field.js'
+import { ImagePicker } from './ImagePicker.js'
 
 export interface WorkflowPanelProps {
   t: Translate
@@ -14,13 +15,15 @@ export interface WorkflowPanelProps {
   goToConversation: () => void
 }
 
-/**
- * 用默认值初始化变量表。
- *
- * 图片类**不预填**：模板里那张图是作者机器上的路径或 ComfyUI input 里的文件名，
- * 直接显示成"已选"会让人以为选了张有用图，跑起来才发现不对。
- * 空着让用户自己拖一张；不填时服务端仍会用模板原值（submitWorkflow 会处理路径）。
- */
+/** 常见画面比例。点一下把 width/height 按长边 1024 折算。 */
+const RATIOS: Array<{ label: string; w: number; h: number }> = [
+  { label: '1:1', w: 1, h: 1 },
+  { label: '16:9', w: 16, h: 9 },
+  { label: '9:16', w: 9, h: 16 },
+  { label: '3:2', w: 3, h: 2 },
+]
+
+/** 用默认值初始化变量表；图片类不预填（模板里那张图多半在别人机器上）。 */
 function initialVars(inputs: readonly SurfaceSlot[]): Record<string, unknown> {
   const vars: Record<string, unknown> = {}
   for (const slot of inputs) {
@@ -30,7 +33,7 @@ function initialVars(inputs: readonly SurfaceSlot[]): Record<string, unknown> {
   return vars
 }
 
-/** 生成走对话时的指令文本：结构化 JSON，压缩模型改写的空间。 */
+/** 生成走对话时的指令文本。 */
 function instructionOf(workflowId: string, vars: Record<string, unknown>): string {
   const cleaned: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(vars)) {
@@ -45,34 +48,45 @@ function instructionOf(workflowId: string, vars: Record<string, unknown>): strin
   ].join('\n')
 }
 
+/** 尺寸取 64 的倍数（多数模型要求），长边按 1024 折算。 */
+function sizeFor(ratio: { w: number; h: number }, longEdge = 1024): { width: number; height: number } {
+  const norm = Math.max(ratio.w, ratio.h)
+  const round = (value: number): number => Math.max(64, Math.round(value / 64) * 64)
+  return { width: round((ratio.w / norm) * longEdge), height: round((ratio.h / norm) * longEdge) }
+}
+
 /**
- * 工作流面板：左边填参数，右边常驻预览。
+ * 工作流面板：左预览、右参数。
  *
- * 第一屏只有提示词与图像输入；`seed`/`steps`/`cfg` 都收在"更多参数"里。
- * 节点配置不在这里出现 —— 那是 `comfyui_workflow_inspect` 的事。
+ * 版式参考常见生图前端 —— 预览占主视区、参数收在右栏、主操作固定在底部；
+ * 与它们不同的是表单完全由工作流的 IO 面生成，不是写死的几个旋钮。
  */
 export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelProps): React.ReactElement {
   const [list, setList] = useState<WorkflowListItem[]>([])
   const [selected, setSelected] = useState('')
   const [surface, setSurface] = useState<WorkflowSurface | null>(null)
   const [vars, setVars] = useState<Record<string, unknown>>({})
-  const [mode, setMode] = useState<'conversation' | 'direct'>('conversation')
+  const [mode, setMode] = useState<'conversation' | 'direct'>('direct')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [result, setResult] = useState<DirectRunResult | null>(null)
   const [brokenCount, setBrokenCount] = useState(0)
   const [config, setConfig] = useState<HostConfig | null>(null)
-  /** 用户可改的输出目录；空串表示用宿主默认。 */
   const [outputDir, setOutputDir] = useState('')
-  /** 轮询句柄：提交后每 2.5 秒查一次，组件卸载或换工作流时停掉。 */
+  const [picked, setPicked] = useState('')
+  const [online, setOnline] = useState<boolean | null>(null)
   const pollRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!visible) return undefined
     let alive = true
     fetchConfig()
-      .then(cfg => { if (alive) setConfig(cfg) })
-      .catch(() => { /* 拿不到配置也能用默认值跑 */ })
+      .then(cfg => {
+        if (!alive) return
+        setConfig(cfg)
+        setOnline(true)
+      })
+      .catch(() => { if (alive) setOnline(false) })
     fetchWorkflowList()
       .then(data => {
         if (!alive) return
@@ -84,14 +98,23 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     return () => { alive = false }
   }, [visible])
 
+  const stopPolling = (): void => {
+    if (pollRef.current !== null) {
+      window.clearTimeout(pollRef.current)
+      pollRef.current = null
+    }
+  }
+  useEffect(() => stopPolling, [])
+
   useEffect(() => {
+    stopPolling()
+    setBusy(false)
+    setPicked('')
     if (selected === '') {
       setSurface(null)
       setVars({})
       return undefined
     }
-    stopPolling()
-    setBusy(false)
     let alive = true
     fetchWorkflowDetail(selected)
       .then(detail => {
@@ -104,20 +127,41 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     return () => { alive = false }
   }, [selected])
 
-  const stopPolling = (): void => {
-    if (pollRef.current !== null) {
-      window.clearTimeout(pollRef.current)
-      pollRef.current = null
-    }
+  useEffect(() => {
+    if (notice === null) return undefined
+    const timer = setTimeout(() => setNotice(null), 3600)
+    return () => clearTimeout(timer)
+  }, [notice])
+
+  const slots = surface?.inputs ?? []
+  const promptSlot = slots.find(slot => slot.type === 'string' && /^(prompt|text|caption)$/i.test(slot.name))
+  const imageSlots = slots.filter(slot => slot.type === 'image' || slot.type === 'mask')
+  const widthSlot = slots.find(slot => /^width$/i.test(slot.name))
+  const heightSlot = slots.find(slot => /^height$/i.test(slot.name))
+  const tuned = slots.filter(slot => slot !== promptSlot && !imageSlots.includes(slot) && slot !== widthSlot && slot !== heightSlot)
+  const setVar = (name: string, value: unknown): void => setVars(previous => ({ ...previous, [name]: value }))
+
+  /** 当前比例（用于高亮）。 */
+  const activeRatio = useMemo(() => {
+    const w = Number(vars[widthSlot?.name ?? ''] ?? 0)
+    const h = Number(vars[heightSlot?.name ?? ''] ?? 0)
+    if (!w || !h) return ''
+    const target = w / h
+    return RATIOS.find(ratio => Math.abs(ratio.w / ratio.h - target) < 0.02)?.label ?? ''
+  }, [vars, widthSlot, heightSlot])
+
+  const applyRatio = (ratio: { label: string; w: number; h: number }): void => {
+    if (widthSlot === undefined || heightSlot === undefined) return
+    const size = sizeFor(ratio)
+    setVars(previous => ({ ...previous, [widthSlot.name]: size.width, [heightSlot.name]: size.height }))
   }
 
-  useEffect(() => stopPolling, [])
+  const missing = slots.filter(slot => slot.required && (vars[slot.name] === undefined || vars[slot.name] === ''))
 
   const track = (promptId: string, startedAt: number): void => {
-    // 20 分钟兜底：真卡住了就别一直转。
     if (Date.now() - startedAt > 20 * 60 * 1000) {
       setBusy(false)
-      setNotice({ kind: 'err', text: `${t('runFailed')}：等了 20 分钟还没结果，可以去 ComfyUI 界面看队列。` })
+      setNotice({ kind: 'err', text: `${t('runFailed')}：等了 20 分钟还没结果。` })
       return
     }
     pollRef.current = window.setTimeout(() => {
@@ -129,14 +173,8 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
           }
           setResult(outcome)
           setBusy(false)
-          if (outcome.ok !== true) {
-            setNotice({ kind: 'err', text: outcome.message ?? t('runFailed') })
-          } else {
-            setNotice({
-              kind: 'ok',
-              text: t('runDone').replace('{n}', String(outcome.artifacts?.length ?? 0)).replace('{ms}', String(outcome.durationMs ?? 0)),
-            })
-          }
+          if (outcome.ok !== true) setNotice({ kind: 'err', text: outcome.message ?? t('runFailed') })
+          else setNotice({ kind: 'ok', text: t('runDone').replace('{n}', String(outcome.artifacts?.length ?? 0)).replace('{ms}', String(outcome.durationMs ?? 0)) })
         })
         .catch(error => {
           setBusy(false)
@@ -145,212 +183,253 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
     }, 2500)
   }
 
-  useEffect(() => {
-    if (notice === null) return undefined
-    const timer = setTimeout(() => setNotice(null), 3600)
-    return () => clearTimeout(timer)
-  }, [notice])
-
-  const basic = useMemo(() => surface?.inputs.filter(slot => slot.group === 'basic') ?? [], [surface])
-  const advanced = useMemo(() => surface?.inputs.filter(slot => slot.group === 'advanced') ?? [], [surface])
-  const missing = useMemo(
-    () => (surface?.inputs ?? []).filter(slot => slot.required && (vars[slot.name] === undefined || vars[slot.name] === '')),
-    [surface, vars],
-  )
-
-  const setVar = (name: string, value: unknown): void => setVars(previous => ({ ...previous, [name]: value }))
-
   const submit = async (): Promise<void> => {
     if (surface === null || busy) return
     if (missing.length > 0) {
-      setNotice({
-        kind: 'err',
-        text: `${t('needRequired')}${missing.map(slot => (slot.label !== '' ? slot.label : slot.name)).join('、')}`,
-      })
+      setNotice({ kind: 'err', text: `${t('needRequired')}${missing.map(slot => slot.label || slot.name).join('、')}` })
       return
     }
     stopPolling()
     setBusy(true)
+    setPicked('')
     try {
       if (mode === 'conversation') {
         const ok = await sendTextToComposer(instructionOf(surface.workflowId, vars), { goToConversation })
         setNotice(ok ? { kind: 'ok', text: t('instructionFilled') } : { kind: 'err', text: t('instructionFailed') })
         setBusy(false)
-      } else {
-        // 提交即返回，之后轮询。这样一个请求不会挂几分钟。
-        const submitted = await runDirect({
-          workflowId: surface.workflowId,
-          vars,
-          ...(outputDir.trim() === '' ? {} : { outputPath: outputDir.trim() }),
-        })
-        if (submitted.ok !== true) {
-          setResult(submitted)
-          setNotice({ kind: 'err', text: `${submitted.message ?? t('runFailed')}${submitted.hint === undefined ? '' : ` — ${submitted.hint}`}` })
-          setBusy(false)
-          return
-        }
-        if (submitted.pending === true && submitted.promptId !== undefined) {
-          setNotice({ kind: 'ok', text: t('submitted') })
-          track(submitted.promptId, Date.now())
-          return // busy 保持，等轮询结束
-        }
+        return
+      }
+      const submitted = await runDirect({
+        workflowId: surface.workflowId,
+        vars,
+        ...(outputDir.trim() === '' ? {} : { outputPath: outputDir.trim() }),
+      })
+      if (submitted.ok !== true) {
         setResult(submitted)
-        setNotice({
-          kind: 'ok',
-          text: t('runDone').replace('{n}', String(submitted.artifacts?.length ?? 0)).replace('{ms}', String(submitted.durationMs ?? 0)),
-        })
+        setNotice({ kind: 'err', text: `${submitted.message ?? t('runFailed')}${submitted.hint === undefined ? '' : ` — ${submitted.hint}`}` })
         setBusy(false)
         return
       }
+      if (submitted.pending === true && submitted.promptId !== undefined) {
+        setNotice({ kind: 'ok', text: t('submitted') })
+        track(submitted.promptId, Date.now())
+        return
+      }
+      setResult(submitted)
+      setNotice({ kind: 'ok', text: t('runDone').replace('{n}', String(submitted.artifacts?.length ?? 0)).replace('{ms}', String(submitted.durationMs ?? 0)) })
+      setBusy(false)
     } catch (error) {
       setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
       setBusy(false)
     }
   }
 
+  const free = async (): Promise<void> => {
+    try {
+      await freeMemory()
+      setNotice({ kind: 'ok', text: t('memoryFreed') })
+      setOnline(true)
+    } catch (error) {
+      setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+      setOnline(false)
+    }
+  }
+
   if (list.length === 0) {
     return (
-      <div className="cwf-root">
-        <div className="cwf-empty">
-          <Icon name="album" size={26} />
-          <div className="cwf-empty-title">{t('emptyWorkflows')}</div>
-          <div>{t('emptyWorkflowsHint')}</div>
-        </div>
+      <div className="cwf-empty">
+        <Icon name="album" size={26} />
+        <div className="cwf-empty-title">{t('emptyWorkflows')}</div>
+        <div>{t('emptyWorkflowsHint')}</div>
       </div>
     )
   }
 
   const current = list.find(item => item.workflowId === selected)
   const artifacts = result?.ok === true ? (result.artifacts ?? []) : []
-  const previewArtifact = artifacts[0]
-  // 没有产物时回退到表单里已选的输入图 —— 用户选完图立刻就能确认选对了。
-  const inputImageSlot = surface?.inputs.find(
-    slot => slot.type === 'image' && typeof vars[slot.name] === 'string' && vars[slot.name] !== '',
-  )
-  const previewPath = previewArtifact?.path ?? (inputImageSlot !== undefined ? String(vars[inputImageSlot.name]) : '')
-  const previewIsInput = previewArtifact === undefined && previewPath !== ''
+  const shown = artifacts.find(item => item.path === picked) ?? artifacts[0]
+  const inputImage = imageSlots.find(slot => typeof vars[slot.name] === 'string' && vars[slot.name] !== '')
+  const stagePath = shown?.path ?? (inputImage === undefined ? '' : String(vars[inputImage.name]))
+  const stageIsInput = shown === undefined && stagePath !== ''
 
   return (
-    <div className="cwf-root">
-      <div className="cwf-editor">
-        <div className="cwf-bar">
-          <select
-            className="cwf-select"
-            value={selected}
-            onChange={event => setSelected(event.target.value)}
-            title={current?.description ?? ''}
-            aria-label={t('selectWorkflow')}
-          >
+    <div className="cwf-app">
+      <header className="cwf-top">
+        <div className="cwf-pick">
+          <select value={selected} onChange={event => setSelected(event.target.value)} aria-label={t('selectWorkflow')} title={current?.description ?? ''}>
             <option value="">{t('selectWorkflow')}</option>
             {list.map(item => (
-              <option key={item.workflowId} value={item.workflowId} title={item.description}>
+              <option key={item.workflowId} value={item.workflowId}>
                 {item.title}{item.model === '' ? '' : ` · ${item.model}`}
               </option>
             ))}
           </select>
-          <div className="cwf-modes" role="group" aria-label={t('runModeLabel')}>
-            <button type="button" className={`cwf-mode${mode === 'conversation' ? ' on' : ''}`} title={t('modeConversationHint')} onClick={() => setMode('conversation')}>
-              {t('modeConversation')}
-            </button>
-            <button type="button" className={`cwf-mode${mode === 'direct' ? ' on' : ''}`} title={t('modeDirectHint')} onClick={() => setMode('direct')}>
-              {t('modeDirect')}
-            </button>
-          </div>
-          <button type="button" className="cwf-run" disabled={surface === null || busy} onClick={() => { void submit() }}>
-            {busy ? t('running') : t('run')}
-          </button>
+          <span className="cwf-chevron" aria-hidden="true" />
         </div>
+        <div className="cwf-status">
+          <button type="button" className="cwf-ghost" onClick={() => { void free() }}>{t('freeMemory')}</button>
+          <span><i className={`cwf-dot${online === false ? ' off' : ''}`} />{online === false ? t('offline') : t('ready')}</span>
+        </div>
+      </header>
 
-        {current?.missingModels !== undefined && current.missingModels.length > 0 ? (
-          <div className="cwf-warn">
-            <Icon name="close" size={14} />
-            <span>{t('missingModels').replace('{names}', current.missingModels.join('、'))}</span>
-            {current.modelHint !== undefined ? <span className="cwf-warn-hint">{current.modelHint}</span> : null}
-          </div>
-        ) : null}
-        {current !== undefined && current.description !== '' ? <p className="cwf-desc">{current.description}</p> : null}
-        {current !== undefined && current.description === '' ? <p className="cwf-desc cwf-desc-weak">{t('undescribedHint')}</p> : null}
-
-        {surface !== null ? (
-          <div className="cwf-form">
-            {basic.map(slot => (
-              <Field key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
-            ))}
-            {advanced.length > 0 ? (
-              <details className="cwf-advanced">
-                <summary>{t('moreParams')} · {advanced.length}</summary>
-                <div className="cwf-advanced-body">
-                  <div className="cwf-grid2">
-                    {advanced.map(slot => (
-                      <Field key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
-                    ))}
-                  </div>
-                </div>
-              </details>
-            ) : null}
-          </div>
-        ) : null}
-
-        {surface !== null ? (
-          <div className="cwf-outdir">
-            <div className="cwf-field-label"><span>{t('outputDirLabel')}</span></div>
-            <div className="cwf-outdir-row">
-              <input
-                className="cwf-input"
-                value={outputDir}
-                placeholder={config?.outputDir ?? ''}
-                onChange={event => setOutputDir(event.target.value)}
-                spellCheck={false}
-              />
-              {outputDir !== '' ? (
-                <button type="button" className="cwf-icon-btn" title={t('outputDirReset')} onClick={() => setOutputDir('')}>
-                  <Icon name="refresh" size={15} />
-                </button>
+      <div className="cwf-main">
+        <section className="cwf-left">
+          <div className="cwf-left-head">
+            <span>{stageIsInput ? t('previewInput') : t('previewOutput')}</span>
+            <div className="cwf-left-actions">
+              {busy ? <span>{t('running')}</span> : shown !== undefined ? <span>{t('done')}</span> : null}
+              {stagePath !== '' ? (
+                <button type="button" className="cwf-ghost" onClick={() => { setPicked(''); setResult(null) }}>{t('clearPreview')}</button>
               ) : null}
             </div>
-            <div className="cwf-hint">{t('outputDirHint')}</div>
           </div>
-        ) : null}
-        {brokenCount > 0 ? <p className="cwf-desc cwf-desc-weak">{t('brokenHint').replace('{n}', String(brokenCount))}</p> : null}
-        {notice !== null ? <div className={`cwf-notice${notice.kind === 'err' ? ' err' : ''}`}>{notice.text}</div> : null}
-      </div>
 
-      <div className="cwf-side">
-        <div className="cwf-preview">
-          <div className="cwf-preview-head">
-            <span>{previewIsInput ? t('previewInput') : t('previewOutput')}</span>
-            {previewArtifact?.width !== undefined && previewArtifact.height !== undefined
-              ? <span>{previewArtifact.width}×{previewArtifact.height}</span>
-              : null}
-          </div>
           <div className="cwf-stage">
-            {previewPath !== '' ? (
+            {stagePath !== '' ? (
               <>
-                <img src={fileUrl(previewPath, !previewIsInput)} alt={previewPath} />
-                <div className="cwf-stage-meta">
-                  {previewArtifact !== undefined
-                    ? <span className="cwf-tag">{previewArtifact.digest}</span>
-                    : <span className="cwf-tag">{t('previewInputTag')}</span>}
+                <img src={fileUrl(stagePath, stageIsInput)} alt={stagePath} />
+                <div className="cwf-stage-badge">
+                  {shown !== undefined ? <span className="cwf-tag">{shown.digest}</span> : <span className="cwf-tag">{t('previewInputTag')}</span>}
+                  {shown?.width !== undefined && shown.height !== undefined ? <span className="cwf-tag">{shown.width}×{shown.height}</span> : null}
                 </div>
               </>
             ) : (
               <div className="cwf-stage-empty">
-                <Icon name="image" size={26} />
+                <Icon name="image" size={28} />
                 <div>{surface === null ? t('previewPickWorkflow') : t('previewEmpty')}</div>
               </div>
             )}
           </div>
+
+          <div className="cwf-stage-foot">
+            <button type="button" className="cwf-pill" disabled={shown === undefined} onClick={() => { if (shown !== undefined) window.open(fileUrl(shown.path), '_blank') }}>{t('download')}</button>
+            <button
+              type="button"
+              className="cwf-pill"
+              disabled={shown === undefined || imageSlots.length === 0}
+              onClick={() => {
+                if (shown === undefined || imageSlots[0] === undefined) return
+                setVar(imageSlots[0].name, shown.path)
+                setNotice({ kind: 'ok', text: t('usedAsReference') })
+              }}
+            >{t('useAsReference')}</button>
+            <button
+              type="button"
+              className="cwf-pill"
+              disabled={mode === 'conversation' && surface === null}
+              onClick={() => { setNotice({ kind: 'ok', text: t('reuseHint') }) }}
+            >{t('reuseParams')}</button>
+            <button type="button" className="cwf-pill" onClick={() => setMode(mode === 'direct' ? 'conversation' : 'direct')} title={mode === 'direct' ? t('modeDirectHint') : t('modeConversationHint')}>
+              {mode === 'direct' ? t('modeDirect') : t('modeConversation')}
+            </button>
+          </div>
+
           {artifacts.length > 1 ? (
-            <div className="cwf-results">
-              {artifacts.map(artifact => (
-                <figure key={artifact.path} className="cwf-result">
-                  <img src={fileUrl(artifact.path, true)} alt={artifact.path} loading="lazy" />
-                  <figcaption>{artifact.digest}</figcaption>
-                </figure>
+            <div className="cwf-strip">
+              {artifacts.map(item => (
+                <button key={item.path} type="button" className={item.path === (shown?.path ?? '') ? 'on' : ''} onClick={() => setPicked(item.path)} title={item.path}>
+                  <img src={fileUrl(item.path, true)} alt={item.path} loading="lazy" />
+                </button>
               ))}
             </div>
           ) : null}
-        </div>
+        </section>
+
+        <aside className="cwf-right">
+          {current?.missingModels !== undefined && current.missingModels.length > 0 ? (
+            <div className="cwf-warn">
+              <Icon name="close" size={14} />
+              <span>{t('missingModels').replace('{names}', current.missingModels.join('、'))}</span>
+              {current.modelHint !== undefined ? <span className="cwf-warn-hint">{current.modelHint}</span> : null}
+            </div>
+          ) : null}
+
+          {surface !== null ? (
+            <>
+              {promptSlot !== undefined ? (
+                <div className="cwf-group">
+                  <div className="cwf-group-label">{promptSlot.label !== '' ? promptSlot.label : t('promptLabel')}</div>
+                  <textarea
+                    className="cwf-area"
+                    value={typeof vars[promptSlot.name] === 'string' ? String(vars[promptSlot.name]) : ''}
+                    onChange={event => setVar(promptSlot.name, event.target.value)}
+                    placeholder={t('promptPlaceholder')}
+                  />
+                </div>
+              ) : null}
+
+              {imageSlots.length > 0 ? (
+                <div className="cwf-group">
+                  <div className="cwf-group-label">{t('referenceImage')}</div>
+                  {imageSlots.map(slot => (
+                    <ImagePicker key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
+                  ))}
+                </div>
+              ) : null}
+
+              {widthSlot !== undefined && heightSlot !== undefined ? (
+                <div className="cwf-group">
+                  <div className="cwf-group-label">{t('aspectRatio')}</div>
+                  <div className="cwf-ratios">
+                    {RATIOS.map(ratio => (
+                      <button key={ratio.label} type="button" className={`cwf-ratio${activeRatio === ratio.label ? ' on' : ''}`} onClick={() => applyRatio(ratio)}>
+                        {ratio.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {tuned.length > 0 ? (
+                <div className="cwf-group">
+                  <div className="cwf-group-label"><span>{t('paramsLabel')}</span></div>
+                  <div className="cwf-pairs">
+                    {tuned.slice(0, 6).map(slot => (
+                      <Field key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {tuned.length > 6 || widthSlot !== undefined ? (
+                <details className="cwf-advanced">
+                  <summary>{t('moreParams')}</summary>
+                  <div className="cwf-advanced-body">
+                    <div className="cwf-pairs">
+                      {widthSlot !== undefined ? <Field slot={widthSlot} value={vars[widthSlot.name]} t={t} onChange={value => setVar(widthSlot.name, value)} /> : null}
+                      {heightSlot !== undefined ? <Field slot={heightSlot} value={vars[heightSlot.name]} t={t} onChange={value => setVar(heightSlot.name, value)} /> : null}
+                      {tuned.slice(6).map(slot => (
+                        <Field key={slot.name} slot={slot} value={vars[slot.name]} t={t} onChange={value => setVar(slot.name, value)} />
+                      ))}
+                    </div>
+                    <div className="cwf-group">
+                      <div className="cwf-field-label">{t('outputDirLabel')}</div>
+                      <input className="cwf-input" value={outputDir} placeholder={config?.outputDir ?? ''} onChange={event => setOutputDir(event.target.value)} spellCheck={false} />
+                      <div className="cwf-hint">{t('outputDirHint')}</div>
+                    </div>
+                  </div>
+                </details>
+              ) : null}
+
+              <div className="cwf-meta">
+                {current?.model !== undefined && current.model !== '' ? `${t('modelLabel')} ${current.model}` : ''}
+                {surface.outputs.length > 0 ? ` · ${surface.outputs.length} 个输出` : ''}
+                {surface.meta.missingNodes.length > 0 ? ` · 缺节点 ${surface.meta.missingNodes.length}` : ''}
+              </div>
+            </>
+          ) : null}
+
+          {brokenCount > 0 ? <div className="cwf-hint">{t('brokenHint').replace('{n}', String(brokenCount))}</div> : null}
+          {notice !== null ? <div className={`cwf-notice${notice.kind === 'err' ? ' err' : ''}`}>{notice.text}</div> : null}
+
+          <div className="cwf-dock">
+            <button type="button" className="cwf-generate" disabled={surface === null || busy} onClick={() => { void submit() }}>
+              <Icon name="image" size={16} />
+              {busy ? t('running') : t('run')}
+              <kbd className="cwf-kbd">⌘↵</kbd>
+            </button>
+          </div>
+        </aside>
       </div>
     </div>
   )

@@ -165,6 +165,22 @@ export class ComfyClient {
     return { name, subfolder: typeof bag?.subfolder === 'string' ? bag.subfolder : '' }
   }
 
+  /**
+   * 让 ComfyUI 释放显存与模型缓存。
+   *
+   * 对应界面上的"释放内存"：出完图后主动腾出显存，避免占着不放。
+   */
+  async free(): Promise<void> {
+    const res = await this.request('/free', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unload_models: true, free_memory: true }),
+    }, 20_000)
+    if (!res.ok) {
+      throw new RunError('comfy_unreachable', `释放内存失败：HTTP ${res.status}`, '确认 ComfyUI 在线且版本支持 POST /free。')
+    }
+  }
+
   /** 取消执行（超时收尾必发，否则队列被一条已放弃的任务堵住）。 */
   async interrupt(): Promise<void> {
     try {

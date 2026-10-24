@@ -109,6 +109,13 @@ export async function pollRun(promptId: string): Promise<DirectRunResult> {
   return bag
 }
 
+/** 让 ComfyUI 释放显存。 */
+export async function freeMemory(): Promise<void> {
+  const res = await fetch(`${API}/free`, { method: 'POST' })
+  const body = await res.json().catch(() => null)
+  if (body?.ok !== true) throw new Error(body?.message ?? `释放失败：HTTP ${res.status}`)
+}
+
 /** 文件字节地址。`thumb` 为真时走缩略图。 */
 export function fileUrl(path: string, thumb?: boolean): string {
   return `${API}/file?path=${encodeURIComponent(path)}${thumb === true ? '&thumb=1' : ''}`
