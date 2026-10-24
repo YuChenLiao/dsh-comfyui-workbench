@@ -34,6 +34,9 @@ export function ImagePicker(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
+  /** 手动填路径模式：图已经在某个目录里，不想再传一份。 */
+  const [manual, setManual] = useState(false)
+  const [draft, setDraft] = useState('')
 
   const target = typeof value === 'string' ? value : ''
   const filled = target !== ''
@@ -150,6 +153,24 @@ export function ImagePicker(props: {
           event.target.value = ''
         }}
       />
+      {!filled && manual ? (
+        <input
+          className="cwf-input"
+          placeholder={t('manualPathHint')}
+          value={draft}
+          spellCheck={false}
+          onChange={event => setDraft(event.target.value)}
+          onBlur={() => { if (draft.trim() !== '') onChange(draft.trim()) }}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && draft.trim() !== '') onChange(draft.trim())
+          }}
+        />
+      ) : null}
+      {!filled ? (
+        <button type="button" className="cwf-link" onClick={() => setManual(value => !value)}>
+          {manual ? t('manualPathCancel') : t('manualPath')}
+        </button>
+      ) : null}
       {error !== '' ? <div className="cwf-hint cwf-hint-err">{error}</div> : null}
     </div>
   )

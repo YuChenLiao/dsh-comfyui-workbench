@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { fetchWorkflowDetail, fetchWorkflowList, fileUrl, pollRun, runDirect } from '../api.js'
+import { fetchConfig, fetchWorkflowDetail, fetchWorkflowList, fileUrl, pollRun, runDirect } from '../api.js'
+import type { HostConfig } from '../api.js'
 import { sendTextToComposer } from '../conversation.js'
 import { Icon } from '../icons.js'
 import type { Translate } from '../i18n.js'
@@ -60,12 +61,18 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
   const [notice, setNotice] = useState<Notice | null>(null)
   const [result, setResult] = useState<DirectRunResult | null>(null)
   const [brokenCount, setBrokenCount] = useState(0)
+  const [config, setConfig] = useState<HostConfig | null>(null)
+  /** 用户可改的输出目录；空串表示用宿主默认。 */
+  const [outputDir, setOutputDir] = useState('')
   /** 轮询句柄：提交后每 2.5 秒查一次，组件卸载或换工作流时停掉。 */
   const pollRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!visible) return undefined
     let alive = true
+    fetchConfig()
+      .then(cfg => { if (alive) setConfig(cfg) })
+      .catch(() => { /* 拿不到配置也能用默认值跑 */ })
     fetchWorkflowList()
       .then(data => {
         if (!alive) return
@@ -171,7 +178,11 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
         setBusy(false)
       } else {
         // 提交即返回，之后轮询。这样一个请求不会挂几分钟。
-        const submitted = await runDirect({ workflowId: surface.workflowId, vars })
+        const submitted = await runDirect({
+          workflowId: surface.workflowId,
+          vars,
+          ...(outputDir.trim() === '' ? {} : { outputPath: outputDir.trim() }),
+        })
         if (submitted.ok !== true) {
           setResult(submitted)
           setNotice({ kind: 'err', text: `${submitted.message ?? t('runFailed')}${submitted.hint === undefined ? '' : ` — ${submitted.hint}`}` })
@@ -280,6 +291,26 @@ export function WorkflowPanel({ t, visible, goToConversation }: WorkflowPanelPro
           </div>
         ) : null}
 
+        {surface !== null ? (
+          <div className="cwf-outdir">
+            <div className="cwf-field-label"><span>{t('outputDirLabel')}</span></div>
+            <div className="cwf-outdir-row">
+              <input
+                className="cwf-input"
+                value={outputDir}
+                placeholder={config?.outputDir ?? ''}
+                onChange={event => setOutputDir(event.target.value)}
+                spellCheck={false}
+              />
+              {outputDir !== '' ? (
+                <button type="button" className="cwf-icon-btn" title={t('outputDirReset')} onClick={() => setOutputDir('')}>
+                  <Icon name="refresh" size={15} />
+                </button>
+              ) : null}
+            </div>
+            <div className="cwf-hint">{t('outputDirHint')}</div>
+          </div>
+        ) : null}
         {brokenCount > 0 ? <p className="cwf-desc cwf-desc-weak">{t('brokenHint').replace('{n}', String(brokenCount))}</p> : null}
         {notice !== null ? <div className={`cwf-notice${notice.kind === 'err' ? ' err' : ''}`}>{notice.text}</div> : null}
       </div>

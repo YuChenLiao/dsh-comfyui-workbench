@@ -29,6 +29,25 @@ export async function apiJson(route: string, params?: Record<string, string>): P
   return bag ?? {}
 }
 
+/** 宿主配置（界面上要显示的默认路径等）。 */
+export interface HostConfig {
+  baseUrl: string
+  outputDir: string
+  uploadsDir: string
+  workflowsDir: string
+  runMode: string
+  returnImages: string
+  timeoutMs: number
+}
+
+/** 取宿主配置。 */
+export async function fetchConfig(): Promise<HostConfig> {
+  const data = await apiJson('/config')
+  const bag = data.config !== null && typeof data.config === 'object' ? (data.config as HostConfig) : null
+  if (bag === null) throw new Error('宿主没有返回配置。')
+  return bag
+}
+
 /** 工作流列表（IO 面摘要）。 */
 export async function fetchWorkflowList(): Promise<{ workflows: WorkflowListItem[]; broken?: string[] }> {
   const data = await apiJson('/workflows')

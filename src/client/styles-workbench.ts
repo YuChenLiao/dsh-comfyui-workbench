@@ -62,6 +62,9 @@ export const WORKBENCH_CSS = [
 textarea.cwf-input{resize:vertical;min-height:96px;line-height:1.7}
 .cwf-hint{font-size:.82em;color:var(--w-muted)}
 .cwf-hint-err{color:var(--w-danger)}
+.cwf-outdir{display:flex;flex-direction:column;gap:6px}
+.cwf-outdir-row{display:flex;gap:6px;align-items:center}
+.cwf-outdir-row .cwf-input{flex:1;min-width:0}
 .cwf-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}`,
 
   // ── 图片上传 ──
@@ -82,6 +85,8 @@ textarea.cwf-input{resize:vertical;min-height:96px;line-height:1.7}
 .cwf-icon-btn{appearance:none;border:0;background:transparent;color:var(--w-muted);padding:6px;border-radius:6px;cursor:pointer;display:grid;place-items:center;transition:background-color .12s ease,color .12s ease}
 .cwf-icon-btn:hover{background:var(--w-bg);color:var(--w-text)}
 .cwf-icon-danger:hover{color:var(--w-danger)}
+.cwf-link{appearance:none;border:0;background:transparent;color:var(--w-muted);font-size:.82em;padding:2px 0;cursor:pointer;text-align:left;align-self:flex-start;text-decoration:underline;text-underline-offset:3px}
+.cwf-link:hover{color:var(--w-text)}
 .cwf-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}`,
 
   // ── 高级参数 ──

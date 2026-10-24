@@ -23,6 +23,7 @@ import { mimeOf, readFullSidecar } from '../scan/index.js'
 import { pathsFromBody, readJsonBody, sendJson } from './respond.js'
 import { createRunHandler } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
+import { createConfigHandler } from './config-api.js'
 import { createUploadHandler } from './upload-api.js'
 import { handleWorkflowDetail, handleWorkflowList, workflowIdFromPath } from './workflows-api.js'
 
@@ -306,6 +307,7 @@ export function createHandler(
     '/service': handleServiceStatus.bind(null, supervisor),
     '/service/stop': handleServiceStop.bind(null, supervisor),
     '/upload': createUploadHandler(uploadsDir),
+    '/config': createConfigHandler({ settings, outputDir: defaultOutputDir, uploadsDir, workflowsDir: workflowDir }),
   }
 
   return async (req, res) => {
