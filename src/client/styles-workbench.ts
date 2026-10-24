@@ -19,7 +19,9 @@ export const WORKBENCH_CSS = [
 .cwb-tab.on::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--w-accent);border-radius:2px 2px 0 0}`,
 
   // ── 应用区：顶部条 + 左右两栏 ──
-  `.cwf-app{flex:1;min-height:0;display:flex;flex-direction:column}
+  `.cwb-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.cwb-body>*{flex:1;min-height:0}
+.cwf-app{flex:1;min-height:0;display:flex;flex-direction:column}
 .cwf-top{display:flex;align-items:center;gap:10px;padding:10px 20px;flex-shrink:0;border-bottom:1px solid var(--w-line)}
 .cwf-pick{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:var(--w-surface);border:1px solid var(--w-line);border-radius:10px;padding:0 10px;height:36px}
 .cwf-pick select{flex:1;min-width:0;appearance:none;border:0;background:transparent;color:var(--w-text);font-size:.95em;cursor:pointer}
