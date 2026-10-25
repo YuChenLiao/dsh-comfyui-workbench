@@ -1,3 +1,4 @@
+import { fetchJson } from '../server/api.js'
 import { readStore, searchTags, storePath } from '../server/store.js'
 import type { TagRecord } from '../server/store.js'
 import { asString } from '../../../shared/tools/types.js'
@@ -42,8 +43,6 @@ export function createTagCache(dataDir: string): TagCache {
   }
 }
 
-const BASE = 'https://danbooru.donmai.us'
-const UA = 'dsh-comfyui-workbench (+https://github.com/YuChenLiao/dsh-comfyui-workbench)'
 const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/
 const CATEGORY = { character: 4, artist: 1 } as const
 
@@ -104,7 +103,7 @@ export async function searchOnlineDetailed(
   for (const one of kinds) {
     try {
       if (CJK.test(trimmed)) {
-        const res = await fetch(`${BASE}/wiki_pages.json?search[other_names_match]=${encodeURIComponent(trimmed)}&limit=5`, { headers: { 'User-Agent': UA } })
+        const res = await fetchJson(`/wiki_pages.json?search[other_names_match]=${encodeURIComponent(trimmed)}&limit=5`)
         if (res.status === 429) throttled = true
         if (res.ok) {
           const body = (await res.json()) as Array<{ title?: unknown }>
@@ -114,7 +113,7 @@ export async function searchOnlineDetailed(
           const ranked: Array<{ title: string; postCount: number; category: unknown }> = []
           for (const title of titles.slice(0, 5)) {
             try {
-              const check = await fetch(`${BASE}/tags.json?search[name]=${encodeURIComponent(title)}&limit=1`, { headers: { 'User-Agent': UA } })
+              const check = await fetchJson(`/tags.json?search[name]=${encodeURIComponent(title)}&limit=1`)
               if (check.status === 429) throttled = true
               if (!check.ok) continue
               const rows = (await check.json()) as RawTag[]
@@ -131,24 +130,24 @@ export async function searchOnlineDetailed(
           if (best !== undefined) push(best.title)
         }
       } else {
-        const res = await fetch(
-          `${BASE}/tags.json?search[name_matches]=*${encodeURIComponent(trimmed)}*&search[category]=${CATEGORY[one]}&search[order]=count&limit=${limit}`,
-          { headers: { 'User-Agent': UA } },
+        const res = await fetchJson(
+          `/tags.json?search[name_matches]=*${encodeURIComponent(trimmed)}*&search[category]=${CATEGORY[one]}&search[order]=count&limit=${limit}`,
         )
         if (res.status === 429) throttled = true
         if (res.ok) {
           const body = (await res.json()) as RawTag[]
           if (Array.isArray(body)) for (const tag of body) push(tag.name)
         } else if (res.status === 404) {
-          const exact = await fetch(`${BASE}/tags.json?search[name]=${encodeURIComponent(trimmed)}&limit=${limit}`, { headers: { 'User-Agent': UA } })
+          const exact = await fetchJson(`/tags.json?search[name]=${encodeURIComponent(trimmed)}&limit=${limit}`)
           if (exact.ok) {
             const body = (await exact.json()) as RawTag[]
             if (Array.isArray(body)) for (const tag of body) push(tag.name)
           }
         }
       }
-    } catch {
-      // 网络失败就用已有的
+    } catch (error) {
+      // 所有镜像都失败：429 是限流（换个时间就好），其余是网络问题
+      if ((error as { status?: unknown }).status === 429) throttled = true
     }
   }
 

@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 
+import { getJson as getJsonWithFallback } from './api.js'
+
 import type { TagRecord } from './store.js'
 import { pickNames, pruneSharedAliases, readStore, storePath, writeStore } from './store.js'
 
@@ -38,29 +40,34 @@ export interface SyncOptions {
   signal?: AbortSignal
 }
 
-const BASE = 'https://danbooru.donmai.us'
-const UA = 'dsh-comfyui-workbench (+https://github.com/YuChenLiao/dsh-comfyui-workbench)'
+// 主站挂了会自动换镜像（见 api.ts）
 
 /** Danbooru 的 tag 分类：1 画师，4 角色。 */
 const CATEGORY = { character: 4, artist: 1 } as const
 
+/**
+ * 同步用的 GET。
+ *
+ * 降级与重试分工：`fetchJson` 负责"这个镜像不行就换一个"，
+ * 这里负责"全都 429 时退避再试"—— 否则一次限流会让整轮同步作废、已拉的数据全丢。
+ *
+ * @param path - 接口路径。
+ * @param signal - 中止信号。
+ */
 async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
-  // 分页请求也要退避：一次 429 直接抛会让整轮同步作废（已拉的数据全丢）。
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const res = await fetch(BASE + path, { headers: { 'User-Agent': UA }, signal })
-    if (res.ok) return res.json()
-    // 429 / 5xx 值得重试；404 与其它 4xx 直接失败
-    const fail = (): Error => {
-      const error = new Error(`Danbooru 返回 ${res.status}：${path}`) as Error & { status?: number }
-      error.status = res.status
-      return error
+    try {
+      return await getJsonWithFallback(path, signal === undefined ? undefined : { signal })
+    } catch (error) {
+      const failure = error as { status?: unknown; retryAfterMs?: unknown }
+      const status = failure.status
+      // 4xx（非 404/429）是请求本身的问题，重试没意义
+      if (typeof status === 'number' && status !== 404 && status !== 429 && status < 500) throw error
+      if (attempt === 3 || signal?.aborted === true) throw error
+      // 服务端给了 Retry-After 就按它等，但要设上限：回 3600 会让同步原地卡一小时
+      const hinted = typeof failure.retryAfterMs === 'number' ? Math.min(failure.retryAfterMs, 30_000) : 0
+      await new Promise(resolve => setTimeout(resolve, hinted > 0 ? hinted : 800 * (attempt + 1)))
     }
-    if (res.status !== 429 && res.status < 500) throw fail()
-    if (attempt === 3 || signal?.aborted === true) throw fail()
-    const retryAfter = Number(res.headers.get('retry-after')) || 0
-    // Retry-After 要设上限：服务端回 3600 会让同步原地卡一小时
-    const wait = retryAfter > 0 ? Math.min(retryAfter, 30) * 1000 : 800 * (attempt + 1)
-    await new Promise(resolve => setTimeout(resolve, wait))
   }
   throw new Error(`Danbooru 请求失败：${path}`)
 }

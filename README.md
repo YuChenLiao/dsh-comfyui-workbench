@@ -84,6 +84,10 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 上下文是稀缺资源，所以结果里不放 `postCount`、别名列表、匹配方式这些 —— 模型要的只是"这个名字对应哪个 tag"。
 
+**主站挂了会自动换镜像**：`safebooru.donmai.us` 是 Danbooru 官方的 SFW 镜像 —— 同一套接口、同一份数据（实测 `post_count`、wiki 的 `other_names`、别名反查结果与主站逐字段一致）。主站超时（8 秒无响应）、`5xx`、`429` 或端点 `404` 时自动切过去，查询结果不变。切过一次之后会优先走能用的那个。
+
+不能用的是 `aibooru.online` 这类「同一套软件、不同数据库」的站：它的 `hatsune_miku` 是 1821 帖而主站是 148311，拿它当镜像会给出错误的热度与结果。
+
 **本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
 
 数据来自 Danbooru 的 `tags.json`（角色 category=4、画师 category=1）与逐条的 `wiki_pages.json`（中文名在 `other_names` 里）。前者一次拉一千条，后者要逐条查（8 并发下实测约 5.5 条/秒）—— 所以**按热度阈值筛选**是唯一的降规模手段，长尾 tag 既没人用也没人翻译。

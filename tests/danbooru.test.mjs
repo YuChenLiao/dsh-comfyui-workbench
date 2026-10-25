@@ -13,6 +13,8 @@ import {
   searchOnline,
   searchOnlineDetailed,
   searchTags,
+  useMirrors,
+  useTimeout,
   syncKind,
   storePath,
   worthKeeping,
@@ -394,6 +396,7 @@ test('在线：429 时标记为限流，文案与"没找到"区分开', async ()
   const jsonRes = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, headers: { get: () => null } })
 
   try {
+    // 两个镜像都会被打到（降级），全部 429 才算"限流"
     globalThis.fetch = async () => jsonRes({}, 429)
     const limited = await searchOnlineDetailed('甘雨', 5)
     assert.equal(limited.throttled, true, '应当标成限流')
@@ -427,5 +430,139 @@ test('查询工具：限流与查无此人的错误文案必须不同', async ()
   } finally {
     globalThis.fetch = originalFetch
     fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('降级：主站失败自动换镜像，结果不变', async () => {
+  // safebooru.donmai.us 是官方 SFW 镜像，数据与主站同源（实测 post_count/别名逐字段一致）
+  const originalFetch = globalThis.fetch
+  const hits = []
+  const jsonRes = body => ({ ok: true, status: 200, json: async () => body, headers: { get: () => null } })
+  useMirrors(['https://primary.test', 'https://mirror.test'])
+  globalThis.fetch = async input => {
+    const url = String(input)
+    hits.push(url)
+    if (url.includes('primary.test')) throw new Error('ECONNRESET')
+    return jsonRes([{ name: 'hatsune_miku', post_count: 148311, category: 4 }])
+  }
+  try {
+    const tags = await searchOnline('hatsune_miku', 3, 'character')
+    assert.deepEqual(tags, ['hatsune_miku'], '主站挂了要能从镜像拿到同样的结果')
+    assert.ok(hits.some(url => url.includes('mirror.test')), '应当打到镜像')
+  } finally {
+    globalThis.fetch = originalFetch
+    useMirrors([])
+  }
+})
+
+test('降级：404 表示镜像缺这个端点，应当换站（查无此项是 200+[]）', async () => {
+  // Danbooru 的"没有这个 tag"是 200 + 空数组，不是 404。
+  // 404 只说明该镜像没有这个端点（主站 500 + 镜像 404 时若不换站，同步会静默拿 0 条）。
+  const originalFetch = globalThis.fetch
+  const hits = []
+  const res404 = { ok: false, status: 404, json: async () => ({}), headers: { get: () => null } }
+  const ok = { ok: true, status: 200, json: async () => [{ name: 'wlop', post_count: 401, category: 1 }], headers: { get: () => null } }
+  useMirrors(['https://dead.test', 'https://mirror.test'])
+  globalThis.fetch = async input => {
+    const url = String(input)
+    hits.push(url)
+    return url.includes('dead.test') ? res404 : ok
+  }
+  try {
+    const tags = await searchOnline('wlop', 3, 'artist')
+    assert.deepEqual(tags, ['wlop'], '镜像有结果就该拿回来')
+    assert.ok(hits.some(url => url.includes('mirror.test')), '404 之后应当换站')
+  } finally {
+    globalThis.fetch = originalFetch
+    useMirrors([])
+  }
+})
+
+test('降级：全部镜像都挂时降级为空，不抛错', async () => {
+  const originalFetch = globalThis.fetch
+  let calls = 0
+  useMirrors(['https://a.test', 'https://b.test'])
+  globalThis.fetch = async () => { calls += 1; throw new Error('down') }
+  try {
+    assert.deepEqual(await searchOnline('甘雨', 3), [])
+    assert.ok(calls >= 2, '两个镜像都该试过')
+  } finally {
+    globalThis.fetch = originalFetch
+    useMirrors([])
+  }
+})
+
+test('降级：记住上次成功的镜像，不再撞坏掉的那个', async () => {
+  const originalFetch = globalThis.fetch
+  const hits = []
+  const jsonRes = body => ({ ok: true, status: 200, json: async () => body, headers: { get: () => null } })
+  useMirrors(['https://dead.test', 'https://mirror.test'])
+  globalThis.fetch = async input => {
+    const url = String(input)
+    hits.push(url)
+    if (url.includes('dead.test')) throw new Error('ECONNREFUSED')
+    return jsonRes([{ name: 'hatsune_miku', post_count: 148311, category: 4 }])
+  }
+  try {
+    await searchOnline('hatsune_miku', 3, 'character')
+    const firstRound = hits.length
+    assert.ok(firstRound >= 2, '第一次要先撞主站再换')
+
+    hits.length = 0
+    await searchOnline('hatsune_miku', 3, 'character')
+    assert.equal(hits.length, 1, `第二次应当直接打镜像，实际 ${hits.length} 次`)
+    assert.ok(hits[0].includes('mirror.test'))
+  } finally {
+    globalThis.fetch = originalFetch
+    useMirrors([])
+  }
+})
+
+test('降级：429 也算"这个站暂时不能用"，换站而不是直接失败', async () => {
+  const originalFetch = globalThis.fetch
+  const jsonRes = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, headers: { get: () => null } })
+  let hits = 0
+  useMirrors(['https://limited.test', 'https://mirror.test'])
+  globalThis.fetch = async input => {
+    hits += 1
+    return String(input).includes('limited.test') ? jsonRes({}, 429) : jsonRes([{ name: 'wlop', post_count: 401, category: 1 }])
+  }
+  try {
+    const tags = await searchOnline('wlop', 3, 'artist')
+    assert.deepEqual(tags, ['wlop'], '主站限流时应当从镜像拿到结果')
+    assert.ok(hits >= 2)
+  } finally {
+    globalThis.fetch = originalFetch
+    useMirrors([])
+  }
+})
+
+test('降级：连接建立但不响应时，超时也要能触发换站', async () => {
+  // 这是"降级形同虚设"的真实成因：fetch 不 reject、只是一直挂着。
+  // 没有 AbortSignal.timeout 的话，请求会永远卡在第一个镜像上。
+  const originalFetch = globalThis.fetch
+  const hits = []
+  const jsonRes = body => ({ ok: true, status: 200, json: async () => body, headers: { get: () => null } })
+  useMirrors(['https://hang.test', 'https://mirror.test'])
+  useTimeout(60)
+  globalThis.fetch = (input, init) => {
+    const url = String(input)
+    hits.push(url)
+    if (url.includes('hang.test')) {
+      // 永不 resolve，只有 abort 时才 reject —— 模拟"连上了但不响应"
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+    }
+    return Promise.resolve(jsonRes([{ name: 'hatsune_miku', post_count: 148311, category: 4 }]))
+  }
+  try {
+    const tags = await searchOnline('hatsune_miku', 3, 'character')
+    assert.deepEqual(tags, ['hatsune_miku'], '超时后应当从镜像拿到结果')
+    assert.ok(hits.some(url => url.includes('mirror.test')), '超时也必须换站')
+  } finally {
+    globalThis.fetch = originalFetch
+    useTimeout(0)
+    useMirrors([])
   }
 })

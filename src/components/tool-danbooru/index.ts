@@ -8,6 +8,7 @@ export { createTagCache, danbooruLookupTool, searchOnline, searchOnlineDetailed 
 export type { DanbooruDeps, TagCache } from './tools/lookup.js'
 export { danbooruSyncTool, runSync } from './tools/sync-tool.js'
 export type { SyncDefaults } from './tools/sync-tool.js'
+export { currentMirrors, fetchJson, getJson, MIRRORS, useMirrors, useTimeout } from './server/api.js'
 export { pickNames, pruneSharedAliases, readStore, searchTags, storePath, worthKeeping, writeStore } from './server/store.js'
 export type { Match, TagRecord } from './server/store.js'
 export { syncKind } from './server/sync.js'
