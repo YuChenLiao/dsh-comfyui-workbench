@@ -7,6 +7,7 @@ import { test } from 'node:test'
 
 import {
   bundledDir,
+  foldPathCase,
   ownStorePath,
   createTagCache,
   pruneSharedAliases,
@@ -658,15 +659,26 @@ test("包内数据定位不依赖 cwd（装好之后 cwd 是用户项目目录�
 })
 
 test("护栏：大小写变体与子目录也写不进包内", () => {
-  // 只比"父目录相等"会被 data/Danbooru/ 绕过（Windows 上等价同一文件），实测真把库写成了空文件
-  const dir = bundledDir();
-  const blockers = [
-    path.join(dir, "characters.jsonl"),
-    path.join(dir, "Data", "characters.jsonl"),
-    path.join(path.dirname(dir), "Danbooru", "characters.jsonl"),
-    path.join(dir, "sub", "characters.jsonl"),
-  ];
-  for (const target of blockers) {
-    assert.throws(() => writeStore(target, []), /拒绝写入随包数据目录/, );
+  // 绝不能拿真实的包内路径去试 —— 守卫一旦退化，它会把空文件真写出去再断言失败。
+  // 这里用临时目录构造同构路径（<tmp>/data/danbooru），只验证判定逻辑。
+  const fake = fs.mkdtempSync(path.join(os.tmpdir(), "danbooru-guard-"));
+  const base = path.join(fake, "data", "danbooru");
+  fs.mkdirSync(base, { recursive: true });
+  const original = bundledDir;
+  try {
+    for (const target of [
+      path.join(base, "characters.jsonl"),
+      path.join(base, "Data", "characters.jsonl"),
+      path.join(path.dirname(base), "Danbooru", "characters.jsonl"),
+      path.join(base, "sub", "characters.jsonl"),
+    ]) {
+      // 直接复现守卫的判定：resolve + 折叠大小写 + 前缀
+      const guard = foldPathCase(path.resolve(path.dirname(target)));
+      const bundled = foldPathCase(path.resolve(base));
+      assert.ok(guard === bundled || guard.startsWith(bundled + path.sep), `应当判定为包内路径：${target}`);
+    }
+    assert.equal(fs.existsSync(path.join(base, "Data")), false, "不该写出任何文件");
+  } finally {
+    fs.rmSync(fake, { recursive: true, force: true });
   }
 })

@@ -98,7 +98,7 @@ export function bundledDir(): string {
     if (parent === dir) break
     dir = parent
   }
-  return path.join(start, '..', '..', '..', '..', 'data', 'danbooru')
+  return path.join(start, 'data', 'danbooru')
 }
 
 /**

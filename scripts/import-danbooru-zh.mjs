@@ -145,6 +145,10 @@ for (const kind of kinds) {
   }
 
   const file = path.join(dataDir, 'danbooru', `${kind}s.jsonl`)  // 只写用户目录，不动包内数据
+  // 去掉被多条记录共用的别名：这份库的 aliases 里有大量 CP 名/组合名，
+  // 不去重的话查「初音未来」会返回 20 条（19 条是 hatasune_miku 的各种变体）。
+  const pruned = (await import('../lib/index.js')).pruneSharedAliases(records)
+  if (pruned > 0) console.log(`  去掉 ${pruned} 个被多条共用别名`)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const body = records.map(record => JSON.stringify(record)).join('\n')
   fs.writeFileSync(`${file}.${process.pid}.importing`, body === '' ? '' : `${body}\n`, 'utf8')

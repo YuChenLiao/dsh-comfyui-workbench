@@ -90,13 +90,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 **本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
 
-**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。一次下载几 MB 就全有了：
-
-```sh
-npm run danbooru:zh      # 角色 3.5 万 + 画师 2.5 万，实测 6 秒
-```
-
-实测覆盖：角色 **35384 条，99.7% 有中文名或别名**；画师 **24881 条，95.8%**。这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
+**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。实测覆盖：角色 **35384 条，99.7% 有中文名或别名**；画师 **24881 条，95.8%**。这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
 
 **补充数据源**：也可以直接从 Danbooru 抓（`tags.json` + 逐条 `wiki_pages.json`），数据更新更及时、能拿到 wiki 里最新的别名，但要发几千到几十万次请求（8 并发约 5.5 条/秒），适合只抓热门段。
 
