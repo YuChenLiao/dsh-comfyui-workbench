@@ -55,11 +55,37 @@ interface SlotRegistry {
 export function apply(ctx: ClientContext): void {
   const t = makeTranslate(activeLocaleOf(ctx.get('locale')))
 
+  /** 跳到会话面板（相册里的"加入当前对话"依赖它）。 */
+  const goToConversation = (): void => {
+    try {
+      const layout = ctx.get('layout')
+      if (layout !== null && typeof layout?.selectPanel === 'function') layout.selectPanel('conversation')
+    } catch {
+      // 面板服务缺席时由粘贴路径自行兜底
+    }
+  }
+
   // better-sidebar 是可选依赖：未安装时 inject 永远不 resolve，这里也就不会注册任何东西。
   let sidebar: { openTab: (seed: { type: string }) => void } | null = null
 
+  const openSidebar = (): boolean => {
+    if (sidebar === null) return false
+    try {
+      sidebar.openTab({ type: TAB_ID })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const Tab = (tabProps?: { visible?: boolean }): React.ReactElement => (
-    <WorkflowAdmin t={t} visible={tabProps === undefined || tabProps.visible !== false} />
+    <Workbench
+      t={t}
+      visible={tabProps === undefined || tabProps.visible !== false}
+      embedded
+      goToConversation={goToConversation}
+      openSidebar={openSidebar}
+    />
   )
 
   ctx.inject(['betterSidebar'], (scope: any) => {
@@ -103,7 +129,7 @@ export function apply(ctx: ClientContext): void {
     name: 'main',
     key: PANEL_ID,
   }, () => (
-    <WorkflowAdmin t={t} visible />
+    <Workbench t={t} visible goToConversation={goToConversation} openSidebar={openSidebar} />
   )))
 
   console.info('[comfyui-workbench] 工作流管理界面已注册（侧边栏入口 + 主面板）')
