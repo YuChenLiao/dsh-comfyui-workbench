@@ -82,6 +82,7 @@ const jobs = [
   entryJob('workflow'),
   entryJob('generate'),
   entryJob('edit'),
+  entryJob('danbooru'),
   hostJob,
   clientJob,
   domainJob('workflow', 'shared/workflow'),

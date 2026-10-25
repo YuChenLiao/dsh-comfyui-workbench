@@ -32,7 +32,7 @@ export interface RouteTable {
 /**
  * 跨 entry 共享的运行时。
  *
- * 四个组件是**四条独立的 loader entry**（宿主界面里能看到并单独开关），
+ * 五个组件是**四条独立的 loader entry**（宿主界面里能看到并单独开关），
  * 但它们共用一份 ComfyUI 客户端、进程托管、资产索引与输出目录 ——
  * 各建一份会重复拉起服务、重复读索引。
  */
@@ -66,6 +66,7 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
     'panel.workflow': !disabled.has('panel.workflow'),
     'tool.generate': !disabled.has('tool.generate'),
     'tool.workflow-edit': !disabled.has('tool.workflow-edit'),
+    'tool.danbooru': !disabled.has('tool.danbooru'),
   }
 }
 

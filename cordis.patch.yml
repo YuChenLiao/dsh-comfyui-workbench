@@ -93,3 +93,6 @@
     - id: comfyui-workbench:edit
       name: dsh-comfyui-workbench/edit
       config: *cwf
+    - id: comfyui-workbench:danbooru
+      name: dsh-comfyui-workbench/danbooru
+      config: *cwf

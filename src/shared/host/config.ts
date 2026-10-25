@@ -33,7 +33,7 @@ export interface Settings {
   indexFile: string | null
   /**
    * 关掉的组件 id。可用的有：
-   * `panel.workflow` / `panel.gallery` / `tool.generate` / `tool.workflow-edit`。
+   * `panel.workflow` / `panel.gallery` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru`。
    * 空数组表示全开；某个组件出问题时可以单独关掉，不影响其他。
    */
   disabledComponents: string[]

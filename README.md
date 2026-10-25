@@ -17,6 +17,7 @@
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/config`、服务托管接口 |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
+| `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_sync`：角色 / 画师标签库（含中文名）。不碰 ComfyUI 运行时，可单独关 |
 
 关掉某一条只影响它自己：例如关掉 `gallery`，资产库路由随之 404，工作流管理与工具照常（两个例外：批量导出工作流 ZIP 要读图与 sidecar，依赖相册；关掉 `core` 等于关掉整个插件——HTTP API 与浏览器端都会消失）。
 
@@ -30,7 +31,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-装完重启 DSH。`cordis.patch.yml` 里会插入五条 entry，配置用 YAML 锚点共享，只写一次：
+装完重启 DSH。`cordis.patch.yml` 里会插入六条 entry（包根 core + 五个组件），配置用 YAML 锚点共享，只写一次：
 
 ```yaml
 - insert:
@@ -68,8 +69,47 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `comfyui_workflow_inspect` | 不传 `nodeId` 给 IO 面与节点清单；传了给单节点完整配置。顺带报告缺节点、缺模型与可用的替代 |
 | `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait: true` 同步等、`promptId` 续查。停用的工作流直接拒绝 |
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
+| `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查角色与画师，**只返回 tag**。写提示词前用它对齐名字，能少跑偏 |
+| `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
 
 工作流的"可用"由 `<id>.meta.json` 的 `enabled` 决定（缺省 `true`），面板与 `comfyui_workflow_edit` 写同一份文件。
+
+## Danbooru 标签库
+
+模型写提示词时常常知道「甘雨」却不知道 `ganyu_(genshin_impact)`，或者反过来。`danbooru_lookup` 把两边对上，**只返回 tag**：
+
+```json
+{ "ok": true, "tags": ["ganyu_(genshin_impact)"], "source": "local" }
+```
+
+上下文是稀缺资源，所以结果里不放 `postCount`、别名列表、匹配方式这些 —— 模型要的只是"这个名字对应哪个 tag"。
+
+**本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
+
+数据来自 Danbooru 的 `tags.json`（角色 category=4、画师 category=1）与逐条的 `wiki_pages.json`（中文名在 `other_names` 里）。前者一次拉一千条，后者每条约 150ms —— 所以**按热度阈值筛选**是唯一的降规模手段，长尾 tag 既没人用也没人翻译。
+
+```sh
+npm run danbooru:sync                      # 默认：角色 + 画师，热度 ≥ 100，每类最多 3000 条
+npm run danbooru:sync -- --kind character  # 只同步角色
+npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 就有 40 万+，按实测速率约 20 小时）
+```
+
+`--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki（约 150ms/条），40 万条按实测约 5.5 条/秒算将近 20 小时。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400` 几分钟就好），需要时再放宽。
+
+产物是 `<插件数据目录>/danbooru/{characters,artists}.jsonl`，整份替换写入（先写临时文件再 rename，中途失败不会留半个文件）。
+
+**中文名覆盖率差别很大**，这点必须知道：
+
+- **角色**：很高。最热的 400 条里约 **94%** 有别名 —— 中文名优先，没有中文名时保留日文原名（`初音未来`/`初音ミク`、`博丽灵梦`、`散兵`）。这个比例会随网络状况小幅浮动（个别 wiki 请求失败时该条目的别名会缺）。
+- **画师**：**几乎为零**。实测最热的 400 条画师（最低热度约 1258），`other_names` 全为空 —— 这不是阈值问题，是 Danbooru 平台层面画师 wiki 就不填这个字段（`dairi`、`wlop`、`tony_taka` 的 wiki 页都是 `other_names: []`）。画师只能按 tag 查，而画师 tag 本身就是罗马音/英文名，够用。
+
+**没有别名时不会留空**：这种条目仍能按 tag 名查到（`scaramouche_(genshin_impact)`），`danbooru_lookup` 返回的就是 tag 本身 —— 它永远是 Danbooru 认的那个标准名。
+
+别名会过滤掉二创活动名、带年份的、纯英文变体。**CP 名**（`レイマリ` 这种两人合称）主要靠「是否被多个 tag 共用」判断 —— 那比猜字符可靠，也不会误伤 `初音ミク`；共用时只保留在热度最高的那条记录上。另有一层保守的字符过滤（带 `×`/`&` 之类的、字面含 `cp` 的、单独一个关系词的）。这样每个别名最多对应一条结果，不会出现"查一个名字弹出两个人、都标精确"。
+
+同步时若遇到限流或网络错误，会退避重试；仍失败的条目会在日志里报出条数（这些条目别名缺失，重跑一次即可补上）。
+
+本组件可以单独关掉（宿主插件页，或配置 `disabledComponents: ['tool.danbooru']`），不影响生图链路。
 
 ## 产物与通知
 
@@ -88,7 +128,7 @@ src/shared/                       公用逻辑：host / comfy / workflow / run /
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
-src/entries/                      四个组件 entry 的入口（core 即 src/index.ts）
+src/entries/                      五个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 

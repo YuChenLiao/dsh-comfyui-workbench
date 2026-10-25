@@ -2,6 +2,10 @@
 
 ## 0.2.0
 
+### 新增
+
+- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 把标签与中文名抓到本地。数据来自 `tags.json`（角色 / 画师分类）与逐条的 `wiki_pages.json`（中文名在 `other_names`）；按热度阈值控制规模（`search[post_count]=>N`）；最热的 400 条角色里约 94% 有别名（中文优先，缺失时保留日文原名），画师因 Danbooru 不填 `other_names` 而无中文名。共用别名（CP 名）按「被多个 tag 共用」识别并只保留热度最高的一条。查询同时接受中文名、日文名与 Danbooru tag，空格与下划线等价，结果按「精确 → 前缀 → 包含」分档、同档按帖子数降序。**输出只含 tag**（不加 postCount / 别名 / 匹配方式，避免挤占上下文）；本地库为空或没命中时自动走在线查询（`source: 'online'`），所以没同步过也能用。同步支持全量（`--min 0 --max 0`）。
+
 ### 修复
 
 - **POSIX 上授权校验可被大小写绕过（读删越权）**：仓库里有两份 `authorize` / `roots` 实现 —— `shared/authz/` 一份，`panel-gallery/server/assets/` 一份，生产路由用的是后者。修前一份时漏了后一份，而它按 `toLowerCase()` 比较路径：POSIX 路径大小写敏感，`/data/App/x.png` 会被判在根 `/data/app` 之内而**放行**，随后 `statSync` / `unlinkSync` 用的却是原始路径 —— 校验通过的是 A，实际动的是 B。现在两处各一行 `export * from shared/authz/*`，只保留一份实现；折叠规则抽成 `foldPathCase`（Windows 折叠、其余平台原样），授权 / 根去重 / 缩略图缓存 / 扫描去重 / 工作区探测五处共用。
