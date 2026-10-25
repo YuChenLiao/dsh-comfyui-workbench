@@ -36,10 +36,12 @@ const PANEL_ID = 'comfyui-workbench'
 /**
  * better-sidebar 页签 id。
  *
- * 这个 id 是 better-sidebar 记住"用户加过哪个入口"的键 —— 换 id 等于换了个新入口：
- * 旧的自然消失，新的默认不在列表里。所以面板内容换成工作流管理，id 也不动。
+ * better-sidebar 在 localStorage 的 prefs.tabsEnabled 里按这个 id 记"启用/禁用"
+ * （`isTabEnabled = prefs.tabsEnabled[id] !== false`）。历史 id（`:assets`）可能
+ * 被写成 false 过，那样无论怎么注册都不会出现 —— 换一个干净的 id，默认即启用。
+ * 代价：需要在侧栏的「+」菜单里重新添加一次（它本来就不是常驻入口）。
  */
-const TAB_ID = 'comfyui-workbench:assets'
+const TAB_ID = 'comfyui-workbench:workbench'
 
 /** 客户端上下文的最小面。 */
 interface ClientContext {
