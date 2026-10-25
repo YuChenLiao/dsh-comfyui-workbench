@@ -9,7 +9,13 @@ import path from 'node:path'
 
 import { createWorkflowRoutes } from '../components/panel-workflow/server/routes.js'
 import type { HostContext } from '../shared/host/types.js'
+import { resolveSettings } from '../shared/host/config.js'
 import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from '../runtime.js'
+
+/** 组件被配置关闭时的统一提示。 */
+function warnDisabled(id: string): void {
+  console.warn(`[comfyui-workbench] 组件 ${id} 已按配置关闭。`)
+}
 
 export const name = 'dsh-comfyui-workbench:workflow'
 
@@ -40,14 +46,16 @@ export function apply(ctx: HostContext, config: unknown): void {
 }
 
 function applyInner(ctx: HostContext, config: unknown): void {
-  const rt = acquire(ctx, config)
-  if (!componentStateOf(rt)['panel.workflow']) {
-    rt.info('[comfyui-workbench] 组件 panel.workflow 已按配置关闭。')
+  // 先看配置：被关掉的组件不该白建一份运行时（acquire 会构造客户端与监督器）。
+  if (new Set(resolveSettings(config, process.env).disabledComponents).has('panel.workflow')) {
+    warnDisabled('panel.workflow')
     return
   }
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(), 'workflow: runtime')
-  ensureHttp(rt)
+  const rt = acquire(ctx, config)
+
+  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'workflow: runtime')
+  ensureHttp(ctx, rt)
 
   const routes = createWorkflowRoutes({
     client: rt.client,
@@ -67,9 +75,9 @@ function applyInner(ctx: HostContext, config: unknown): void {
   }
 
   if (typeof ctx.effect === 'function') {
-    ctx.effect(() => mountRoutes('panel.workflow', table), 'workflow: routes')
+    ctx.effect(() => mountRoutes(ctx, 'panel.workflow', table), 'workflow: routes')
   } else {
-    mountRoutes('panel.workflow', table)
+    mountRoutes(ctx, 'panel.workflow', table)
   }
   rt.info('[comfyui-workbench] 工作流管理已上线')
 }

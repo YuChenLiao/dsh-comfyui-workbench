@@ -35,7 +35,6 @@ export interface RouteTable {
  * 各建一份会重复拉起服务、重复读索引。
  */
 export interface Runtime {
-  ctx: HostContext
   settings: Settings
   client: ComfyClient
   supervisor: ComfySupervisor
@@ -45,12 +44,12 @@ export interface Runtime {
   outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
   uploadsDir: string
   assertWritable: (dir: string) => void
+  /** 创建者的 ctx，仅用于记录来源；注册类操作一律用调用方的 ctx。 */
+  ownerCtx?: unknown
   logger: ReturnType<typeof resolveLogger>
   warn: (message: string) => void
   info: (message: string) => void
   track: (dispose: (() => void) | void) => void
-  /** HTTP 前缀是否已挂载（幂等标记）。 */
-  httpMounted: boolean
   /** 批量导出（相册组件提供；工作流组件的 POST /workflows 调它）。 */
   exportWorkflows?: RouteHandler
   /** 各工具 entry 的注册结果（供 /config 展示）。 */
@@ -77,35 +76,60 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
  *
  * 用 globalThis 上的单槽位让同进程内的所有副本指向同一份状态。
  */
-const SHARED_KEY = Symbol.for('dsh-comfyui-workbench.shared')
-
 interface Shared {
   current: Runtime | undefined
   refs: number
   tables: Map<string, RouteTable>
+  /** HTTP 前缀是否已注册（跨 bundle 共享，避免重复注册被宿主拒绝）。 */
+  httpMounted: boolean
+  /** 最近一次 acquire 的调用方 ctx：注册类操作要用它，而不是创建者的。 */
+  currentCaller?: HostContext
 }
 
-const shared: Shared = (() => {
-  const bag = globalThis as unknown as Record<symbol, Shared | undefined>
-  let slot = bag[SHARED_KEY]
+/**
+ * 重建时机。
+ *
+ * 原本想按 fiber 是否失效来判断，但 cordis 4.0.5 的 Fiber 只有 uid / state，
+ * 没有 `active` —— 那个判据恒不成立，属于死代码（复审实测）。真正的兜底是：
+ * `acquire` 的引用计数配对（core 也 release）+ 全卸载后 `current === undefined`
+ * 时重置前缀状态。所以这里只在"上一轮已全卸载"时重建。
+ */
+
+const SHARED_PROP = '__dshComfyuiWorkbench'
+
+/**
+ * 取共享状态。
+ *
+ * 关键：锚点是 **ctx.root**，不是 entry 自己的 ctx，更不是模块作用域或 globalThis。
+ * 已由真实 cordis 4.0.5 实测：每条 entry 的 ctx 是 `parent.extend({ fiber })` 出来的
+ * 独立对象（兄弟之间不共享自有属性），模块级变量在多 bundle 下也各一份。
+ * 只有 `ctx.root` 是所有 entry 共同的原点。
+ */
+function sharedOf(ctx: HostContext): Shared {
+  // cordis 里每条 entry 的 ctx 是 `parent.extend({ fiber })` 出来的**独立对象**，
+  // 兄弟之间不共享自有属性 —— 挂在 ctx 上等于各建一份（已由真实 cordis 实测确认）。
+  // `ctx.root` 是所有 entry 共同的原点，只有它指向同一个对象。
+  const anchor = ((ctx as unknown as { root?: unknown }).root ?? ctx) as Record<string, Shared | undefined>
+  let slot = anchor[SHARED_PROP]
   if (slot === undefined) {
-    slot = { current: undefined, refs: 0, tables: new Map() }
-    bag[SHARED_KEY] = slot
+    slot = { current: undefined, refs: 0, tables: new Map(), httpMounted: false }
+    anchor[SHARED_PROP] = slot
   }
   return slot
-})()
+}
 
 /** 挂载一个组件的路由。 */
-export function mountRoutes(componentId: string, table: RouteTable): () => void {
-  shared.tables.set(componentId, table)
-  return () => { shared.tables.delete(componentId) }
+export function mountRoutes(ctx: HostContext, componentId: string, table: RouteTable): () => void {
+  const tables = sharedOf(ctx).tables
+  tables.set(componentId, table)
+  return () => { tables.delete(componentId) }
 }
 
 /** 取出当前所有组件的路由，合成一张表（后挂的覆盖先挂的同名路径）。 */
-export function mergedRoutes(): RouteTable {
+export function mergedRoutes(ctx: HostContext): RouteTable {
   const exact: Record<string, RouteHandler> = {}
   const prefix: Array<{ base: string; handle: RouteHandler }> = []
-  for (const table of shared.tables.values()) {
+  for (const table of sharedOf(ctx).tables.values()) {
     Object.assign(exact, table.exact)
     if (table.prefix !== undefined) prefix.push(...table.prefix)
   }
@@ -118,27 +142,38 @@ export function mergedRoutes(): RouteTable {
  * 前缀只该注册一次；具体路径由各组件 entry 自己挂进路由表，
  * 关掉组件时它那份路由跟着消失，前缀本身不反复注册。
  */
-export function ensureHttp(rt: Runtime): void {
-  if (rt.httpMounted) return
-  rt.httpMounted = true
-  const server = rt.ctx.get?.('webServer') as { register?: (route: unknown) => (() => void) | void } | undefined
+export function ensureHttp(ctx: HostContext, rt: Runtime): void {
+  const shared = sharedOf(ctx)
+  if (shared.httpMounted) return
+
+  const server = ctx.get?.('webServer') as { register?: (route: unknown) => (() => void) | void } | undefined
   if (server === undefined || typeof server.register !== 'function') {
     rt.warn('[comfyui-workbench] 拿不到 webServer 服务，面板接口未注册。')
     return
   }
   const { createDispatch, PREFIX } = httpModule
-  const dispose = server.register({ kind: 'prefix', path: PREFIX, handler: createDispatch() })
-  if (typeof dispose === 'function' && typeof rt.ctx.effect === 'function') {
-    rt.ctx.effect(() => dispose, 'comfyui-workbench: http prefix')
+  try {
+    const dispose = server.register({ kind: 'prefix', path: PREFIX, handler: createDispatch(ctx) })
+    // 只有真的注册成功才置位 —— 先置位再注册会让热重载后永久跳过注册。
+    shared.httpMounted = true
+    if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
+      ctx.effect(() => () => {
+        // 卸载时复位：下次 apply 还要重新注册，否则重载后面板 API 静默消失。
+        shared.httpMounted = false
+        dispose()
+      }, 'comfyui-workbench: http prefix')
+    }
+    rt.info(`[comfyui-workbench] API 就绪：${PREFIX}`)
+  } catch (error) {
+    // 热重载时前缀已存在：沿用现有的 handler（它查的是 ctx 上的那张表）。
+    // 这里必须吞掉 —— 抛出去会让整条 entry 的 apply 中断，路由一条都挂不上。
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes('duplicate prefix route')) throw error
+    rt.info('[comfyui-workbench] HTTP 前缀已存在（重载），沿用现有实例')
   }
-  rt.info(`[comfyui-workbench] API 就绪：${PREFIX}`)
 }
 
 /** 是否已经初始化（供 entry 判断要不要带配置）。 */
-export function runtimeReady(): boolean {
-  return shared.current !== undefined
-}
-
 /**
  * 取运行时（首次调用时初始化）。
  *
@@ -146,22 +181,21 @@ export function runtimeReady(): boolean {
  * 否则先卸载的那条会把别人还在用的 supervisor 一起关掉。
  */
 export function acquire(ctx: HostContext, config: unknown): Runtime {
-  // 宿主换了（测试里每个用例一个新 ctx）就重建：否则会拿上一个宿主的客户端与目录。
-  if (shared.current !== undefined && shared.current.ctx !== ctx) {
-    shared.current.supervisor.dispose()
-    stopAllWatchers()
-    shared.tables.clear()
-    shared.current = undefined
-    shared.refs = 0
-  }
+  const shared = sharedOf(ctx)
   shared.refs += 1
+  shared.currentCaller = ctx
   if (shared.current !== undefined) return shared.current
+  // 走到这里说明上一轮已经全卸载（current 为 undefined）：前缀状态一并复位。
+  // 否则新的一轮会误判"前缀已注册"而跳过注册，靠旧 handler 支撑 —— 能跑但状态是错的。
+  shared.httpMounted = false
   shared.current = create(ctx, config)
+  shared.current.ownerCtx = ctx
   return shared.current
 }
 
 /** 释放；计数归零才销毁。 */
-export function release(): void {
+export function release(ctx: HostContext): void {
+  const shared = sharedOf(ctx)
   shared.refs -= 1
   if (shared.refs > 0 || shared.current === undefined) return
   shared.current.supervisor.dispose()
@@ -214,14 +248,17 @@ function create(ctx: HostContext, config: unknown): Runtime {
     }
   }
 
+  // track 用调用方的 ctx：创建者 entry 卸载后，rt.ctx 已失效，再挂 effect 会抛
+  // `cannot create effect on inactive context`。
   const track = (dispose: (() => void) | void): void => {
-    if (typeof dispose === 'function' && typeof ctx.effect === 'function') ctx.effect(() => dispose, 'comfyui-workbench: disposer')
+    if (typeof dispose !== 'function') return
+    const owner = sharedOf(ctx).currentCaller ?? ctx
+    if (typeof owner.effect === 'function') owner.effect(() => dispose, 'comfyui-workbench: disposer')
   }
 
   info(`[comfyui-workbench] 运行时就绪：产物 ${outputDir}（来源 ${resolved.source}）`)
 
   return {
-    ctx,
     settings,
     client,
     supervisor,
@@ -235,7 +272,6 @@ function create(ctx: HostContext, config: unknown): Runtime {
     warn,
     info,
     track,
-    httpMounted: false,
     tools: { registered: [], failed: [], skipped: [] },
   }
 }

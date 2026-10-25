@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { sendJson } from '../shared/http/respond.js'
+import type { HostContext } from '../shared/host/types.js'
 import { mergedRoutes } from '../runtime.js'
 
 /** API 前缀。统一挂在独立前缀下，避免和 SPA fallback 抢路径。 */
@@ -23,7 +24,7 @@ const READ_ONLY = new Set(['GET', 'HEAD'])
  *
  * 这个前缀只注册一次（runtime 初始化时），不随组件增删。
  */
-export function createDispatch(): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
@@ -34,7 +35,7 @@ export function createDispatch(): (req: IncomingMessage, res: ServerResponse) =>
         return
       }
 
-      const { exact, prefix } = mergedRoutes()
+      const { exact, prefix } = mergedRoutes(ctx)
       let route = exact[sub]
       if (route === undefined && prefix !== undefined) {
         // 动态段：/workflows/<id> 这类，最长前缀优先

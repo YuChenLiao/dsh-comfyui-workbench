@@ -6,20 +6,28 @@
  */
 import { registerTools, TOOL_GROUPS } from '../components/tool-generate/index.js'
 import type { HostContext } from '../shared/host/types.js'
-import { acquire, componentStateOf, release } from '../runtime.js'
+import { resolveSettings } from '../shared/host/config.js'
+import { acquire, release } from '../runtime.js'
+
+/** 组件被配置关闭时的统一提示。 */
+function warnDisabled(id: string): void {
+  console.warn(`[comfyui-workbench] 组件 ${id} 已按配置关闭。`)
+}
 
 export const name = 'dsh-comfyui-workbench:edit'
 
 export const inject = ['tools']
 
 export function apply(ctx: HostContext, config: unknown): void {
-  const rt = acquire(ctx, config)
-  if (!componentStateOf(rt)['tool.workflow-edit']) {
-    rt.info('[comfyui-workbench] 组件 tool.workflow-edit 已按配置关闭。')
+  // 先看配置：被关掉的组件不该白建一份运行时（acquire 会构造客户端与监督器）。
+  if (new Set(resolveSettings(config, process.env).disabledComponents).has('tool.workflow-edit')) {
+    warnDisabled('tool.workflow-edit')
     return
   }
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(), 'edit: runtime')
+  const rt = acquire(ctx, config)
+
+  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'edit: runtime')
 
   const tools = ctx.get?.('tools') as { register: (spec: unknown) => (() => void) | void } | undefined
   if (tools === undefined || typeof tools.register !== 'function') {

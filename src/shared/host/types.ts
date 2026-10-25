@@ -19,6 +19,8 @@ export type Disposer = () => void
 
 /** 宿主上下文的最小面。 */
 export interface HostContext {
+  /** cordis 根 ctx：所有 entry 共享同一对象，用于跨 bundle 的共享状态。 */
+  root?: unknown
   get?: (name: string) => unknown
   effect?: (run: () => void | Disposer, label?: string) => void
   logger?: unknown

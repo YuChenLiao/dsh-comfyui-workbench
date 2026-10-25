@@ -14,16 +14,26 @@ import { apply as applyGallery } from './entries/gallery.js'
 import { apply as applyGenerate } from './entries/generate.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
-import { acquire } from './runtime.js'
+import { acquire, ensureHttp, release } from './runtime.js'
 
 export const name = 'dsh-comfyui-workbench'
 
-/** 不注入任何服务：这里不注册路由、不注册工具、不碰 webServer。 */
-export const inject: string[] = []
+/**
+ * 需要 webServer：HTTP 前缀由这里兜底注册。
+ *
+ * 若 core 拿不到 webServer，前缀会落到第一个拿到它的组件 entry 身上 ——
+ * 那样单独关掉那个组件，其余面板就跟着失效（复审复现过这个窗口）。
+ */
+export const inject = ['webServer']
 
 export function apply(ctx: HostContext, config: unknown): void {
-  // 只初始化共享运行时；真正的注册在 entries/*.ts 里。
-  acquire(ctx, config)
+  const rt = acquire(ctx, config)
+  // 必须配对：只 acquire 不 release 会让 refs 永不到 0，旧 Runtime 带着失效的 ctx 存活，
+  // 重载时注册 effect 会抛 INACTIVE_EFFECT（相册整块消失，要等第二次重载才自愈）。
+  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'core: runtime')
+
+  // 前缀也由 core 兜一次：核心 entry 不会被单独关掉，重载后它能把 API 重新挂上。
+  ensureHttp(ctx, rt)
 }
 
 /**

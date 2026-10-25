@@ -6,23 +6,29 @@
  */
 import { createGalleryRoutes } from '../components/panel-gallery/server/routes.js'
 import type { HostContext } from '../shared/host/types.js'
-import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from '../runtime.js'
+import { resolveSettings } from '../shared/host/config.js'
+import { acquire, ensureHttp, mountRoutes, release } from '../runtime.js'
 
 export const name = 'dsh-comfyui-workbench:gallery'
+
+/** 组件被配置关闭时的统一提示。 */
+function warnDisabled(id: string): void {
+  console.warn(`[comfyui-workbench] 组件 ${id} 已按配置关闭。`)
+}
 
 /** 相册要提供 HTTP 接口。 */
 export const inject = ['webServer']
 
 export function apply(ctx: HostContext, config: unknown): void {
-  const rt = acquire(ctx, config)
-  // 配置里点名关掉的组件不注册（与在宿主里关掉这条 entry 等效）。
-  if (!componentStateOf(rt)['panel.gallery']) {
-    rt.info('[comfyui-workbench] 组件 panel.gallery 已按配置关闭。')
+  if (new Set(resolveSettings(config, process.env).disabledComponents).has('panel.gallery')) {
+    console.warn('[comfyui-workbench] 组件 panel.gallery 已按配置关闭。')
     return
   }
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(), 'gallery: runtime')
-  ensureHttp(rt)
+  const rt = acquire(ctx, config)
+
+  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'gallery: runtime')
+  ensureHttp(ctx, rt)
 
   const table = createGalleryRoutes({
     ctx,
@@ -39,14 +45,14 @@ export function apply(ctx: HostContext, config: unknown): void {
 
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => {
-      const unmount = mountRoutes('panel.gallery', { exact })
+      const unmount = mountRoutes(ctx, 'panel.gallery', { exact })
       return () => {
         rt.exportWorkflows = undefined
         unmount()
       }
     }, 'gallery: routes')
   } else {
-    mountRoutes('panel.gallery', { exact })
+    mountRoutes(ctx, 'panel.gallery', { exact })
   }
   rt.info('[comfyui-workbench] 相册已上线')
 }
