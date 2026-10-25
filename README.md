@@ -4,7 +4,7 @@
 
 面向用户的界面只有两块：浏览产物（资产库）、管理提供给模型的工作流（工作流管理）。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
 
-> 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。
+> 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
 ## 五个组件
 
@@ -90,12 +90,12 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 **本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
 
-**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。实测覆盖：角色 **35384 条，99.7% 有中文名或别名**；画师 **24881 条，95.8%**。这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
+**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。实测覆盖：角色 **35384 条**、画师 **24881 条**；上游 CSV 里 99.7% / 95.8% 有中文名或别名，随包这份去掉共用别名（CP 名等）后是 **98.7% / 94.9%**。这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
 
-**补充数据源**：也可以直接从 Danbooru 抓（`tags.json` + 逐条 `wiki_pages.json`），数据更新更及时、能拿到 wiki 里最新的别名，但要发几千到几十万次请求（8 并发约 5.5 条/秒），适合只抓热门段。
+想把本地库更新到上游最新，下面几条按需选一条（命令要在 `package.json` 所在目录执行 —— 仓库根，或安装目录里的 `node_modules/dsh-comfyui-workbench/`）：
 
 ```sh
-npm run danbooru:zh                        # 拉上游最新数据到插件数据目录（6 秒），覆盖本地的旧副本
+npm run danbooru:zh                        # 拉上游最新数据到插件数据目录（约 5 秒，视网速；首次要下几 MB CSV，可能 10 秒上下），覆盖本地的旧副本
 npm run danbooru:zh -- --kind character    # 只导入角色
 npm run danbooru:zh -- --dry               # 只看会导入多少条
 ```
@@ -103,45 +103,47 @@ npm run danbooru:zh -- --dry               # 只看会导入多少条
 注意它写的是**插件数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不会动仓库里的 `data/danbooru/` —— 后者是随包分发的快照。想把随包数据也更新，导入完再把它同步过去：
 
 ```sh
-npm run danbooru:zh
 cp ~/.dsh-comfyui-workbench/danbooru/*.jsonl data/danbooru/
 ```
 
-补充路径：直接从 Danbooru 抓（数据更新更及时、能拿到 wiki 里最新的别名）：
+**补充路径**：也可以直接从 Danbooru 抓（`tags.json` + 逐条 `wiki_pages.json`），数据更新更及时、能拿到 wiki 里最新的别名，但请求量大、适合只抓热门段：
 
 ```sh
 npm run danbooru:sync                      # 热度 ≥ 100，每类最多 3000 条
-npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 40 万+，按实测速率约 20 小时）
+npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 40 万+，按实测速率 30 小时上下）
 ```
 
-`--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki，实测 8 并发下约 5.5 条/秒，40 万条要 20 小时左右。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400` 几分钟就好），需要时再放宽。
+`--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki，实测 8 并发下约 3~4 条/秒，40 万条要 30 小时上下。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400`，两类合计约四分钟），需要时再放宽。
 
-**万一本地库是空的**（旧版本安装、或只拷了 `lib/` 的装置 —— 当前两种安装方式都遵守 `files`，`data/` 一直随包走）：查询会自动走在线（`source: online`），功能不中断，但慢一个数量级 —— 实测同一个查询从**约 30 毫秒变成 1~3 秒**，且每次打网络。结果也更窄：本地对「圣园未花」会给 `mika_(blue_archive)` 及其泳装、体操服变体共 3 个 tag，在线只回主 tag 一个。
+**万一本地库是空的**（旧版本安装、或只拷了 `lib/` 的装置 —— `github:` 安装按 `files` 打包、`link:` 直接指向仓库，两种都带 `data/`）：查询会自动走在线（`source: online`），功能不中断，但慢一个数量级 —— 实测本地 **约 30~70 毫秒**（默认查角色+画师；新进程首查约 0.13 秒，要解析 12MB JSONL），在线 **约 1 秒**（纯英文 tag，每类一次模糊匹配）/ **约 2 秒**（中文名单候选）/ **4~6 秒**（中文名多候选：先 wiki 反查、再逐条回查热度），网络差时更久。结果也更窄：本地对「圣园未花」会给 `mika_(blue_archive)` 及其泳装、体操服变体共 3 个 tag，在线只回主 tag 一个。
 
 想补数据：
 
 ```sh
-# 在安装目录内跑（npm run 依赖 package.json 的 scripts 字段，cwd 不对会报没有该 script）
+# 同上：cwd 必须是 package.json 所在目录，否则 npm 报没有该 script
 cd <安装目录>/node_modules/dsh-comfyui-workbench && npm run danbooru:zh
 
 # 或者任意目录，直接给脚本路径（与 cwd 无关）
 node <安装目录>/node_modules/dsh-comfyui-workbench/scripts/import-danbooru-zh.mjs
 ```
 
-它写的是**用户数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不是安装目录里的 `data/` —— 后者是随包快照，运行时不写它（安装目录也可能只读）。
+它写的是**插件数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不是安装目录里的 `data/` —— 后者是随包快照，运行时不写它（安装目录也可能只读）。
 
-想手工补单条，要写 JSONL，**不是**上游的 CSV（运行时只读 `<kind>s.jsonl`，CSV 放进去会被忽略）：
+想手工补单条也可以，但要清楚三件事：
+
+一是**按 kind 分文件**取代：只写 `characters.jsonl` 只影响角色；画师不受影响，仍走它自己那份（插件数据目录里没有 `artists.jsonl` 时才回退随包）。二是 `>>` 是追加，跑过 `danbooru:zh`、已经有全库的，追加就是在库尾加一条（在下次导入前只增不减）；只有靠随包快照、还没有自己那份时，新建这个文件才会让那一类只剩这一条（角色 35384 条 / 画师 24881 条被整体遮蔽）。三是补完要**重启插件**：已经查过该类的话，标签进了内存缓存，不重启看不到改动。
 
 ```sh
+mkdir -p ~/.dsh-comfyui-workbench/danbooru
 echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":["圣园未花"]}' \
   >> ~/.dsh-comfyui-workbench/danbooru/characters.jsonl
 ```
 
-产物是 `<插件数据目录>/danbooru/{characters,artists}.jsonl`，整份替换写入（先写临时文件再 rename，中途失败不会留半个文件）。
+格式是 JSONL，**不是**上游的 CSV（运行时只读 `<kind>s.jsonl`，CSV 放进去会被忽略）。
 
+`danbooru:zh` / `danbooru:sync` 写入时都是**整份替换**：会重写整个 `<插件数据目录>/danbooru/<kind>s.jsonl`（先写临时文件再 rename，中途失败不会留半个文件）。所以上面手工追加的那几条，跑一次导入或同步后会被覆盖掉。
 
-
-**没有别名时不会留空**：这种条目仍能按 tag 名查到（`scaramouche_(genshin_impact)`），`danbooru_lookup` 返回的就是 tag 本身 —— 它永远是 Danbooru 认的那个标准名。
+**没有别名时不会留空**：这类条目（随包数据里角色 473 条、画师 1258 条）的 `names` 是空数组，但仍能按 tag 名查到 —— 查 `chainsaw_man_(character)` 返回的就是它自己，`danbooru_lookup` 返回的永远是 Danbooru 认的那个标准名。
 
 自抓路径（`danbooru:sync`）会过滤掉二创活动名、带年份的、纯英文变体；导入中文库（`danbooru:zh`）则照单全收 —— 那份数据的别名本来就经过整理，含社区昵称与旧译名。**CP 名**（`レイマリ` 这种两人合称）主要靠「是否被多个 tag 共用」判断 —— 那比猜字符可靠，也不会误伤 `初音ミク`；共用时只保留在热度最高的那条记录上。另有一层保守的字符过滤（带 `×`/`&` 之类的、字面含 `cp` 的、单独一个关系词的）。这样每个别名最多对应一条结果，不会出现"查一个名字弹出两个人、都标精确"。
 
@@ -193,7 +195,7 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 | --- | --- |
 | [`dsh-comfyui-image`](https://github.com/wbb316/dsh-comfyui-image) | **配套**：读它落盘的图片与 sidecar，以及它配置里的 `outputDir`。不 import 它的代码 |
 | [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar) | **可选**：注册页签；没装不影响原生侧栏入口。页签需在侧栏「+」菜单里添加一次 |
-| [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) | **前身**：建议卸载。迁移：`node scripts/migrate-album.mjs --write` |
+| [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) | **前身**：建议卸载。迁移：在本仓库目录里跑 `node scripts/migrate-album.mjs --write`（该脚本不随包分发） |
 
 ## 文档
 
@@ -204,7 +206,7 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 
 标签数据来自 [amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira），收录 Danbooru 上图片数 > 50 的标签及其中文名、别名与注释。数据随插件分发在 `data/danbooru/`，上游的许可原文一并保留（见 [data/danbooru/LICENSE](data/danbooru/LICENSE) 与 [NOTICE.md](data/danbooru/NOTICE.md)）。
 
-本插件只做了格式转换（CSV → JSONL、字段名映射），未改动数据内容。上游更新后可 `npm run danbooru:zh` 重新导入。
+本插件只做了格式转换（CSV → JSONL、字段名映射）与共用别名去重（去掉被多条记录共用的 CP 名等），tag、中文名与注释本身未改动。上游更新后按上文的 `danbooru:zh` 重新导入。
 
 ## License
 
