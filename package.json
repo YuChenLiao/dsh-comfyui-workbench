@@ -22,7 +22,8 @@
     "icon.svg",
     "README.md",
     "docs",
-    "samples"
+    "samples",
+    "scripts"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
