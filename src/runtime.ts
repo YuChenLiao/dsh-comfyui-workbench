@@ -44,8 +44,6 @@ export interface Runtime {
   outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
   uploadsDir: string
   assertWritable: (dir: string) => void
-  /** 创建者的 ctx，仅用于记录来源；注册类操作一律用调用方的 ctx。 */
-  ownerCtx?: unknown
   logger: ReturnType<typeof resolveLogger>
   warn: (message: string) => void
   info: (message: string) => void
@@ -74,7 +72,8 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
  * 在多个 bundle 之间**不共享**。曾因此踩坑：gallery 注册的路由在它自己的副本里，
  * workflow 的 prefix handler 看不到，`/config`、`/workflows` 全 404。
  *
- * 用 globalThis 上的单槽位让同进程内的所有副本指向同一份状态。
+ * 共享状态挂在 `ctx.root` 的属性槽上（见 `sharedOf`），不用 globalThis ——
+ * 宿主模块加载器下各 bundle 的 globalThis 同样不共享。
  */
 interface Shared {
   current: Runtime | undefined
@@ -86,23 +85,15 @@ interface Shared {
   currentCaller?: HostContext
 }
 
-/**
- * 重建时机。
- *
- * 原本想按 fiber 是否失效来判断，但 cordis 4.0.5 的 Fiber 只有 uid / state，
- * 没有 `active` —— 那个判据恒不成立，属于死代码（复审实测）。真正的兜底是：
- * `acquire` 的引用计数配对（core 也 release）+ 全卸载后 `current === undefined`
- * 时重置前缀状态。所以这里只在"上一轮已全卸载"时重建。
- */
 
 const SHARED_PROP = '__dshComfyuiWorkbench'
 
 /**
  * 取共享状态。
  *
- * 关键：锚点是 **ctx.root**，不是 entry 自己的 ctx，更不是模块作用域或 globalThis。
+ * 关键：锚点是 **ctx.root**，不是 entry 自己的 ctx，也不用 globalThis。
  * 已由真实 cordis 4.0.5 实测：每条 entry 的 ctx 是 `parent.extend({ fiber })` 出来的
- * 独立对象（兄弟之间不共享自有属性），模块级变量在多 bundle 下也各一份。
+ * 独立对象（兄弟之间不共享自有属性），而 globalThis 在宿主的模块加载器下同样不共享。
  * 只有 `ctx.root` 是所有 entry 共同的原点。
  */
 function sharedOf(ctx: HostContext): Shared {
@@ -173,12 +164,19 @@ export function ensureHttp(ctx: HostContext, rt: Runtime): void {
   }
 }
 
-/** 是否已经初始化（供 entry 判断要不要带配置）。 */
 /**
  * 取运行时（首次调用时初始化）。
  *
  * 引用计数：四条 entry 各自 acquire，最后一条 release 时才真正销毁，
  * 否则先卸载的那条会把别人还在用的 supervisor 一起关掉。
+ */
+/**
+ * 取运行时（首次调用时创建）。
+ *
+ * 重建时机：只在「上一轮已全卸载」（`current === undefined`）时重建。
+ * 曾想按 fiber 是否失效来判断，但 cordis 4.0.5 的 Fiber 只有 uid / state、
+ * 没有 `active`，那个判据恒不成立（复审实测）。真正的兜底是引用计数配对
+ * （core 也 release）+ 全卸载后重置前缀状态。
  */
 export function acquire(ctx: HostContext, config: unknown): Runtime {
   const shared = sharedOf(ctx)
@@ -189,7 +187,6 @@ export function acquire(ctx: HostContext, config: unknown): Runtime {
   // 否则新的一轮会误判"前缀已注册"而跳过注册，靠旧 handler 支撑 —— 能跑但状态是错的。
   shared.httpMounted = false
   shared.current = create(ctx, config)
-  shared.current.ownerCtx = ctx
   return shared.current
 }
 

@@ -21,7 +21,7 @@ export const inject = ['webServer']
 
 export function apply(ctx: HostContext, config: unknown): void {
   if (new Set(resolveSettings(config, process.env).disabledComponents).has('panel.gallery')) {
-    console.warn('[comfyui-workbench] 组件 panel.gallery 已按配置关闭。')
+    warnDisabled('panel.gallery')
     return
   }
 
