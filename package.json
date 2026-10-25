@@ -23,7 +23,8 @@
     "README.md",
     "docs",
     "samples",
-    "scripts"
+    "scripts/import-danbooru-zh.mjs",
+    "scripts/sync-danbooru.mjs"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

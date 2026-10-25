@@ -116,20 +116,26 @@ npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 40 万+，按�
 
 `--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki，实测 8 并发下约 5.5 条/秒，40 万条要 20 小时左右。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400` 几分钟就好），需要时再放宽。
 
-**只装了编译产物、没有 `data/` 时会怎样**：功能照常，查询自动走在线（`source: online`），但每次要打网络 —— 实测同一个查询从 1ms 变成 3.2 秒。想拿回本地速度，三种办法：
+**万一本地库是空的**（旧版本安装、或只拷了 `lib/` 的装置 —— 当前两种安装方式都遵守 `files`，`data/` 一直随包走）：查询会自动走在线（`source: online`），功能不中断，但慢一个数量级 —— 实测同一个查询从**约 30 毫秒变成 1~3 秒**，且每次打网络。结果也更窄：本地对「圣园未花」会给 `mika_(blue_archive)` 及其泳装、体操服变体共 3 个 tag，在线只回主 tag 一个。
+
+想补数据：
 
 ```sh
-# 1. 装完整包（data/ 随包分发，装好即用，推荐）
-dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
+# 在安装目录内跑（npm run 依赖 package.json 的 scripts 字段，cwd 不对会报没有该 script）
+cd <安装目录>/node_modules/dsh-comfyui-workbench && npm run danbooru:zh
 
-# 2. 已有 scripts/ 的话，直接拉一份到用户数据目录
-npm run danbooru:zh
-
-# 3. 手工下载上游 CSV，丢进 ~/.dsh-comfyui-workbench/danbooru/
-#    https://github.com/amenorira/danbooru-tags-data-zh/tree/main/tags
+# 或者任意目录，直接给脚本路径（与 cwd 无关）
+node <安装目录>/node_modules/dsh-comfyui-workbench/scripts/import-danbooru-zh.mjs
 ```
 
-注意第 2 种写的是**用户数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不是安装目录里的 `data/` —— 后者是随包快照，运行时不写它。
+它写的是**用户数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不是安装目录里的 `data/` —— 后者是随包快照，运行时不写它（安装目录也可能只读）。
+
+想手工补单条，要写 JSONL，**不是**上游的 CSV（运行时只读 `<kind>s.jsonl`，CSV 放进去会被忽略）：
+
+```sh
+echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":["圣园未花"]}' \
+  >> ~/.dsh-comfyui-workbench/danbooru/characters.jsonl
+```
 
 产物是 `<插件数据目录>/danbooru/{characters,artists}.jsonl`，整份替换写入（先写临时文件再 rename，中途失败不会留半个文件）。
 
