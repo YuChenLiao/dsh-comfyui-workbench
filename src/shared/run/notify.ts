@@ -102,13 +102,27 @@ export function watchRun(options: {
   // 同一个运行只盯一次。
   stop()
 
+  /**
+   * 并发守卫。
+   *
+   * `setInterval` 不等上一轮 async 结束：慢一点的情况下两个 tick 会同时读到 done，
+   * 各投递一条通知（实测全量跑测试时约 1/3 概率出现"收到 2 条"）。
+   * `settled` 保证只交付一次，`inflight` 防重入；后者必须在 finally 里复位，
+   * 否则超时那条收尾通知会被自己挡掉。
+   */
+  let inflight = false
+  let settled = false
+
   const timer = setInterval(() => {
     void (async () => {
+      if (settled || inflight) return
+      inflight = true
       try {
         const state = await checkRun(client, promptId)
         if (!state.done || state.entry === undefined) {
           if (Date.now() - startedAt > maxWaitMs) {
             stop()
+            settled = true
             deliver(
               target,
               `工作流仍在跑（promptId ${promptId}），已经等了 ${Math.round((Date.now() - startedAt) / 60000)} 分钟，先不盯了。\n需要结果时让模型用 comfyui_run 传这个 promptId。`,
@@ -128,6 +142,7 @@ export function watchRun(options: {
         }
         const outcome = await collectArtifacts(client, promptId, state.entry, context)
         stop()
+        settled = true
 
         const lines = [`工作流 ${context.workflowId} 出图完成，用时 ${Math.round(outcome.durationMs / 1000)} 秒。`, '']
         for (const artifact of outcome.artifacts) {
@@ -139,9 +154,14 @@ export function watchRun(options: {
         deliver(target, lines.join('\n'), options.logger)
       } catch (error) {
         stop()
+        if (settled) return
+        settled = true
         const message = error instanceof Error ? error.message : String(error)
         options.logger?.warn?.(`[notify] ${promptId} 等待失败：${message}`)
         deliver(target, `工作流执行失败（promptId ${promptId}）：${message}`, options.logger)
+      } finally {
+        // 必须复位：否则下一 tick 会被 inflight 挡住，超时收尾那条就发不出去。
+        inflight = false
       }
     })()
   }, intervalMs)

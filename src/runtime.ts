@@ -85,7 +85,6 @@ interface Shared {
   currentCaller?: HostContext
 }
 
-
 const SHARED_PROP = '__dshComfyuiWorkbench'
 
 /**
@@ -165,13 +164,10 @@ export function ensureHttp(ctx: HostContext, rt: Runtime): void {
 }
 
 /**
- * 取运行时（首次调用时初始化）。
+ * 取运行时（首次调用时创建，之后复用）。
  *
- * 引用计数：四条 entry 各自 acquire，最后一条 release 时才真正销毁，
+ * 引用计数：各条 entry 各自 acquire，最后一个 release 时才真正销毁 ——
  * 否则先卸载的那条会把别人还在用的 supervisor 一起关掉。
- */
-/**
- * 取运行时（首次调用时创建）。
  *
  * 重建时机：只在「上一轮已全卸载」（`current === undefined`）时重建。
  * 曾想按 fiber 是否失效来判断，但 cordis 4.0.5 的 Fiber 只有 uid / state、
