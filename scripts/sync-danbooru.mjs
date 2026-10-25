@@ -33,7 +33,8 @@ const kindArg = String(flag('kind', 'all'))
 const kinds = kindArg === 'character' ? ['character'] : kindArg === 'artist' ? ['artist'] : ['character', 'artist']
 // 与工具路径对齐：非法值回默认。
 // 注意先挡类型：`--min` 不带值时 flag() 返回布尔 true（Number(true)=1），
-// 空串则 Number('')=0 —— 两者都会静默变成"全量/不限"，症状是同步跑 20 小时。
+// 空串则 Number('')=0 —— 两者都会静默变成"全量/不限"，症状是同步跑几十小时
+//（全量 40 万条，8 并发实测 3~4 条/秒，约 30 小时）。
 const asCount = (raw, fallback) => {
   if (typeof raw === 'boolean') return fallback
   if (typeof raw === 'string' && raw.trim() === '') return fallback

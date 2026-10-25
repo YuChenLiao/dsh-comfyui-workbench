@@ -206,7 +206,7 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 
 标签数据来自 [amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira），收录 Danbooru 上图片数 > 50 的标签及其中文名、别名与注释。数据随插件分发在 `data/danbooru/`，上游的许可原文一并保留（见 [data/danbooru/LICENSE](data/danbooru/LICENSE) 与 [NOTICE.md](data/danbooru/NOTICE.md)）。
 
-本插件只做了格式转换（CSV → JSONL、字段名映射）与共用别名去重（去掉被多条记录共用的 CP 名等），tag、中文名与注释本身未改动。上游更新后按上文的 `danbooru:zh` 重新导入。
+本插件只做了这些转换：字段名映射（CSV → JSONL）、按 `category` 过滤行、`names` 规范化（中文名前置、丢弃与 tag 同名的项、丢弃空串、记录内去重）、以及共用别名去重（去掉被多条记录共用的 CP 名等，同一别名只保留在热度最高的那条记录上）。tag、中文名与注释文本本身未改动。上游更新后按上文的 `danbooru:zh` 重新导入。
 
 ## License
 

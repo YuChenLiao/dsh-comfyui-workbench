@@ -129,16 +129,17 @@ export function storePath(dataDir: string, kind: 'character' | 'artist'): string
   return fs.existsSync(bundled) ? bundled : own
 }
 
-/**
- * 读整份 JSONL。
- *
- * 坏行直接跳过：这份文件由同步流程追加写入，中途被打断时末尾可能是半行。
- *
- * @param file - JSONL 路径。
- */
 /** 模块级缓存：包内数据有 7 MB，反复解析会让每次查询都卡上一秒。 */
 const storeCache = new Map<string, { mtimeMs: number; size: number; records: TagRecord[] }>()
 
+/**
+ * 读整份 JSONL。
+ *
+ * 坏行直接跳过：写盘是「先写临时文件再 rename」的整份替换，正常不会有半行；
+ * 但手工 `>>` 追加或用别的工具改过时可能出现，不值得为此让整份读取失败。
+ *
+ * @param file - JSONL 路径。
+ */
 export function readStore(file: string): TagRecord[] {
   if (!fs.existsSync(file)) return []
   try {
@@ -260,7 +261,6 @@ export function searchTags(records: readonly TagRecord[], query: string, limit =
   matches.sort((a, b) => (rank[a.how] - rank[b.how]) || (b.record.postCount - a.record.postCount))
   return matches.slice(0, limit)
 }
-
 
 /**
  * 去掉「共享别名」的歧义。

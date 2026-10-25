@@ -4,7 +4,7 @@
 
 ### 新增
 
-- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 把标签与中文名抓到本地。数据来自 `tags.json`（角色 / 画师分类）与逐条的 `wiki_pages.json`（中文名在 `other_names`）；按热度阈值控制规模（`search[post_count]=>N`）；最热的 400 条角色里约 94% 有别名（中文优先，缺失时保留日文原名），画师因 Danbooru 不填 `other_names` 而无中文名。共用别名（CP 名）按「被多个 tag 共用」识别并只保留热度最高的一条。
+- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 把标签与中文名抓到本地。数据来自 `tags.json`（角色 / 画师分类）与逐条的 `wiki_pages.json`（中文名在 `other_names`）；按热度阈值控制规模（`search[post_count]=>N`）；最热的 400 条角色里 392 条有别名（约 98%，中文优先，缺失时保留日文原名；共用别名去重前 395 条），画师因 Danbooru 不填 `other_names` 而无中文名。共用别名（CP 名）按「被多个 tag 共用」识别并只保留热度最高的一条。
 
   **首选数据源改为社区中文库**：[`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（含社区昵称）与注释。`npm run danbooru:zh` 约 5 秒（视网速）导入角色 3.5 万、画师 2.5 万，去掉共用别名后 98.7% / 94.9% 有中文名或别名（上游 CSV 为 99.7% / 95.8%） —— 自抓 wiki 对画师几乎拿不到中文名（平台不填 `other_names`），且 400 条就要 100 秒。自抓保留为补充路径（数据更新更及时）。
 
