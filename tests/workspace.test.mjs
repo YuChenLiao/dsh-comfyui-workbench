@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { resolveOutputDir, workspaceDirOf } from '../lib/index.js'
+import { foldPathCase, isAuthorized, resolveOutputDir, workspaceDirOf } from '../lib/index.js'
 
 const fakeCtx = (paths) => ({ get: (name) => (name === 'workspaceRegistry' ? { list: () => paths.map(item => ({ path: item })) } : undefined) })
 
@@ -142,4 +142,56 @@ test('宿主的内部目录不当工作区', () => {
   assert.equal(guess?.source, 'service')
   // 但 cwd 探测会排除它 —— 这里无法直接改 cwd，用纯函数行为间接确认
   assert.ok(guess !== undefined)
+})
+
+test('路径折叠按平台切换（授权 / 根去重 / 缩略图缓存 / 扫描去重共用）', () => {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')
+  try {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    assert.equal(foldPathCase('D:/data/APP/x.png'), 'd:/data/app/x.png', 'Windows 上应当折叠')
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    assert.equal(foldPathCase('/data/App/x.png'), '/data/App/x.png', 'POSIX 上必须原样返回')
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    assert.equal(foldPathCase('/data/App/x.png'), '/data/App/x.png', 'macOS 同样大小写敏感')
+  } finally {
+    Object.defineProperty(process, 'platform', original)
+  }
+})
+
+test('授权校验：子路径放行、兄弟目录拒绝、大小写按平台裁决', () => {
+  // 大小写那半用 **ghost 路径**（不存在的根）来测：canonical() 走
+  // fs.realpathSync.native，对真实存在的路径会按磁盘大小写规范化回去，
+  // 但路径不存在时它回退 path.resolve 并保留原样 —— 大小写差异才能体现出来。
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'authz-'))
+  const target = path.join(base, 'x.png')
+  fs.writeFileSync(target, '')
+  try {
+    const roots = [{ path: base, label: 'base', kind: 'custom' }]
+    assert.equal(isAuthorized(target, roots), true, '授权内的真实路径应当放行')
+    assert.equal(isAuthorized(path.join(base, '..', path.basename(base), 'x.png'), roots), true, '.. 归一化后仍应放行')
+    assert.equal(isAuthorized(path.join(base, '..', '..', 'elsewhere.png'), roots), false, '根之外应当拒绝')
+
+    // 同前缀兄弟目录：`/data/apple` 不属于 `/data/app`。少了分隔符判断就会误放行。
+    const sibling = `${base}le`
+    fs.mkdirSync(sibling, { recursive: true })
+    assert.equal(isAuthorized(path.join(sibling, 'x.png'), roots), false, '同前缀兄弟目录必须拒绝')
+    fs.rmSync(sibling, { recursive: true, force: true })
+
+    // ghost 路径（不存在）会让 canonical 回退 path.resolve 并保留大小写，
+    // 所以 POSIX 的大小写拒绝在这里是可测的 —— 不需要动文件系统。
+    const ghost = path.join(os.tmpdir(), 'ghost-root-never-exists-' + process.pid)
+    const ghostTarget = `${ghost.toUpperCase()}${path.sep}x.png`
+    const ghostRoots = [{ path: ghost, label: 'ghost', kind: 'custom' }]
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+      assert.equal(isAuthorized(ghostTarget, ghostRoots), true, 'Windows 上大小写变体是同一路径')
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+      assert.equal(isAuthorized(ghostTarget, ghostRoots), false, 'POSIX 上大小写变体必须拒绝')
+    } finally {
+      Object.defineProperty(process, 'platform', originalPlatform)
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
 })

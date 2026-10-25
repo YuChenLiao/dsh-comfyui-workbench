@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { HostContext } from '../host/types.js'
-import { pluginDataDir } from '../host/paths.js'
+import { foldPathCase, pluginDataDir } from '../host/paths.js'
 import { canonical, comfyImageOutputDir } from './legacy-paths.js'
 
 /** 一个授权根目录。 */
@@ -95,7 +95,7 @@ export function rootsOf(ctx: HostContext, settings: RootsSettings): RootEntry[] 
   const roots: RootEntry[] = []
   for (const candidate of candidates) {
     const abs = canonical(candidate.path)
-    const key = abs.toLowerCase()
+    const key = foldPathCase(abs)
     if (seen.has(key)) continue
     seen.add(key)
     let exists = false

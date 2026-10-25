@@ -1,24 +1,7 @@
-import fs from 'node:fs'
-import path from 'node:path'
-
-import { homeDir } from '../../../../shared/host/paths.js'
-
-export { canonical, homeDir } from '../../../../shared/host/paths.js'
-
 /**
- * `dsh-comfyui-image` 配置里的 outputDir（若用户显式指定过输出目录）。
+ * 兼容层：实现已收敛到 `shared/host/paths.ts`。
  *
- * 这里刻意继续读**那个插件**的配置文件，而不是复制一份到本插件：
- * 用户已经在那儿配好了输出目录，复制一份就会漂移 —— 用户在一个地方改了目录，
- * 本插件仍在旧目录里找图，表现为"新图不见了"。
+ * 这里原先还有一份 `comfyImageOutputDir` 的复制（与 `shared/authz/legacy-paths.ts`
+ * 逐字相同，且无人使用），已删除。只留 re-export，避免同类残留再次分叉。
  */
-export function comfyImageOutputDir(): string | undefined {
-  const file = path.join(homeDir(), '.dsh-comfyui-image', 'config.json')
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
-    const dir = parsed !== null && typeof parsed === 'object' ? (parsed as { outputDir?: unknown }).outputDir : undefined
-    return typeof dir === 'string' && dir.trim() !== '' ? dir : undefined
-  } catch {
-    return undefined
-  }
-}
+export { canonical, homeDir } from '../../../../shared/host/paths.js'

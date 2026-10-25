@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { foldPathCase } from '../../../../shared/host/paths.js'
 
 import { homeDir } from './paths.js'
 
@@ -81,7 +82,7 @@ export function thumbDir(): string {
 export function thumbPathFor(target: string, stat: fs.Stats): string {
   const key = crypto
     .createHash('sha1')
-    .update(`${target.toLowerCase()}|${stat.mtimeMs}|${stat.size}|${THUMB_EDGE}`)
+    .update(`${foldPathCase(target)}|${stat.mtimeMs}|${stat.size}|${THUMB_EDGE}`)
     .digest('hex')
   return path.join(thumbDir(), `${key}.webp`)
 }

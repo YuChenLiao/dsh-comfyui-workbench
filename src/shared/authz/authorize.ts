@@ -1,5 +1,7 @@
 import path from 'node:path'
 
+import { foldPathCase } from '../host/paths.js'
+
 import { canonical } from './legacy-paths.js'
 import type { RootEntry } from './roots.js'
 
@@ -16,9 +18,9 @@ import type { RootEntry } from './roots.js'
 export function isAuthorized(target: string, roots: readonly RootEntry[]): boolean {
   if (typeof target !== 'string' || target.trim() === '') return false
   if (target.includes('\0')) return false
-  const abs = canonical(target).toLowerCase()
+  const abs = foldPathCase(canonical(target))
   return roots.some(root => {
-    const base = root.path.toLowerCase()
+    const base = foldPathCase(root.path)
     return abs === base || abs.startsWith(base.endsWith(path.sep) ? base : base + path.sep)
   })
 }

@@ -3,6 +3,8 @@ import path from 'node:path'
 
 import { IMAGE_EXTS, toListItem } from '../scan/index.js'
 import type { ImageRecord, ListItem } from '../scan/index.js'
+import { foldPathCase } from '../../../../shared/host/paths.js'
+
 import { isAuthorized } from './authorize.js'
 import { dedupeItems } from './dedupe.js'
 import type { DedupedItem } from './dedupe.js'
@@ -75,10 +77,8 @@ export function queryItems(
     // 只有「影响本次结果」的截断才算数：默认只看生成图，普通图片被截断不该报提示。
     truncated = truncated || scanned.truncated
     for (const file of scanned.files) {
-      // 大小写折叠只在 Windows 上做：POSIX 下 `IMG.png` 与 `img.png` 是两个文件，
-      // 一律小写会把后者静默丢掉。父子根场景本来也用不着折叠 —— 根已 realpath，
-      // 同一文件经由不同根扫到的路径字符串逐字相同。
-      const key = process.platform === 'win32' ? file.path.toLowerCase() : file.path
+      // 与授权校验 / 根去重共用同一套折叠规则，别再各写一份。
+      const key = foldPathCase(file.path)
       if (seenPaths.has(key)) continue
       seenPaths.add(key)
       merged.push({ file, label: root.label })

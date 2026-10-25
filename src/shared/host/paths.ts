@@ -45,3 +45,16 @@ export function canonical(target: string): string {
 export function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true })
 }
+
+/**
+ * 路径比较用的折叠。
+ *
+ * Windows 文件系统大小写不敏感，POSIX 敏感 —— 一律 toLowerCase 会让
+ * `/data/App` 与 `/data/app` 被当成同一个目录。授权校验、根去重、缩略图缓存
+ * 都必须用同一套规则，否则会出现"校验放行、实际操作的是另一个文件"。
+ *
+ * @param value - 原始路径。
+ */
+export function foldPathCase(value: string): string {
+  return process.platform === 'win32' ? value.toLowerCase() : value
+}

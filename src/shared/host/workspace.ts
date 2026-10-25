@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { foldPathCase } from './paths.js'
+
 /** 只要求能按名字取服务。 */
 interface ServiceBag {
   get?: (name: string) => unknown
@@ -109,10 +111,8 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
     // 比较前要做三件事：① 归一化分隔符（宿主给的正斜杠在 Windows 下永远比不中）；
     // ② 折叠大小写（Windows 路径大小写不敏感）；③ 取**最深**的那个 —— 只按顺序找第一个
     // 会把产物丢到父工作区根下。
-    // 折叠大小写只在 Windows 上做：Unix 下 /srv/App 与 /srv/app 是两个不同目录，
-    // 一律小写会让它们撞在一起、选错工作区。
-    const fold = (value: string): string => (process.platform === 'win32' ? value.toLowerCase() : value)
-    const norm = (value: string): string => fold(value.replace(/\\/g, '/').replace(/\/+$/, ''))
+    // 折叠规则与授权 / 根去重共用一处（foldPathCase），别再各写一份。
+    const norm = (value: string): string => foldPathCase(value.replace(/\\/g, '/').replace(/\/+$/, ''))
     const cwdNorm = norm(cwd)
     const related = paths
       .map(item => ({ item, target: norm(item) }))

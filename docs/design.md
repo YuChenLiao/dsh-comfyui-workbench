@@ -65,7 +65,7 @@ custom(settings.roots) → workingDirectory → workspaceRegistry.list()
 → 本插件 outputDir → assetRoots
 ```
 
-去重仍按 `canonical().toLowerCase()`，缓存 2 秒。
+去重仍按路径比较（`canonical()` 后交给 `foldPathCase`：Windows 折叠大小写、其余平台原样），缓存 2 秒。
 
 ### 2.4 权限校验必须扩展到目标路径
 
