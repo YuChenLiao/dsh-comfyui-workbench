@@ -16,7 +16,6 @@
   },
   "files": [
     "lib",
-    "client.js",
     "cordis.patch.yml",
     "icon.svg",
     "README.md",
