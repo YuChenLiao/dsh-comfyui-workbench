@@ -11,8 +11,10 @@
 - insert:
     # 四个组件各是一条 loader entry：宿主「设置 → 插件」里能看到并单独开关。
     # 配置用 YAML 锚点共享 —— 只写一次，改的时候也只改一处。
-    - id: comfyui-workbench:gallery
-      name: dsh-comfyui-workbench/gallery
+    # 包根 entry：只为让宿主装配 exports["./client"]（侧栏图标与 better-sidebar 页签）。
+    # 宿主按"包根说明符"找浏览器端，子路径 entry 挂不上 client，所以这条不能省。
+    - id: comfyui-workbench:core
+      name: dsh-comfyui-workbench
       config: &cwf
         # ── 资产库 ──
         # 额外纳入资产库的目录（绝对路径）。默认已包含：当前工作目录、全部 workspace、

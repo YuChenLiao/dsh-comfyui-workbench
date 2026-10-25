@@ -65,7 +65,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cfa-smoke-'))
 process.env.USERPROFILE = root
 process.env.HOME = root
 
-const { apply } = await import('../lib/index.js')
+const { applyAll } = await import('../lib/index.js')
 const nested = path.join(root, 'out')
 fs.mkdirSync(nested, { recursive: true })
 
@@ -129,7 +129,7 @@ process.chdir(root)
 // 否则会扫到本机真实的 ~/.dsh-comfyui-workbench 里的图。
 const isoDir = path.join(root, 'iso')
 fs.mkdirSync(isoDir, { recursive: true })
-apply(ctx, {
+applyAll(ctx, {
   roots: [],
   maxDepth: 2,
   maxItems: 100,

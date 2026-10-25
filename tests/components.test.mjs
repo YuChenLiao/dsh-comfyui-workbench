@@ -17,7 +17,7 @@ import { registerTools } from '../lib/index.js'
 const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-comp-'))
 process.env.USERPROFILE = isoHome
 process.env.HOME = isoHome
-const { apply } = await import('../lib/index.js')
+const { applyAll } = await import('../lib/index.js')
 
 /** 最小假宿主：只提供 webServer 与 tools。 */
 async function boot(config) {
@@ -32,7 +32,7 @@ async function boot(config) {
     },
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   }
-  apply(ctx, config)
+  applyAll(ctx, config)
 
   const route = routes.find(item => item.path === '/comfyui-workbench/api')
   const server = http.createServer(route.handler)

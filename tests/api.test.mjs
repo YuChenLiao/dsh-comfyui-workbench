@@ -17,7 +17,7 @@ import { importWorkflowFile } from '../lib/workflow.js'
 const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-home-'))
 process.env.USERPROFILE = isoHome
 process.env.HOME = isoHome
-const { apply } = await import('../lib/index.js')
+const { applyAll } = await import('../lib/index.js')
 
 /** 起一个只含必要服务的假宿主。 */
 async function boot(config) {
@@ -48,7 +48,7 @@ async function boot(config) {
     },
   }
 
-  apply(ctx, config)
+  applyAll(ctx, config)
 
   const registered = prefixRoutes[0]
   assert.ok(registered !== undefined, '应当注册 HTTP 路由')
