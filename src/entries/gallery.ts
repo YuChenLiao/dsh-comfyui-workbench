@@ -17,7 +17,7 @@ function warnDisabled(id: string): void {
 }
 
 /** 相册要提供 HTTP 接口。 */
-export const inject = ['webServer']
+export const inject = ['webServer', 'workspaceRegistry']
 
 export function apply(ctx: HostContext, config: unknown): void {
   if (new Set(resolveSettings(config, process.env).disabledComponents).has('panel.gallery')) {

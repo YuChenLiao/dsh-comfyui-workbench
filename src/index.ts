@@ -19,12 +19,17 @@ import { acquire, ensureHttp, release } from './runtime.js'
 export const name = 'dsh-comfyui-workbench'
 
 /**
- * 需要 webServer：HTTP 前缀由这里兜底注册。
+ * 注入清单。
  *
- * 若 core 拿不到 webServer，前缀会落到第一个拿到它的组件 entry 身上 ——
- * 那样单独关掉那个组件，其余面板就跟着失效（复审复现过这个窗口）。
+ * - `webServer`：HTTP 前缀由这里兜底注册。若 core 拿不到，前缀会落到第一个拿到它的
+ *   组件 entry 身上 —— 那样单独关掉那个组件，其余面板就跟着失效。
+ * - `workspaceRegistry`：产物目录要落在用户当前的工作区。注入的作用是**时序**：
+ *   服务未就绪时 fiber 处于 INACTIVE、`apply` 不执行，探测会等它 ACTIVE 之后再跑
+ *   （`ctx.reflect.get` 本身不要求注入）。另一个坑是服务名 —— 它叫 `workspaceRegistry`，
+ *   `workspace` 只是它在 storages 里的域名（`workspace.json` 的 `unit.name`），
+ *   两者混淆过一次，导致探测静默失效。
  */
-export const inject = ['webServer']
+export const inject = ['webServer', 'workspaceRegistry']
 
 export function apply(ctx: HostContext, config: unknown): void {
   const rt = acquire(ctx, config)

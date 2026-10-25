@@ -17,7 +17,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(here, '..')
@@ -141,4 +141,13 @@ const missing = fields.filter(field => !new RegExp(`^\\s*${field}:`, 'm').test(p
 assert.deepEqual(missing, [], `这些配置项没写进 cordis.patch.yml：${missing.join(', ')}`)
 
 const units = new Set(files.map(file => unitOf(path.relative(root, file).split(path.sep).join('/'))))
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致）`)
+// 组件 entry 的 inject 必须有守护：漏了 workspaceRegistry 会让探测静默失效（踩过一次）。
+const entryFiles = ['gallery', 'workflow', 'generate', 'edit']
+for (const entry of entryFiles) {
+  const mod = await import(pathToFileURL(path.join(root, 'lib', 'entries', `${entry}.js`)).href)
+  assert.ok(Array.isArray(mod.inject) && mod.inject.includes('workspaceRegistry'), `entries/${entry}.js 的 inject 必须含 workspaceRegistry，实际：${JSON.stringify(mod.inject)}`)
+}
+const coreMod = await import(pathToFileURL(path.join(root, 'lib', 'index.js')).href)
+assert.ok(coreMod.inject.includes('workspaceRegistry'), '包根 entry 的 inject 必须含 workspaceRegistry')
+
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，5 条 entry 注入齐备）`)

@@ -19,7 +19,7 @@ function warnDisabled(id: string): void {
 
 export const name = 'dsh-comfyui-workbench:workflow'
 
-export const inject = ['webServer']
+export const inject = ['webServer', 'workspaceRegistry']
 
 /** 把失败原因落盘：宿主会吞掉 apply 的异常，不写下来就无从排查。 */
 function recordFailure(error: unknown): void {

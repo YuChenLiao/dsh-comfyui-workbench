@@ -17,7 +17,7 @@ function warnDisabled(id: string): void {
 export const name = 'dsh-comfyui-workbench:generate'
 
 /** 工具需要宿主 tools 服务。 */
-export const inject = ['tools']
+export const inject = ['tools', 'workspaceRegistry']
 
 export function apply(ctx: HostContext, config: unknown): void {
   // 先看配置：被关掉的组件不该白建一份运行时（acquire 会构造客户端与监督器）。

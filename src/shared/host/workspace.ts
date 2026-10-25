@@ -88,7 +88,9 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
 
   let paths: string[] = []
   try {
-    const service = ctx.get?.('workspace') as { list?: () => unknown } | undefined
+    // 服务名是 workspaceRegistry —— `workspace` 只是它在 storages 里的**域名**
+    // （workspace.json 的 unit.name），不是 ctx 上的服务名。仓内 authz/roots.ts 用的就是前者。
+    const service = ctx.get?.('workspaceRegistry') as { list?: () => unknown } | undefined
     const raw = typeof service?.list === 'function' ? service.list() : []
     if (Array.isArray(raw)) {
       paths = raw
@@ -101,8 +103,15 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
 
   probe.serviceCount = paths.length
   if (paths.length > 0) {
-    // 进程 cwd 常常就在工作区里；同前缀优先，避免多工作区时选错。
-    const related = paths.find(item => cwd === item || cwd.startsWith(`${item}\\`) || cwd.startsWith(`${item}/`))
+    // 进程 cwd 常常就在工作区里，但工作区之间可能是父子关系（`D:\dsh` 与 `D:\dsh\notes`）。
+    // 两个都要：① 比较前归一化分隔符（宿主给的 path 可能是正斜杠）；
+    // ② 取**最深**的那个 —— 只按顺序找第一个会把产物丢到父工作区根下。
+    const norm = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '')
+    const cwdNorm = norm(cwd)
+    const related = paths
+      .map(item => ({ item, target: norm(item) }))
+      .filter(({ target }) => cwdNorm === target || cwdNorm.startsWith(`${target}/`))
+      .sort((a, b) => b.target.length - a.target.length)[0]?.item
     return { guess: { dir: related ?? (paths[0] as string), source: 'service' as const }, probe }
   }
 
