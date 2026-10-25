@@ -68,23 +68,44 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
   }
 }
 
-let current: Runtime | undefined
-let refs = 0
+/**
+ * 共享状态的容器。
+ *
+ * 每条组件 entry 是一个独立 bundle，esbuild 会把本模块各内联一份 —— 模块级变量
+ * 在多个 bundle 之间**不共享**。曾因此踩坑：gallery 注册的路由在它自己的副本里，
+ * workflow 的 prefix handler 看不到，`/config`、`/workflows` 全 404。
+ *
+ * 用 globalThis 上的单槽位让同进程内的所有副本指向同一份状态。
+ */
+const SHARED_KEY = Symbol.for('dsh-comfyui-workbench.shared')
 
-/** 已挂载的组件路由表：组件 entry 上线时挂进来，下架时摘掉。 */
-const tables = new Map<string, RouteTable>()
+interface Shared {
+  current: Runtime | undefined
+  refs: number
+  tables: Map<string, RouteTable>
+}
+
+const shared: Shared = (() => {
+  const bag = globalThis as unknown as Record<symbol, Shared | undefined>
+  let slot = bag[SHARED_KEY]
+  if (slot === undefined) {
+    slot = { current: undefined, refs: 0, tables: new Map() }
+    bag[SHARED_KEY] = slot
+  }
+  return slot
+})()
 
 /** 挂载一个组件的路由。 */
 export function mountRoutes(componentId: string, table: RouteTable): () => void {
-  tables.set(componentId, table)
-  return () => { tables.delete(componentId) }
+  shared.tables.set(componentId, table)
+  return () => { shared.tables.delete(componentId) }
 }
 
 /** 取出当前所有组件的路由，合成一张表（后挂的覆盖先挂的同名路径）。 */
 export function mergedRoutes(): RouteTable {
   const exact: Record<string, RouteHandler> = {}
   const prefix: Array<{ base: string; handle: RouteHandler }> = []
-  for (const table of tables.values()) {
+  for (const table of shared.tables.values()) {
     Object.assign(exact, table.exact)
     if (table.prefix !== undefined) prefix.push(...table.prefix)
   }
@@ -115,7 +136,7 @@ export function ensureHttp(rt: Runtime): void {
 
 /** 是否已经初始化（供 entry 判断要不要带配置）。 */
 export function runtimeReady(): boolean {
-  return current !== undefined
+  return shared.current !== undefined
 }
 
 /**
@@ -126,28 +147,28 @@ export function runtimeReady(): boolean {
  */
 export function acquire(ctx: HostContext, config: unknown): Runtime {
   // 宿主换了（测试里每个用例一个新 ctx）就重建：否则会拿上一个宿主的客户端与目录。
-  if (current !== undefined && current.ctx !== ctx) {
-    current.supervisor.dispose()
+  if (shared.current !== undefined && shared.current.ctx !== ctx) {
+    shared.current.supervisor.dispose()
     stopAllWatchers()
-    tables.clear()
-    current = undefined
-    refs = 0
+    shared.tables.clear()
+    shared.current = undefined
+    shared.refs = 0
   }
-  refs += 1
-  if (current !== undefined) return current
-  current = create(ctx, config)
-  return current
+  shared.refs += 1
+  if (shared.current !== undefined) return shared.current
+  shared.current = create(ctx, config)
+  return shared.current
 }
 
 /** 释放；计数归零才销毁。 */
 export function release(): void {
-  refs -= 1
-  if (refs > 0 || current === undefined) return
-  current.supervisor.dispose()
+  shared.refs -= 1
+  if (shared.refs > 0 || shared.current === undefined) return
+  shared.current.supervisor.dispose()
   stopAllWatchers()
-  tables.clear()
-  current = undefined
-  refs = 0
+  shared.tables.clear()
+  shared.current = undefined
+  shared.refs = 0
 }
 
 function create(ctx: HostContext, config: unknown): Runtime {

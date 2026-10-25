@@ -32,19 +32,21 @@ export function apply(ctx: HostContext, config: unknown): void {
     defaultOutputDir: rt.outputDir,
   })
 
-  // 批量导出要读图、读 sidecar、打包，依赖都在相册这边；工作流的 POST /workflows 用它。
-  rt.exportWorkflows = table['/workflows']
+  // 批量导出的实现在这里，但路由归工作流组件（同一路径的 GET 是列表）。
+  // 这里只把它交给 runtime，由工作流的 POST /workflows 转发，避免两边抢同一路径。
+  const { ['/workflows']: exporter, ...exact } = table
+  rt.exportWorkflows = exporter
 
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => {
-      const unmount = mountRoutes('panel.gallery', { exact: table })
+      const unmount = mountRoutes('panel.gallery', { exact })
       return () => {
         rt.exportWorkflows = undefined
         unmount()
       }
     }, 'gallery: routes')
   } else {
-    mountRoutes('panel.gallery', { exact: table })
+    mountRoutes('panel.gallery', { exact })
   }
   rt.info('[comfyui-workbench] 相册已上线')
 }

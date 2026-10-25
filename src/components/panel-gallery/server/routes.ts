@@ -274,15 +274,10 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
     '/upload': createUploadHandler(uploadsDir),
-    // 批量导出工作流要读图 + sidecar + 打包，依赖全在相册这边，所以归这里。
-    // 同一个路径的 GET（列表）属于工作流组件：它被关掉时列表就该 404，
-    // 而不是让这个只认 POST 的处理器接住 GET 然后报 400。
-    '/workflows': (url: URL, res: ServerResponse, req: IncomingMessage) => {
-      if (req.method !== 'POST') {
-        sendJson(res, 404, { ok: false, error: 'unknown-route', message: '工作流面板已关闭，没有列表接口。' })
-        return
-      }
-      return handleWorkflows(url, res, req)
-    },
+    // 导出的实现在相册这边（要读图、sidecar、打包），但**不挂在相册的路由表里**：
+    // 同一路径的 GET（列表）属于工作流组件，两边都注册会互相覆盖。
+    // 相册 entry 取出它交给 runtime，工作流组件的 POST /workflows 转发过来。
+    '/workflows': handleWorkflows,
+
   }
 }
