@@ -9,9 +9,11 @@
 # 全部字段都可省略。下面的 config 只是把默认值写出来，方便对照修改。
 # 优先级：profile 配置 > 环境变量（COMFYUI_URL / COMFYUI_BASE_URL / COMFYUI_TIMEOUT_MS）> 内置默认。
 - insert:
-    - id: comfyui-workbench
-      name: dsh-comfyui-workbench
-      config:
+    # 四个组件各是一条 loader entry：宿主「设置 → 插件」里能看到并单独开关。
+    # 配置用 YAML 锚点共享 —— 只写一次，改的时候也只改一处。
+    - id: comfyui-workbench:gallery
+      name: dsh-comfyui-workbench/gallery
+      config: &cwf
         # ── 资产库 ──
         # 额外纳入资产库的目录（绝对路径）。默认已包含：当前工作目录、全部 workspace、
         # dsh-comfyui-image 的 outputDir、进程 cwd。
@@ -76,3 +78,12 @@
         indexMode: auto
         # better-sidebar 页签：auto | on | off。
         betterSidebarTab: auto
+    - id: comfyui-workbench:workflow
+      name: dsh-comfyui-workbench/workflow
+      config: *cwf
+    - id: comfyui-workbench:generate
+      name: dsh-comfyui-workbench/generate
+      config: *cwf
+    - id: comfyui-workbench:edit
+      name: dsh-comfyui-workbench/edit
+      config: *cwf

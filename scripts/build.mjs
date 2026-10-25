@@ -63,7 +63,24 @@ const domainJob = (name, dir = name) => ({
   logLevel: 'info',
 })
 
+/** 四个组件各自一个入口：宿主按 entry 分别加载，才能单独开关。 */
+const entryJob = name => ({
+  entryPoints: [`src/entries/${name}.ts`],
+  outfile: `lib/${name}.js`,
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: 'node20',
+  external: ['node:*', 'sharp'],
+  sourcemap: false,
+  logLevel: 'info',
+})
+
 const jobs = [
+  entryJob('gallery'),
+  entryJob('workflow'),
+  entryJob('generate'),
+  entryJob('edit'),
   hostJob,
   clientJob,
   domainJob('workflow', 'shared/workflow'),

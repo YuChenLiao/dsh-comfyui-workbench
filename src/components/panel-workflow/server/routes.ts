@@ -23,6 +23,8 @@ export interface WorkflowRouteDeps {
   defaultOutputDir: string
   outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
   getDiagnostics: () => Record<string, unknown>
+  /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
+  getExporter: () => Route | undefined
 }
 
 /** 工作流组件额外暴露的动态路径处理器（`/workflows` 与 `/workflows/:id`）。 */
@@ -37,6 +39,8 @@ export interface WorkflowRoutes {
   update: (id: string, res: ServerResponse, req: import('node:http').IncomingMessage) => Promise<void>
   /** 从路径里认出 `/workflows/<id>`。 */
   detailIdOf: (sub: string) => string | undefined
+  /** 统一处理 `/workflows/<id>`：GET 看详情，POST 改设置。 */
+  byId: (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => Promise<void>
 }
 
 /**
@@ -45,11 +49,35 @@ export interface WorkflowRoutes {
  * 关掉这个组件时，`/run`、`/workflows` 这些路径整体消失，相册不受影响。
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
-  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, outputSource, getDiagnostics } = deps
+  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, outputSource, getDiagnostics, getExporter } = deps
 
 
   return {
     exact: {
+      // 同一路径两种方法：GET 列出工作流，POST 批量导出（导出由相册组件提供）。
+      '/workflows': async (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
+        if (req.method === 'GET' || req.method === 'HEAD') {
+          // 缺模型标注限制 2 秒且不触发拉起：它不能拖慢列表。
+          let available: Set<string> | null = null
+          try {
+            available = availableModels(await client.objectInfo(false, { timeoutMs: 2_000, skipEnsure: true }))
+          } catch {
+            available = null
+          }
+          await handleWorkflowList(workflowDir, url, res, available)
+          return
+        }
+        if (req.method === 'POST') {
+          const exporter = getExporter()
+          if (exporter === undefined) {
+            sendJson(res, 404, { ok: false, error: 'unknown-route', message: '批量导出需要相册组件。' })
+            return
+          }
+          await exporter(url, res, req)
+          return
+        }
+        sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
+      },
       '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir }),
       '/free': async (_url: URL, res: ServerResponse) => {
         try {
@@ -83,5 +111,22 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
     detail: (id, res) => handleWorkflowDetail(workflowDir, id, res),
     update: (id, res, req) => handleWorkflowUpdate(workflowDir, id, res, req),
     detailIdOf: workflowIdFromPath,
+    byId: async (url, res, req) => {
+      const sub = url.pathname.slice(url.pathname.indexOf('/workflows'))
+      const id = workflowIdFromPath(sub)
+      if (id === undefined) {
+        sendJson(res, 404, { ok: false, error: 'unknown-route', message: '缺少工作流 id。' })
+        return
+      }
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        handleWorkflowDetail(workflowDir, id, res)
+        return
+      }
+      if (req.method === 'POST') {
+        await handleWorkflowUpdate(workflowDir, id, res, req)
+        return
+      }
+      sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这个接口只接受 GET / POST。' })
+    },
   }
 }
