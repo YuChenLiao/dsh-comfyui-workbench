@@ -33,8 +33,13 @@ export const inject = ['slots']
 /** 主面板 id（`sidebar.panellist` 与 `main` 的 key 必须一致，否则点图标切不过去）。 */
 const PANEL_ID = 'comfyui-workbench'
 
-/** better-sidebar 页签 id。加上插件前缀，避免与内置类型撞名。 */
-const TAB_ID = 'comfyui-workbench:workflows'
+/**
+ * better-sidebar 页签 id。
+ *
+ * 这个 id 是 better-sidebar 记住"用户加过哪个入口"的键 —— 换 id 等于换了个新入口：
+ * 旧的自然消失，新的默认不在列表里。所以面板内容换成工作流管理，id 也不动。
+ */
+const TAB_ID = 'comfyui-workbench:assets'
 
 /** 客户端上下文的最小面。 */
 interface ClientContext {
