@@ -4,6 +4,7 @@
  * 与 dsh-comfyui-album 同源；只保留插件实际用到的那些，加图标时补一个键即可。
  */
 export const ICON_BODY = {
+      workflow: '<rect x="3" y="3.5" width="7" height="6" rx="1.6"/><rect x="14" y="3.5" width="7" height="6" rx="1.6"/><rect x="3" y="14" width="7" height="6" rx="1.6"/><rect x="14" y="14" width="7" height="6" rx="1.6"/>',
       album: '<rect x="2.75" y="4.75" width="18.5" height="14.5" rx="2.6"/>'
         + '<circle cx="8.4" cy="9.7" r="1.55" fill="currentColor" stroke="none"/>'
         + '<path d="M3.9 17.4l4.35-4.2a1.6 1.6 0 0 1 2.2 0l3.55 3.5"/>'

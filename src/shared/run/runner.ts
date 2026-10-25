@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { ensureDir } from '../host/paths.js'
-import { readPngTextChunks } from '../../components/panel-gallery/server/scan/index.js'
+import { readPngTextChunks } from '../media/png-text.js'
 import type { ComfyClient, HistoryEntry } from '../comfy/index.js'
 import {
   asRunError,

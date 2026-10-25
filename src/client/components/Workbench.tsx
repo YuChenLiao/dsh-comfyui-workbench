@@ -4,7 +4,7 @@ import { fetchConfig } from '../api.js'
 import type { Translate } from '../i18n.js'
 import { WORKBENCH_CSS } from '../styles-workbench.js'
 import { Gallery } from '../../components/panel-gallery/client/Gallery.js'
-import { WorkflowPanel } from '../../components/panel-workflow/client/WorkflowPanel.js'
+import { WorkflowAdmin } from '../../components/panel-workflow/client/WorkflowAdmin.js'
 
 export interface WorkbenchProps {
   t: Translate
@@ -17,9 +17,9 @@ export interface WorkbenchProps {
 type TabId = 'assets' | 'workflow'
 
 /** 页签与组件的对应关系：关掉哪个组件，对应页签就不会出现。 */
-const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflow' }> = [
+const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' }> = [
   { id: 'assets', component: 'panel.gallery', label: 'tabAssets' },
-  { id: 'workflow', component: 'panel.workflow', label: 'tabWorkflow' },
+  { id: 'workflow', component: 'panel.workflow', label: 'tabWorkflowAdmin' },
 ]
 
 /**
@@ -77,7 +77,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
           <div className="cwb-body">
             {current === 'assets'
               ? <Gallery t={t} visible={visible} {...(embedded === true ? { embedded } : {})} goToConversation={goToConversation} openSidebar={openSidebar} />
-              : <WorkflowPanel t={t} visible={visible} goToConversation={goToConversation} />}
+              : <WorkflowAdmin t={t} visible={visible} />}
           </div>
         </>
       )}

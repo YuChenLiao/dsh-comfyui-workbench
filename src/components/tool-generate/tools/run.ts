@@ -33,6 +33,10 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
   if (id !== '') {
     const entry = readEntry(deps.workflowsDir, id)
     if (entry === undefined) throw new Error(`没有这个工作流：${id}。先用 comfyui_workflow_list 看有哪些。`)
+    // 停用的工作流不该被执行：管理员关掉它通常是有原因的（吃显存、只在特定机器上能跑）。
+    if (!entry.surface.enabled) {
+      throw new Error(`工作流 ${id} 已被停用，不能执行。需要的话在工作流管理面板里重新启用。`)
+    }
     return { workflowId: id, workflow: entry.workflow, surface: entry.surface }
   }
 
@@ -244,6 +248,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
 
         const notes = [...preNotes, ...outcome.notes]
 
+
         return {
           ok: true,
           workflowId: outcome.workflowId !== '' ? outcome.workflowId : loaded.workflowId,
@@ -251,7 +256,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
           durationMs: outcome.durationMs,
           artifacts: outcome.artifacts,
           effectiveVars: outcome.effective,
-          notes,
+          notes: outcome.notes,
         }
       } catch (error) {
         return failureOf(error)

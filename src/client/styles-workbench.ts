@@ -124,4 +124,29 @@ export const WORKBENCH_CSS = [
   `@container(max-width:900px){.cwf-main{grid-template-columns:1fr;overflow:auto}.cwf-left{border-right:0;border-bottom:1px solid var(--w-line);min-height:320px}.cwf-right{overflow:visible}.cwf-stage{min-height:240px}}
 @container(max-width:460px){.cwb-tabs{padding:0 14px;gap:14px}.cwf-top{padding:8px 12px}.cwf-ratios{grid-template-columns:repeat(2,1fr)}.cwf-pairs{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.cwb-root *{animation:none!important;transition:none!important}}`,
+  // ── 工作流管理 ──
+  `.cwa-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px 10px;border-bottom:1px solid var(--w-line);flex-shrink:0}
+.cwa-title{font-size:1.02em;font-weight:600}
+.cwa-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
+.cwa-error{margin:10px 20px 0;padding:8px 11px;border-radius:9px;border:1px solid var(--w-danger);color:var(--w-danger);font-size:.84em}
+.cwa-notice{margin:10px 20px 0;padding:8px 11px;border-radius:9px;background:var(--w-surface);border:1px solid var(--w-line);font-size:.84em}
+.cwa-list{flex:1;min-height:0;overflow:auto;padding:12px 20px 24px;display:flex;flex-direction:column;gap:10px;scrollbar-gutter:stable}
+.cwa-row{border:1px solid var(--w-line);border-radius:12px;background:var(--w-surface);padding:11px 13px;display:flex;flex-direction:column;gap:8px;transition:opacity .15s ease}
+.cwa-row.off{opacity:.62}
+.cwa-row-head{display:flex;align-items:flex-start;gap:11px}
+.cwa-switch{position:relative;display:inline-flex;flex-shrink:0;cursor:pointer;margin-top:2px}
+.cwa-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.cwa-track{width:34px;height:19px;border-radius:99px;background:var(--w-line);position:relative;transition:background-color .16s ease;display:block}
+.cwa-knob{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--w-bg);box-shadow:0 1px 2px #0003;transition:transform .16s ease}
+.cwa-switch input:checked+.cwa-track{background:var(--w-accent)}
+.cwa-switch input:checked+.cwa-track .cwa-knob{transform:translateX(15px)}
+.cwa-switch input:focus-visible+.cwa-track{outline:1px solid var(--w-accent);outline-offset:2px}
+.cwa-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.cwa-name{font-size:.94em;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwa-facts{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:.78em;color:var(--w-muted)}
+.cwa-badge{background:var(--w-bg);border:1px solid var(--w-line);border-radius:5px;padding:0 5px;color:var(--w-text)}
+.cwa-warn{font-size:.78em;color:var(--w-danger)}
+.cwa-note{width:100%;resize:vertical;min-height:46px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.86em;line-height:1.55;padding:7px 9px}
+.cwa-note:focus{border-color:var(--w-accent);outline:none}
+.cwa-note::placeholder{color:var(--w-muted)}`,
 ].join('\n')

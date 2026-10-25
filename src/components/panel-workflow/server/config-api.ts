@@ -9,7 +9,6 @@ import { sendJson } from '../../../shared/http/respond.js'
 export function createConfigHandler(deps: {
   settings: Settings
   outputDir: string
-  uploadsDir: string
   workflowsDir: string
   /** 产物目录是怎么定下来的：配置 / 工作区 / 数据目录。 */
   outputSource?: 'config' | 'env' | 'service' | 'cwd' | 'data'
@@ -27,7 +26,6 @@ export function createConfigHandler(deps: {
         baseUrl: deps.settings.baseUrl,
         outputDir: deps.outputDir,
         outputSource: deps.outputSource ?? 'config',
-        uploadsDir: deps.uploadsDir,
         workflowsDir: deps.workflowsDir,
         runMode: deps.settings.runMode,
         returnImages: deps.settings.returnImages,

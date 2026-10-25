@@ -139,12 +139,15 @@ test('GET /workflows/{id}：返回完整输入槽位；不存在时 404', async 
   }
 })
 
-test('GET /workflows/{id} 不接受写方法', async () => {
+test('POST /workflows/{id} 改设置：不存在的工作流 404', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
+    // 这条路径现在是"改工作流设置"（启用/备注），不再是只读
     const res = await fetch(`${app.origin}/comfyui-workbench/api/workflows/text2img-basic`, { method: 'POST' })
-    assert.equal(res.status, 405)
+    assert.equal(res.status, 404, '工作流不存在就该 404')
+    const del = await fetch(`${app.origin}/comfyui-workbench/api/workflows/text2img-basic`, { method: 'DELETE' })
+    assert.equal(del.status, 405, 'DELETE 仍不受支持')
   } finally {
     await app.close()
   }

@@ -213,9 +213,9 @@ assert.equal(partial.items.length, 110)
 assert.equal(partial.more, true)
 
 // ── 工作台外壳：两个页签 + 工作流面板空态 ──
-const { Workbench, WorkflowPanel } = mod.__test
+const { Workbench, WorkflowAdmin } = mod.__test
 assert.ok(Workbench !== undefined, '应当导出 Workbench')
-assert.ok(WorkflowPanel !== undefined, '应当导出 WorkflowPanel')
+assert.ok(WorkflowAdmin !== undefined, '应当导出 WorkflowAdmin（工作流管理面板）')
 
 const shell = renderToStaticMarkup(React.createElement(Workbench, {
   t,
@@ -226,11 +226,11 @@ const shell = renderToStaticMarkup(React.createElement(Workbench, {
 assert.match(shell, /role="tablist"/, '应当有页签条')
 // 测试里的 t 是 identity，所以断言的是文案键而不是中文（文案本身在 i18n-data 里）
 assert.match(shell, />tabAssets</, '应当有资产库页签')
-assert.match(shell, />tabWorkflow</, '应当有工作流页签')
+assert.match(shell, />tabWorkflowAdmin</, '应当有工作流管理页签')
 assert.match(shell, /class="cfa-root"/, '默认停在资产库')
 
 // 空列表：给出导入指引而不是一片空白
-const panel = renderToStaticMarkup(React.createElement(WorkflowPanel, {
+const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
   t,
   visible: true,
   goToConversation() {},
@@ -238,4 +238,4 @@ const panel = renderToStaticMarkup(React.createElement(WorkflowPanel, {
 // SSR 不跑 useEffect，首帧停在"加载中"——这正是修掉"把加载中显示成空"的证明
 assert.match(panel, /loadingWorkflows/, '首帧应当显示加载中而不是空态')
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowPanel）')
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin）')

@@ -92,6 +92,7 @@ export function buildSurface(input: {
     title: meta?.title ?? schema?.title ?? workflowId,
     description: meta?.description ?? schema?.description ?? '',
     workflowHash: hashWorkflow(workflow),
+    enabled: (typeof meta?.enabled === 'boolean' ? meta.enabled : true),
     models: mergeModels(inferred.models, schema),
     inputs: slots,
     outputs: inferred.outputs,

@@ -22,6 +22,7 @@ function toListItem(surface: WorkflowIOSurface): Record<string, unknown> {
     inputs: surface.inputs.map(slot => ({ name: slot.name, type: slot.type, required: slot.required })),
     outputs: surface.outputs.map(slot => ({ kind: slot.kind, count: slot.count })),
     nodes: surface.meta.nodeCount,
+    enabled: surface.enabled,
   }
 }
 
@@ -43,6 +44,7 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
       additionalProperties: false,
       properties: {
         q: { type: 'string', description: '按标题 / 备注 / 模型名过滤（不区分大小写）' },
+        includeDisabled: { type: 'boolean', description: '连被管理员停用的工作流一起列出（默认只看可用的）' },
       },
     },
     output: jsonOutput(),
@@ -59,7 +61,12 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
         available = null
       }
 
-      const items = entries
+      // 被停用的工作流默认不出现在清单里：它们不该被模型挑中。
+      const showDisabled = args.includeDisabled === true
+      const hidden = showDisabled ? 0 : entries.filter(entry => !entry.surface.enabled).length
+      const visible = showDisabled ? entries : entries.filter(entry => entry.surface.enabled)
+
+      const items = visible
         .map(entry => {
           const item = toListItem(entry.surface)
           if (available === null) return item
@@ -83,8 +90,9 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
         count: items.length,
         workflows: items,
         ...(broken.length > 0 ? { broken, brokenHint: '这些文件不是可用的 API 格式工作流，已跳过。' } : {}),
+        ...(hidden > 0 ? { hiddenCount: hidden, hiddenHint: `另有 ${hidden} 个工作流被停用（面板里可重新启用）。` } : {}),
         ...(items.length === 0 && broken.length === 0
-          ? { hint: '工作流目录是空的。用 dsh workbench import <file> 导入一份 API 格式工作流（ComfyUI 里 Export (API)）。' }
+          ? { hint: '没有可用的工作流。用面板启用一个，或导入一份 API 格式工作流（ComfyUI 里 Export (API)）。' }
           : {}),
       }
     },

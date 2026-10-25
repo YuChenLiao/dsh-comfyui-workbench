@@ -7,7 +7,7 @@ import { sendJson } from '../../../shared/http/respond.js'
 import { createConfigHandler } from './config-api.js'
 import { createRunHandler } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
-import { handleWorkflowDetail, handleWorkflowList, workflowIdFromPath } from './workflows-api.js'
+import { handleWorkflowDetail, handleWorkflowList, handleWorkflowUpdate, workflowIdFromPath } from './workflows-api.js'
 
 
 /** 路由处理器签名（与相册那份一致，但各自持有，避免组件间互相 import）。 */
@@ -21,7 +21,6 @@ export interface WorkflowRouteDeps {
   settings: Settings
   assertWritable: (dir: string) => void
   defaultOutputDir: string
-  uploadsDir: string
   outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
   getDiagnostics: () => Record<string, unknown>
 }
@@ -34,6 +33,8 @@ export interface WorkflowRoutes {
   list: (url: URL, res: ServerResponse) => Promise<void>
   /** GET /workflows/:id：单份详情。 */
   detail: (id: string, res: ServerResponse) => void
+  /** POST /workflows/:id：改标题 / 备注 / 是否可用。 */
+  update: (id: string, res: ServerResponse, req: import('node:http').IncomingMessage) => Promise<void>
   /** 从路径里认出 `/workflows/<id>`。 */
   detailIdOf: (sub: string) => string | undefined
 }
@@ -44,7 +45,7 @@ export interface WorkflowRoutes {
  * 关掉这个组件时，`/run`、`/workflows` 这些路径整体消失，相册不受影响。
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
-  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, uploadsDir, outputSource, getDiagnostics } = deps
+  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, outputSource, getDiagnostics } = deps
 
 
   return {
@@ -63,7 +64,6 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
       '/config': createConfigHandler({
         settings,
         outputDir: defaultOutputDir,
-        uploadsDir,
         workflowsDir: workflowDir,
         outputSource,
         getDiagnostics,
@@ -81,6 +81,7 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
       await handleWorkflowList(workflowDir, url, res, available)
     },
     detail: (id, res) => handleWorkflowDetail(workflowDir, id, res),
+    update: (id, res, req) => handleWorkflowUpdate(workflowDir, id, res, req),
     detailIdOf: workflowIdFromPath,
   }
 }

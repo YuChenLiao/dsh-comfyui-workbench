@@ -43,6 +43,27 @@ export interface HostConfig {
   tools?: { registered: string[]; failed: Array<{ name: string; message: string }>; skipped: string[] }
 }
 
+/** 改工作流设置（是否可用 / 备注 / 标题），返回服务端确认后的值。 */
+export async function updateWorkflow(
+  id: string,
+  body: { enabled?: boolean; description?: string; title?: string },
+): Promise<{ enabled: boolean; description: string; title: string }> {
+  const res = await fetch(`${API}/workflows/${encodeURIComponent(id)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object' ? (data as { ok?: unknown; message?: unknown }) : null
+  if (bag?.ok !== true) throw new Error(typeof bag?.message === 'string' ? bag.message : `保存失败：HTTP ${res.status}`)
+  return data as { enabled: boolean; description: string; title: string }
+}
+
 /** 取宿主配置。 */
 export async function fetchConfig(): Promise<HostConfig> {
   const data = await apiJson('/config')

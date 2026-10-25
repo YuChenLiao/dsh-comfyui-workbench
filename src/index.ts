@@ -15,8 +15,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { ComfyClient, ComfySupervisor } from './shared/comfy/index.js'
-import { isAuthorized } from './components/panel-gallery/server/assets/authorize.js'
-import { rootsOf } from './components/panel-gallery/server/assets/roots.js'
+import { isAuthorized } from './shared/authz/authorize.js'
+import { rootsOf } from './shared/authz/roots.js'
 import { resolveSettings } from './shared/host/config.js'
 import { resolveLogger } from './shared/host/logger.js'
 import { ensureDir, pluginDataDir, workflowsDir } from './shared/host/paths.js'
@@ -28,8 +28,8 @@ export { resolveOutputDir, workspaceDirOf } from './shared/host/workspace.js'
 export { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'
 import type { HostContext, WebServerLike } from './shared/host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
-import { AssetIndex } from './components/panel-gallery/server/store/index.js'
 import { stopAllWatchers } from './shared/run/index.js'
+import { AssetIndex } from './components/panel-gallery/server/store/index.js'
 import { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'
 import type { ToolRegistrationReport } from './components/tool-generate/index.js'
 import type { ToolSpec } from './components/tool-generate/index.js'
@@ -81,8 +81,6 @@ export function apply(ctx: HostContext, config: unknown): void {
   // 上传目录与产物目录先建出来：rootsOf 只收已存在的目录，晚建会让刚传的图预览 403。
   const uploadsDir = settings.uploadsDir ?? path.join(pluginDataDir(), 'uploads')
   ensureDir(uploadsDir)
-  // 产物默认落到插件数据目录，而不是 process.cwd() —— dsh 进程的 cwd 是 profile 目录，
-  // 往那里写图等于污染宿主自己的安装树。
   // 产物默认落到当前工作区（`<workspace>/comfyui-output`），而不是插件私有目录 ——
   // 图就该出现在用户正在做的项目里，不该逼用户再去别处找、或者让模型复制一份。
   const workspaceGuess = workspaceDirOf(ctx)
@@ -124,14 +122,14 @@ export function apply(ctx: HostContext, config: unknown): void {
     }
   }
 
-  const assetIndex = settings.indexFile === null ? new AssetIndex() : new AssetIndex(settings.indexFile)
-
   /**
    * 输出目录必须落在授权根内。
    *
    * 默认输出目录（配置的 outputDir 或 workspace 根）本来就在 roots 里；
    * 这条只挡"显式指定了一个根外路径"的情况 —— 那种写入等于给任意目录开后门。
    */
+  const assetIndex = settings.indexFile === null ? new AssetIndex() : new AssetIndex(settings.indexFile)
+
   const rootsSettings = { ...settings, resolvedOutputDir: outputDir }
   const assertWritable = (dir: string): void => {
     const roots = rootsOf(ctx, rootsSettings)
@@ -170,7 +168,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     } else {
       server.register({ kind: 'prefix', path: PREFIX, handler })
     }
-    info(`[${name}] v${VERSION} 资产库 API 就绪：${PREFIX}（最大深度 ${settings.maxDepth}）`)
+    info(`[${name}] v${VERSION} API 就绪：${PREFIX}`)
   }
 
   // ── 工具（可选） ──

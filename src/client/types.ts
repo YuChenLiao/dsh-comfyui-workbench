@@ -57,6 +57,8 @@ export interface WorkflowListItem {
   outputs: Array<{ kind: string; count: number | string }>
   nodes: number
   workflowHash: string
+  /** 是否对模型可用（面板可切换）。 */
+  enabled?: boolean
   /** 本机没有的模型（拿不到 object_info 时不出现）。 */
   missingModels?: string[]
   modelHint?: string

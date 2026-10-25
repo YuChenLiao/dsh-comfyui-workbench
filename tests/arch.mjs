@@ -28,9 +28,12 @@ const SHARED_ALLOWED = {
   // 工具规格里要写 client / logger 的类型，所以允许向下依赖这两层
   'shared/tools': ['shared/host', 'shared/comfy', 'shared/workflow'],
   'shared/http': [],
+  // 授权根要读 workspace 与配置，所以依赖 host
+  'shared/authz': ['shared/host'],
   'shared/workflow': ['shared/host'],
   'shared/comfy': ['shared/host', 'shared/workflow'],
-  'shared/run': ['shared/host', 'shared/comfy', 'shared/workflow'],
+  'shared/media': [],
+  'shared/run': ['shared/host', 'shared/comfy', 'shared/workflow', 'shared/media'],
 }
 
 /** 外壳里允许组装组件的文件（其余必须与组件无关）。 */

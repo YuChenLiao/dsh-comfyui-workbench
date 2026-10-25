@@ -54,6 +54,8 @@ export interface WorkflowIOSurface {
   description: string
   /** 与完整配置绑定：模板一变 hash 就变，IO 面缓存同步失效。 */
   workflowHash: string
+  /** 是否提供给它模型（meta.enabled，缺省 true）。 */
+  enabled: boolean
   models: ModelRef[]
   inputs: IOSlot[]
   outputs: OutputSlot[]
@@ -82,6 +84,13 @@ export interface WorkflowMeta {
   title?: string
   description?: string
   tags?: string[]
+  /**
+   * 是否提供给它模型使用。默认可用。
+   *
+   * 关掉之后 `workflow_list` 不再列出、`run` 直接拒绝 —— 有些工作流（实验品、
+   * 吃显存的大整合包）只适合人工在 ComfyUI 里跑，不该被模型随手调用。
+   */
+  enabled?: boolean
   updatedAt?: string
   updatedBy?: 'user' | 'agent'
 }

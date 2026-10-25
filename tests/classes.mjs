@@ -29,7 +29,7 @@ function sources(dir) {
 }
 
 /** 样式表文件（它们定义类名）。 */
-// 样式表按组件分散：相册的在 panel-gallery/client、工作台外壳的在自己目录
+// 相册与工作台外壳各有自己的样式表
 const STYLE_FILES = [
   path.join(root, 'src', 'components', 'panel-gallery', 'client', 'styles.ts'),
   path.join(clientDir, 'styles-workbench.ts'),
@@ -39,7 +39,7 @@ const STYLE_FILES = [
 const defined = new Set()
 for (const file of STYLE_FILES) {
   const text = fs.readFileSync(file, 'utf8')
-  for (const match of text.matchAll(/\.((?:cwb|cwf|cfa)-[a-z0-9-]+)/g)) defined.add(match[1])
+  for (const match of text.matchAll(/\.((?:cwb|cwf|cfa|cwa)-[a-z0-9-]+)/g)) defined.add(match[1])
 }
 
 /** 组件源码里引用过的类名（含模板字符串里的静态片段）。 */
@@ -47,7 +47,7 @@ const used = new Map()
 for (const file of sources(srcDir)) {
   if (STYLE_FILES.includes(file)) continue
   const text = fs.readFileSync(file, 'utf8')
-  for (const match of text.matchAll(/\b((?:cwb|cwf|cfa)-[a-z0-9-]+)/g)) {
+  for (const match of text.matchAll(/\b((?:cwb|cwf|cfa|cwa)-[a-z0-9-]+)/g)) {
     const name = match[1]
     // `cwf-field-${type}` 这种动态拼接只会命中前缀，跳过
     if (name.endsWith('-')) continue

@@ -1,6 +1,6 @@
+import type { AssetIndex } from '../../components/panel-gallery/server/store/index.js'
 import type { ComfyClient } from '../comfy/index.js'
 import type { LoggerLike } from '../host/types.js'
-import type { AssetIndex } from '../../components/panel-gallery/server/store/index.js'
 
 /** 文本块。 */
 export interface ToolText {
@@ -56,8 +56,9 @@ export interface ToolDeps {
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */
   overrides: Map<string, Override[]>
   /** 资产索引（运行成功后登记）。 */
-  index: AssetIndex
   /** 输出目录校验（注入，避免 tools 直接依赖 assets）。 */
+  /** 资产索引：产物落盘后登记，相册面板据此列出。 */
+  index: AssetIndex
   assertWritable: (dir: string) => void
   logger?: LoggerLike | undefined
 }

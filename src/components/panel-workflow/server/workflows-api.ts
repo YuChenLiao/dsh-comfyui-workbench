@@ -1,7 +1,7 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
-import { listEntries, readEntry } from '../../../shared/workflow/index.js'
+import { listEntries, readEntry, writeMeta } from '../../../shared/workflow/index.js'
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
-import { sendJson } from '../../../shared/http/respond.js'
+import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
 /** 列表项：UI 与模型看到的是同一份数据，只是用法不同。 */
 function toListItem(
@@ -23,6 +23,7 @@ function toListItem(
     outputs: surface.outputs.map(slot => ({ kind: slot.kind, count: slot.count })),
     nodes: surface.meta.nodeCount,
     workflowHash: surface.workflowHash,
+    enabled: surface.enabled,
     ...(available === null
       ? {}
       : (() => {
@@ -83,4 +84,51 @@ export function workflowIdFromPath(sub: string): string | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * `POST /comfyui-workbench/api/workflows/{id}`：改工作流的设置。
+ *
+ * 面板只做三件事：开关可用性、写用途备注、改标题。这些落在 `<id>.meta.json`，
+ * 与模型侧的 `comfyui_workflow_edit` 写的是同一份文件（updatedBy 区分来源）。
+ */
+export async function handleWorkflowUpdate(
+  dir: string,
+  id: string,
+  res: import('node:http').ServerResponse,
+  req: import('node:http').IncomingMessage,
+): Promise<void> {
+  const entry = readEntry(dir, id)
+  if (entry === undefined) {
+    sendJson(res, 404, { ok: false, error: 'not-found', message: `没有这个工作流：${id}` })
+    return
+  }
+
+  let body: unknown
+  try {
+    body = await readJsonBody(req)
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: 'bad-body', message: error instanceof Error ? error.message : String(error) })
+    return
+  }
+  const bag = body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+
+  const next = {
+    ...(entry.meta ?? {}),
+    ...(typeof bag.title === 'string' ? { title: bag.title.trim() } : {}),
+    ...(typeof bag.description === 'string' ? { description: bag.description.trim() } : {}),
+    ...(typeof bag.enabled === 'boolean' ? { enabled: bag.enabled } : {}),
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'user' as const,
+  }
+  writeMeta(dir, id, next)
+
+  const updated = readEntry(dir, id)
+  sendJson(res, 200, {
+    ok: true,
+    workflowId: id,
+    enabled: updated?.surface.enabled ?? true,
+    title: updated?.surface.title ?? '',
+    description: updated?.surface.description ?? '',
+  })
 }
