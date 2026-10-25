@@ -99,7 +99,8 @@ test('关掉工作流面板：/workflows 与 /run 404，相册仍可用', async 
   const app = await boot({ ...baseConfig(d), disabledComponents: ['panel.workflow'] })
   try {
     assert.equal((await app.get('/comfyui-workbench/api/workflows')).status, 404)
-    assert.equal((await app.get('/comfyui-workbench/api/run')).status, 405, 'GET /run 本来就该 405，说明路由层还在')
+    // 关掉工作流面板后 /run 整条路由消失（404），而不是"存在但方法不对"（405）
+    assert.equal((await app.get('/comfyui-workbench/api/run')).status, 404)
     assert.equal((await app.get('/comfyui-workbench/api/items')).status, 200)
   } finally {
     await app.close()
