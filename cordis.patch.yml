@@ -9,7 +9,8 @@
 # 全部字段都可省略。下面的 config 只是把默认值写出来，方便对照修改。
 # 优先级：profile 配置 > 环境变量（COMFYUI_URL / COMFYUI_BASE_URL / COMFYUI_TIMEOUT_MS）> 内置默认。
 - insert:
-    # 四个组件各是一条 loader entry：宿主「设置 → 插件」里能看到并单独开关。
+    # 五条 entry：包根 core（承载浏览器端 + 共享运行时）+ 四个组件。
+    # 宿主「设置 → 插件」里能看到并单独开关。
     # 配置用 YAML 锚点共享 —— 只写一次，改的时候也只改一处。
     # 包根 entry：只为让宿主装配 exports["./client"]（侧栏图标与 better-sidebar 页签）。
     # 宿主按"包根说明符"找浏览器端，子路径 entry 挂不上 client，所以这条不能省。

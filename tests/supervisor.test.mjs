@@ -10,6 +10,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { listenSafe } from './helpers.mjs'
 
 import { ComfySupervisor, detectInstallation } from '../lib/comfy.js'
 
@@ -32,9 +33,9 @@ async function fakeRunning() {
     res.writeHead(404)
     res.end()
   })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = await listenSafe(server)
   return {
-    url: `http://127.0.0.1:${server.address().port}`,
+    url: `http://127.0.0.1:${port}`,
     close: () => new Promise(resolve => server.close(resolve)),
   }
 }

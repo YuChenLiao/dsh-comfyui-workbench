@@ -93,7 +93,17 @@ export function runTool(deps: ToolDeps): ToolSpec {
           additionalProperties: true,
         },
         outputPath: { type: 'string', description: '产物落盘目录；不传用配置的 outputDir' },
-        timeoutMs: { type: 'integer', description: '等待上限（毫秒），默认取配置' },
+        wait: {
+          type: 'boolean',
+          description: '是否同步等到出图。默认 false：提交后立刻返回 promptId，出完图插件会主动通知对话；传 true 则本次调用等到产物落盘或超时。',
+        },
+        waitMs: { type: 'integer', description: 'wait=true 时的等待上限（毫秒），默认取配置的 timeoutMs' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '产物标签，登记进资产索引便于之后筛选。注意只有 wait:true 同步取回产物时才会登记；默认异步路径由后台通知落盘，不写索引。',
+        },
+        timeoutMs: { type: 'integer', description: '已弃用：请用 waitMs' },
         returnImages: {
           type: 'string',
           enum: ['first', 'all', 'none'],

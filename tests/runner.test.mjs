@@ -12,6 +12,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { listenSafe } from './helpers.mjs'
 
 import { ComfyClient } from '../lib/comfy.js'
 import { resumeRun, runWorkflow } from '../lib/run.js'
@@ -51,8 +52,7 @@ async function fakeComfy(plan) {
     return json(404, {})
   })
 
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  const port = server.address().port
+  const port = await listenSafe(server)
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     calls,

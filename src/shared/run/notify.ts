@@ -62,7 +62,13 @@ function deliver(target: NotifyTarget, text: string, logger?: LoggerLike | undef
   try {
     target.followup(noticeMessage(text))
   } catch (error) {
-    logger?.warn?.(`[notify] 通知未送达：${error instanceof Error ? error.message : String(error)}`)
+    // 日志同样要兜住：这是 catch 分支里的最后一句话，它自己抛错就会逃逸成
+    // unhandledRejection（Node 默认因此结束进程），比"没送达"严重得多。
+    try {
+      logger?.warn?.(`[notify] 通知未送达：${error instanceof Error ? error.message : String(error)}`)
+    } catch {
+      // 连日志都写不了，只能放弃
+    }
   }
 }
 
@@ -142,8 +148,8 @@ export function watchRun(options: {
         }
         const outcome = await collectArtifacts(client, promptId, state.entry, context)
         stop()
-        settled = true
 
+        // settled 只在真正投递之前置位：拼装若抛错，catch 还能走失败通知而不是静默。
         const lines = [`工作流 ${context.workflowId} 出图完成，用时 ${Math.round(outcome.durationMs / 1000)} 秒。`, '']
         for (const artifact of outcome.artifacts) {
           const size = artifact.width !== undefined && artifact.height !== undefined
@@ -151,13 +157,19 @@ export function watchRun(options: {
             : ''
           lines.push(`- ${artifact.path}${size} · ${Math.round(artifact.bytes / 1024)} KB`)
         }
+        settled = true
         deliver(target, lines.join('\n'), options.logger)
       } catch (error) {
         stop()
         if (settled) return
-        settled = true
         const message = error instanceof Error ? error.message : String(error)
-        options.logger?.warn?.(`[notify] ${promptId} 等待失败：${message}`)
+        // 日志本身抛错不能挡住通知：logger 是外部注入的，它失败不该让用户收不到消息。
+        try {
+          options.logger?.warn?.(`[notify] ${promptId} 等待失败：${message}`)
+        } catch {
+          // 记不下就算了，下面照常投递
+        }
+        settled = true
         deliver(target, `工作流执行失败（promptId ${promptId}）：${message}`, options.logger)
       } finally {
         // 必须复位：否则下一 tick 会被 inflight 挡住，超时收尾那条就发不出去。

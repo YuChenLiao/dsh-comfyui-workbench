@@ -9,6 +9,8 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { listenSafe } from './helpers.mjs'
+
 
 import { importWorkflowFile } from '../lib/workflow.js'
 
@@ -56,8 +58,8 @@ async function boot(config) {
   const server = http.createServer((req, res) => {
     void registered.handler(req, res)
   })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  const origin = `http://127.0.0.1:${server.address().port}`
+  const port = await listenSafe(server)
+  const origin = `http://127.0.0.1:${port}`
   return {
     origin,
     tools,

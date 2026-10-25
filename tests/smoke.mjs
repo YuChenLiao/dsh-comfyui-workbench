@@ -12,6 +12,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import zlib from 'node:zlib'
+import { listenSafe } from './helpers.mjs'
 
 
 
@@ -143,8 +144,8 @@ assert.equal(route.kind, 'prefix')
 assert.equal(route.path, '/comfyui-workbench/api')
 
 const server = http.createServer(route.handler)
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const origin = `http://127.0.0.1:${server.address().port}`
+const port = await listenSafe(server)
+const origin = `http://127.0.0.1:${port}`
 const get = async (pathname) => {
   const res = await fetch(origin + pathname)
   const type = res.headers.get('content-type') || ''
