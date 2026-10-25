@@ -89,27 +89,31 @@ export function createHandler(
         return
       }
 
-      // ── 工作流：GET 列表 / POST 批量导出 / GET {id} 单份 ──
-      // 同一路径两种方法，且 {id} 是动态段，所以先于通用查表处理。
-      if (workflowRoutes !== undefined) {
-        if (sub === '/workflows') {
-          if (READ_ONLY.has(req.method ?? '')) {
-            await workflowRoutes.list(url, res)
+      // ── /workflows：GET 是"列出工作流"（工作流组件），POST 是"批量导出"（相册组件）──
+      // 两个能力分属不同组件，所以要分别判断，不能整条路径一起放行。
+      if (sub === '/workflows') {
+        if (READ_ONLY.has(req.method ?? '')) {
+          if (workflowRoutes === undefined) {
+            sendJson(res, 404, { ok: false, error: 'unknown-route', message: '工作流面板已关闭，没有列表接口。' })
             return
           }
-          if (req.method === 'POST') {
-            // 批量导出由相册组件提供（要读图、sidecar、打包），走通用查表
-            const exporter = routes['/workflows']
-            if (exporter === undefined) {
-              sendJson(res, 404, { ok: false, error: 'unknown-route', message: '批量导出需要相册组件。' })
-              return
-            }
-            await exporter(url, res, req)
-            return
-          }
-          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
+          await workflowRoutes.list(url, res)
           return
         }
+        if (req.method === 'POST') {
+          const exporter = routes['/workflows']
+          if (exporter === undefined) {
+            sendJson(res, 404, { ok: false, error: 'unknown-route', message: '批量导出需要相册组件。' })
+            return
+          }
+          await exporter(url, res, req)
+          return
+        }
+        sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
+        return
+      }
+
+      if (workflowRoutes !== undefined) {
         const detailId = workflowRoutes.detailIdOf(sub)
         if (detailId !== undefined) {
           if (!READ_ONLY.has(req.method ?? '')) {
