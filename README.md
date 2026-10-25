@@ -51,7 +51,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | 字段 | 说明 |
 | --- | --- |
 | `baseUrl` | ComfyUI 地址，默认 `http://127.0.0.1:8188` |
-| `outputDir` | 产物目录。**留空则落在 `<当前工作区>/comfyui-output`**；探测不到工作区时回退到 `<插件数据目录>/outputs` |
+| `outputDir` | 产物目录。**留空则落在 `<当前工作区>/comfyui-output`**；探测不到工作区时回退到 `<插件数据目录>/outputs`（`GET /config` 的 `outputSource` 会显示 `data`，`workspaceProbe` 给出探测过程：`cwd` 是否被判为宿主内部目录、`workspace` 服务取到几个路径）。要钉死位置就显式配置这一项 |
 | `workflowsDir` | 工作流仓库，默认 `~/.dsh-comfyui-workbench/workflows` |
 | `autoStart` | 探测到本机安装时是否自动拉起 ComfyUI；只停自己拉起的进程 |
 | `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开 |

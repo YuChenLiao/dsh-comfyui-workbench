@@ -12,6 +12,20 @@ export interface WorkspaceGuess {
   source: 'env' | 'service' | 'cwd'
 }
 
+/** 一次探测的取证记录：只用于诊断，不参与决策。 */
+export interface WorkspaceProbe {
+  /** 环境变量是否给出。 */
+  env: string | null
+  /** process.cwd() 的原值。 */
+  cwd: string
+  /** cwd 是否被判为宿主内部目录。 */
+  cwdInternal: boolean
+  /** workspace 服务取到几个路径。 */
+  serviceCount: number
+  /** 服务对外暴露的可疑名字（只记录存在的）。 */
+  serviceKeys: string[]
+}
+
 /** 这些路径是宿主的内部目录，不是用户的工作区。 */
 function looksInternal(dir: string): boolean {
   const norm = dir.replace(/\\/g, '/').toLowerCase()
@@ -41,9 +55,35 @@ function cwdCandidate(): string | undefined {
  * 表现是"图还是写到 C 盘"且查不出原因 —— 所以每一级都保留来源标记。
  */
 export function workspaceDirOf(ctx: ServiceBag): WorkspaceGuess | undefined {
+  return probeWorkspace(ctx).guess
+}
+
+/**
+ * 探测工作区，并留下取证记录。
+ *
+ * @param ctx - 宿主上下文。
+ */
+export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undefined; probe: WorkspaceProbe } {
+  const cwd = process.cwd()
+  const probe: WorkspaceProbe = {
+    env: typeof process.env.DSH_WORKSPACE === 'string' && process.env.DSH_WORKSPACE.trim() !== '' ? process.env.DSH_WORKSPACE : null,
+    cwd,
+    cwdInternal: looksInternal(cwd),
+    serviceCount: 0,
+    serviceKeys: [],
+  }
+
+  for (const name of ['workspace', 'workspaces', 'workspaceRegistry', 'workspaceStore']) {
+    try {
+      if (typeof (ctx.get?.(name) as unknown) !== 'undefined') probe.serviceKeys.push(name)
+    } catch {
+      // 取不到就算了
+    }
+  }
+
   const explicit = process.env.DSH_WORKSPACE
   if (typeof explicit === 'string' && explicit.trim() !== '') {
-    return { dir: path.resolve(explicit.trim()), source: 'env' }
+    return { guess: { dir: path.resolve(explicit.trim()), source: 'env' as const }, probe }
   }
 
   let paths: string[] = []
@@ -59,15 +99,16 @@ export function workspaceDirOf(ctx: ServiceBag): WorkspaceGuess | undefined {
     paths = []
   }
 
+  probe.serviceCount = paths.length
   if (paths.length > 0) {
-    const cwd = process.cwd()
     // 进程 cwd 常常就在工作区里；同前缀优先，避免多工作区时选错。
     const related = paths.find(item => cwd === item || cwd.startsWith(`${item}\\`) || cwd.startsWith(`${item}/`))
-    return { dir: related ?? (paths[0] as string), source: 'service' }
+    return { guess: { dir: related ?? (paths[0] as string), source: 'service' as const }, probe }
   }
 
-  const cwd = cwdCandidate()
-  return cwd === undefined ? undefined : { dir: cwd, source: 'cwd' }
+  const candidate = cwdCandidate()
+  const guess = candidate === undefined ? undefined : { dir: candidate, source: 'cwd' as const }
+  return { guess, probe }
 }
 
 /**

@@ -67,6 +67,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
     outputSource: rt.outputSource,
     getDiagnostics: () => ({ components: componentStateOf(rt), tools: rt.tools }),
     getExporter: () => rt.exportWorkflows,
+    workspaceProbe: rt.outputProbe as unknown as Record<string, unknown>,
   })
 
   const table = {

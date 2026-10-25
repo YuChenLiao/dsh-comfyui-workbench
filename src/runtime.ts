@@ -8,7 +8,9 @@ import { resolveSettings } from './shared/host/config.js'
 import { resolveLogger } from './shared/host/logger.js'
 import { ensureDir, pluginDataDir, workflowsDir } from './shared/host/paths.js'
 import type { HostContext } from './shared/host/types.js'
-import { resolveOutputDir, workspaceDirOf } from './shared/host/workspace.js'
+import { resolveOutputDir } from './shared/host/workspace.js'
+import { probeWorkspace } from './shared/host/workspace.js'
+import type { WorkspaceProbe } from './shared/host/workspace.js'
 import { AssetIndex } from './components/panel-gallery/server/store/index.js'
 import { stopAllWatchers } from './shared/run/index.js'
 import * as httpModule from './http/router.js'
@@ -42,6 +44,8 @@ export interface Runtime {
   flowDir: string
   outputDir: string
   outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
+  /** 产物目录是怎么探测出来的（诊断用）。 */
+  outputProbe: WorkspaceProbe
   uploadsDir: string
   assertWritable: (dir: string) => void
   logger: ReturnType<typeof resolveLogger>
@@ -208,7 +212,7 @@ function create(ctx: HostContext, config: unknown): Runtime {
   const uploadsDir = settings.uploadsDir ?? `${pluginDataDir()}/uploads`
   ensureDir(uploadsDir)
 
-  const guess = workspaceDirOf(ctx)
+  const { guess, probe } = probeWorkspace(ctx)
   const resolved = resolveOutputDir(settings.outputDir, guess, pluginDataDir())
   const outputDir = resolved.dir
   ensureDir(outputDir)
@@ -259,6 +263,7 @@ function create(ctx: HostContext, config: unknown): Runtime {
     flowDir,
     outputDir,
     outputSource: resolved.source,
+    outputProbe: probe,
     uploadsDir,
     assertWritable,
     logger,

@@ -25,6 +25,8 @@ export interface WorkflowRouteDeps {
   getDiagnostics: () => Record<string, unknown>
   /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
   getExporter: () => Route | undefined
+  /** 产物目录探测的取证记录。 */
+  workspaceProbe?: Record<string, unknown>
 }
 
 /** 工作流组件额外暴露的动态路径处理器（`/workflows` 与 `/workflows/:id`）。 */
@@ -94,6 +96,7 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         outputDir: defaultOutputDir,
         workflowsDir: workflowDir,
         outputSource,
+        ...(deps.workspaceProbe === undefined ? {} : { workspaceProbe: deps.workspaceProbe }),
         getDiagnostics,
       }),
     },

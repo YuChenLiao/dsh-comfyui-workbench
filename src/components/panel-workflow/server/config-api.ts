@@ -12,6 +12,8 @@ export function createConfigHandler(deps: {
   workflowsDir: string
   /** 产物目录是怎么定下来的：配置 / 工作区 / 数据目录。 */
   outputSource?: 'config' | 'env' | 'service' | 'cwd' | 'data'
+  /** 产物目录探测的取证记录（诊断用：看得出工作区为什么没识别到）。 */
+  workspaceProbe?: Record<string, unknown>
   /** 惰性取诊断信息（工具在路由之后才注册，构造时求值会拿到空表）。 */
   getDiagnostics?: () => {
     components?: Record<string, boolean>
@@ -30,6 +32,7 @@ export function createConfigHandler(deps: {
         runMode: deps.settings.runMode,
         returnImages: deps.settings.returnImages,
         timeoutMs: deps.settings.timeoutMs,
+        ...(deps.workspaceProbe === undefined ? {} : { workspaceProbe: deps.workspaceProbe }),
         ...(diagnostics.components === undefined ? {} : { components: diagnostics.components }),
         ...(diagnostics.tools === undefined ? {} : { tools: diagnostics.tools }),
       },

@@ -50,6 +50,6 @@ export function applyAll(ctx: HostContext, config: unknown): void {
 }
 
 // 测试与诊断用：这些能力要能被单独验证。
-export { resolveOutputDir, workspaceDirOf } from './shared/host/workspace.js'
+export { probeWorkspace, resolveOutputDir, workspaceDirOf } from './shared/host/workspace.js'
 export { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'
 export { acquire, release, componentStateOf, mergedRoutes } from './runtime.js'
