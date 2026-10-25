@@ -80,6 +80,9 @@
         indexMode: auto
         # better-sidebar 页签：auto | on | off。
         betterSidebarTab: auto
+    - id: comfyui-workbench:gallery
+      name: dsh-comfyui-workbench/gallery
+      config: *cwf
     - id: comfyui-workbench:workflow
       name: dsh-comfyui-workbench/workflow
       config: *cwf

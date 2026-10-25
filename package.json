@@ -6,10 +6,10 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./gallery": "./lib/gallery.js",
-    "./workflow": "./lib/workflow.js",
-    "./generate": "./lib/generate.js",
-    "./edit": "./lib/edit.js",
+    "./gallery": "./lib/entries/gallery.js",
+    "./workflow": "./lib/entries/workflow.js",
+    "./generate": "./lib/entries/generate.js",
+    "./edit": "./lib/entries/edit.js",
     "./client": "./lib/client.js",
     "./icon": "./icon.svg",
     "./package.json": "./package.json"

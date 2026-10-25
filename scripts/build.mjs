@@ -66,7 +66,8 @@ const domainJob = (name, dir = name) => ({
 /** 四个组件各自一个入口：宿主按 entry 分别加载，才能单独开关。 */
 const entryJob = name => ({
   entryPoints: [`src/entries/${name}.ts`],
-  outfile: `lib/${name}.js`,
+  // 独立目录：lib/<name>.js 已被 domain bundle 占用（workflow/store/run/comfy），别名会互相覆盖
+  outfile: `lib/entries/${name}.js`,
   bundle: true,
   format: 'esm',
   platform: 'node',
