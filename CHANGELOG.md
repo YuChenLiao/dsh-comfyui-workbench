@@ -5,6 +5,7 @@
 ### 修复
 
 - **产物落到插件私有目录，而不是用户的工作区**：服务名取错。宿主服务叫 `workspaceRegistry`，`workspace` 只是它在 storages 里的**域名**（`workspace.json` 的 `unit.name`）—— 代码按域名去取，`ctx.get('workspace')` 恒为 `undefined`，工作区探测永远跳过这一级，产物一路退到 `~/.dsh-comfyui-workbench/outputs`，且没有任何报错。同时把 `workspaceRegistry` 加进包根 entry 的 `inject`：它不是"可见性"开关（`ctx.reflect.get` 本就不要求注入），而是**时序**——服务未就绪时 fiber 处于 INACTIVE、`apply` 不执行，探测会等它 ACTIVE 之后再跑。`GET /config` 的 `workspaceProbe` 可复核（`serviceCount` 应大于 0、`outputSource` 应为 `service`）。
+- **同一工作区因路径大小写/分隔符不同而认不出来**：Windows 路径大小写不敏感、宿主给的 path 也可能是正斜杠，直接字符串比较会漏匹配、退回列表首项。比较前统一分隔符，并在 Windows 上折叠大小写（Unix 保持敏感，避免 `/srv/App` 与 `/srv/app` 撞在一起）；返回给调用方的仍是宿主原始形态。
 - **多工作区时产物落到父工作区根下**：`related` 用 `paths.find` 取第一个前缀匹配，而 `D:\dsh` 与 `D:\dsh\notes` 可能都是 cwd 的祖先，靠前的先命中就返回。改为归一化分隔符后按路径长度降序取**最深**的那层。顺带修了正斜杠路径比不中的问题（Windows 下 `D:/x` 与 `D:\x` 直接比较永远不等）。
 - **`comfyui_run` 的 `wait` / `waitMs` / `tags` 从未生效**：`execute` 一直在读这三个参数，但 schema 里没有声明，`additionalProperties:false` 下模型根本传不进来——「默认异步、可选同步等待」里的同步分支是死代码，产物索引的 tags 也恒为空。已补进 schema（`timeoutMs` 标为已弃用，语义并入 `waitMs`）。
 - **出图通知可能重复投递**：`watchRun` 用 `setInterval` 轮询且不等上一轮 async 结束，`stop()` 又排在两个 `await` 之后 —— 响应稍慢时两个 tick 会同时读到 done，各投递一条通知（全量跑测试约 1/3 概率出现"收到 2 条"）。补 `settled`（只交付一次）与 `inflight`（防重入，`finally` 复位）守卫，完成 / 失败 / 超时三条路径语义一致；`settled` 只在真正投递前才置位，拼装通知文本若抛错仍会走失败通知而不是静默。另外两处 `logger.warn` 调用各自包了 `try` —— logger 是外部注入的，它自己抛错不该让通知丢失，更不该逃逸成 unhandledRejection（Node 默认因此结束宿主进程）。

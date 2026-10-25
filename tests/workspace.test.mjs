@@ -112,6 +112,28 @@ test('多工作区父子嵌套时选最深的那层', () => {
   }
 })
 
+test('Windows 下路径大小写不影响匹配，且返回宿主原始大小写', () => {
+  // Windows 路径大小写不敏感：D:\DSH 与 D:\dsh 是同一个目录。
+  // 但返回给调用方的必须是原始形态，否则产物目录会变成一串小写。
+  if (process.platform !== 'win32') return
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-case-'))
+  const child = path.join(base, 'NOTES')
+  fs.mkdirSync(child, { recursive: true })
+  const decoy = path.join(base, 'decoy')
+  fs.mkdirSync(decoy, { recursive: true })
+  const before = process.cwd()
+  process.chdir(child)
+  try {
+    // 列表首项放诱饵，才能区分"真的命中"和"回退第一条"
+    const guess = workspaceDirOf(fakeCtx([decoy, child.toUpperCase()]))
+    // Windows 上 path.resolve 不折叠大小写，比较时两边都小写
+    assert.equal(String(guess?.dir).toLowerCase(), child.toLowerCase(), '大写形态也应命中同一目录')
+    assert.equal(guess?.dir, child.toUpperCase(), '返回的应当是宿主给的原始形态')
+  } finally {
+    process.chdir(before)
+  }
+})
+
 test('宿主的内部目录不当工作区', () => {
   const internal = path.join(os.homedir(), '.dsh', 'profiles', 'desktop')
   fs.mkdirSync(internal, { recursive: true })

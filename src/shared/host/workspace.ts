@@ -20,7 +20,7 @@ export interface WorkspaceProbe {
   cwd: string
   /** cwd 是否被判为宿主内部目录。 */
   cwdInternal: boolean
-  /** workspace 服务取到几个路径。 */
+  /** workspaceRegistry 服务取到几个路径。 */
   serviceCount: number
   /** 服务对外暴露的可疑名字（只记录存在的）。 */
   serviceKeys: string[]
@@ -48,7 +48,7 @@ function cwdCandidate(): string | undefined {
 /**
  * 猜当前工作区目录。
  *
- * 顺序：环境变量 → workspace 服务（优先与 cwd 同前缀的）→ 进程 cwd。
+ * 顺序：环境变量 → workspaceRegistry 服务（优先与 cwd 同前缀的）→ 进程 cwd。
  * 都没有就返回 undefined，由调用方决定兜底位置。
  *
  * 之前只用一个猜出来的字段名，字段不存在时静默退回插件数据目录，
@@ -73,7 +73,9 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
     serviceKeys: [],
   }
 
-  for (const name of ['workspace', 'workspaces', 'workspaceRegistry', 'workspaceStore']) {
+  // 只用于诊断记录。注意 `workspace` 是 storages 里的域名，不是 ctx 上的服务；
+  // 真正可用的是 workspaceRegistry（其余几个历史上试过，留着方便排查）。
+  for (const name of ['workspaceRegistry', 'workspace', 'workspaces', 'workspaceStore']) {
     try {
       if (typeof (ctx.get?.(name) as unknown) !== 'undefined') probe.serviceKeys.push(name)
     } catch {
@@ -104,9 +106,13 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
   probe.serviceCount = paths.length
   if (paths.length > 0) {
     // 进程 cwd 常常就在工作区里，但工作区之间可能是父子关系（`D:\dsh` 与 `D:\dsh\notes`）。
-    // 两个都要：① 比较前归一化分隔符（宿主给的 path 可能是正斜杠）；
-    // ② 取**最深**的那个 —— 只按顺序找第一个会把产物丢到父工作区根下。
-    const norm = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '')
+    // 比较前要做三件事：① 归一化分隔符（宿主给的正斜杠在 Windows 下永远比不中）；
+    // ② 折叠大小写（Windows 路径大小写不敏感）；③ 取**最深**的那个 —— 只按顺序找第一个
+    // 会把产物丢到父工作区根下。
+    // 折叠大小写只在 Windows 上做：Unix 下 /srv/App 与 /srv/app 是两个不同目录，
+    // 一律小写会让它们撞在一起、选错工作区。
+    const fold = (value: string): string => (process.platform === 'win32' ? value.toLowerCase() : value)
+    const norm = (value: string): string => fold(value.replace(/\\/g, '/').replace(/\/+$/, ''))
     const cwdNorm = norm(cwd)
     const related = paths
       .map(item => ({ item, target: norm(item) }))
