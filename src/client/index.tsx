@@ -95,7 +95,7 @@ export function apply(ctx: ClientContext): void {
         id: TAB_ID,
         title: () => t('title'),
         description: () => t('sidebarDescription'),
-        icon: (size?: number) => <Icon name="workflow" size={size ?? 16} />,
+        icon: (size?: number) => <Icon name="album" size={size ?? 16} />,
         order: 40,
         single: true,
         component: Tab,
@@ -121,7 +121,7 @@ export function apply(ctx: ClientContext): void {
     label: () => t('title'),
   }, (props: { size?: number }) => (
     <span style={{ display: 'grid', placeItems: 'center' }}>
-      <Icon name="workflow" size={props?.size ?? 18} />
+      <Icon name="album" size={props?.size ?? 18} />
     </span>
   )))
 
