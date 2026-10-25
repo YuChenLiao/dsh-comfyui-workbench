@@ -168,6 +168,43 @@ try {
   assert.equal(item.seed, 42)
   assert.equal(item.workflow, true)
 
+  // 同一文件经由两个有包含关系的根（cwd 与 outputDir）都该只出现一次。
+  // 之前没有按路径去重，会被当成「同图副本 2」——同一个路径自己和自己成副本。
+  const nestedInOut = path.join(isoDir, 'comfyui-20260102-000000-dup.png')
+  fs.writeFileSync(nestedInOut, png)
+  fs.writeFileSync(`${nestedInOut}.json`, JSON.stringify({ prompt: 'dup probe', seed: 7 }))
+  const dupProbe = await get('/comfyui-workbench/api/items?limit=20&all=1&dedupe=1')
+  // 按「出现次数」统计，不是「包含它的条目数」：dedupe 会把两份并成一条、
+  // 主项 path 仍是它，所以后者恒为 1，等于什么都没验（第一版就是这么错的）。
+  // 字段名是 duplicates（不是 copies）。
+  const occurrences = dupProbe.body.items
+    .flatMap(item => [item.path, ...(Array.isArray(item.duplicates) ? item.duplicates : [])])
+    .filter(candidate => String(candidate).toLowerCase() === nestedInOut.toLowerCase()).length
+  assert.equal(occurrences, 1, `同一个路径只能出现一次，实际出现 ${occurrences} 次`)
+
+  // 反向：两个不同路径、同 seed/尺寸/提示词，仍应被合并成「副本 2」——
+  // 修重复问题时最容易矫枉过正，把真正的同图副本也一起吞掉。
+  const twinA = path.join(isoDir, 'comfyui-20260103-000000-twin-a.png')
+  const twinB = path.join(isoDir, 'comfyui-20260103-000000-twin-b.png')
+  for (const twin of [twinA, twinB]) {
+    fs.writeFileSync(twin, png)
+    fs.writeFileSync(`${twin}.json`, JSON.stringify({ prompt: 'twin probe', seed: 99, width: 512, height: 512 }))
+  }
+  const twinProbe = await get('/comfyui-workbench/api/items?limit=20&all=1&dedupe=1')
+  // 主项可能是任意一张（sidecar 完整度 / 路径长度 / mtime 决定），所以不能按主项 path 定位
+  const twinSet = new Set([twinA.toLowerCase(), twinB.toLowerCase()])
+  const twinGroup = twinProbe.body.items.find(item => {
+    const paths = [item.path, ...(Array.isArray(item.duplicates) ? item.duplicates : [])]
+    return paths.some(candidate => twinSet.has(String(candidate).toLowerCase()))
+  })
+  assert.equal(twinGroup?.duplicateCount, 2, '两个不同路径的同图副本仍应合并')
+  for (const twin of [twinA, twinB]) {
+    fs.rmSync(twin)
+    fs.rmSync(`${twin}.json`)
+  }
+  fs.rmSync(nestedInOut)
+  fs.rmSync(`${nestedInOut}.json`)
+
   const withBare = await get('/comfyui-workbench/api/items?limit=10&all=1')
   assert.equal(withBare.body.total, 2, 'all=1 时包含没有元数据的图')
 

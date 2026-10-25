@@ -67,11 +67,22 @@ export function queryItems(
 
   let truncated = false
   const merged: Array<{ file: ImageRecord; label: string }> = []
+  // 同一个文件只能出现一次：根目录之间可能是父子关系（工作区与其下的 comfyui-output），
+  // 各扫一遍就会把同一张图收两遍，再经同图合并变成莫名其妙的"副本 2"。
+  const seenPaths = new Set<string>()
   for (const root of targets) {
     const scanned = scanRoot(root.path, settings, query.refresh)
     // 只有「影响本次结果」的截断才算数：默认只看生成图，普通图片被截断不该报提示。
     truncated = truncated || scanned.truncated
-    for (const file of scanned.files) merged.push({ file, label: root.label })
+    for (const file of scanned.files) {
+      // 大小写折叠只在 Windows 上做：POSIX 下 `IMG.png` 与 `img.png` 是两个文件，
+      // 一律小写会把后者静默丢掉。父子根场景本来也用不着折叠 —— 根已 realpath，
+      // 同一文件经由不同根扫到的路径字符串逐字相同。
+      const key = process.platform === 'win32' ? file.path.toLowerCase() : file.path
+      if (seenPaths.has(key)) continue
+      seenPaths.add(key)
+      merged.push({ file, label: root.label })
+    }
   }
   merged.sort((a, b) => b.file.mtime - a.file.mtime)
 
