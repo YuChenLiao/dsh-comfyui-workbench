@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 未发布
+## 0.2.0
 
 ### 修复
 
@@ -27,7 +27,6 @@
 - 删除 `isDeadCtx`（判 `fiber.active` 在 cordis 4.0.5 下恒不成立，属死代码）、`runtimeReady`（无调用者）、`Runtime.ownerCtx`（只写不读）。
 - 移除 `lib/{gallery,generate,edit}.js` 三个历史遗留产物（entry 产物已迁到 `lib/entries/`，这三个不再生成、全仓无引用）。
 
-## 0.2.0
 
 ### 客户端
 
