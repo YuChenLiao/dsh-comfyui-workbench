@@ -59,9 +59,11 @@ export { probeWorkspace, resolveOutputDir, workspaceDirOf } from './shared/host/
 export { isAuthorized } from './shared/authz/authorize.js'
 export { foldPathCase } from './shared/host/paths.js'
 export {
+  bundledDir,
   createTagCache,
   danbooruLookupTool,
   danbooruSyncTool,
+  ownStorePath,
   pickNames,
   pruneSharedAliases,
   readStore,

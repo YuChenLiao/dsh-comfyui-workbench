@@ -16,6 +16,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "data",
     "lib",
     "cordis.patch.yml",
     "icon.svg",
@@ -33,7 +34,8 @@
     "migrate": "node scripts/migrate-album.mjs",
     "accept": "node scripts/acceptance.mjs",
     "accept:full": "node scripts/acceptance.mjs --run",
-    "danbooru:sync": "node scripts/sync-danbooru.mjs"
+    "danbooru:sync": "node scripts/sync-danbooru.mjs",
+    "danbooru:zh": "node scripts/import-danbooru-zh.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -1,5 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { foldPathCase } from '../../../shared/host/paths.js'
 
 /** 一个收录的标签：Danbooru 原始 tag + 它的中文/别名。 */
 export interface TagRecord {
@@ -75,9 +78,55 @@ export function danbooruDir(dataDir: string): string {
   return path.join(dataDir, 'danbooru')
 }
 
-/** 某一类的 JSONL 路径。 */
-export function storePath(dataDir: string, kind: 'character' | 'artist'): string {
+/**
+ * 包内自带的标签库目录。
+ *
+ * 数据来自 danbooru-tags-data-zh（MIT），随包分发，装好就能查、不必先联网同步。
+ * 用户跑过 `danbooru:zh` 或 `danbooru:sync` 之后，数据目录里的那份会覆盖它。
+ */
+export function bundledDir(): string {
+  // 起点必须是**本文件所在目录**，不能用 process.cwd() —— 装好之后 cwd 是用户的项目目录，
+  // 从那里向上根本找不到 data/danbooru（曾因此让"装好即用"形同虚设）。
+  // 产物是 ESM，没有 `__dirname`，用 import.meta.url 换算。
+  // 也不能写死相对层级：这段代码会被内联到 lib/index.js 与 lib/entries/*.js，两者深度不同。
+  const start = path.dirname(fileURLToPath(import.meta.url))
+  let dir = start
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = path.join(dir, 'data', 'danbooru')
+    if (fs.existsSync(candidate)) return candidate
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return path.join(start, '..', '..', '..', '..', 'data', 'danbooru')
+}
+
+/**
+ * 某一类的 JSONL 路径。
+ *
+ * 优先用户数据目录（可能被同步/导入更新过），没有则回退到包内自带那份。
+ *
+ * @param dataDir - 插件数据目录。
+ * @param kind - 角色或画师。
+ */
+export function ownStorePath(dataDir: string, kind: 'character' | 'artist'): string {
   return path.join(danbooruDir(dataDir), `${kind}s.jsonl`)
+}
+
+/**
+ * 读取用的路径：优先用户数据目录，没有则回退到包内自带那份。
+ *
+ * **写入绝不能用它** —— 回退到包内会让同步/导入把随包数据覆盖掉
+ * （测试里一个空目录就能把 7MB 的库写成一条假记录）。写请用 `ownStorePath`。
+ *
+ * @param dataDir - 插件数据目录。
+ * @param kind - 角色或画师。
+ */
+export function storePath(dataDir: string, kind: 'character' | 'artist'): string {
+  const own = ownStorePath(dataDir, kind)
+  if (fs.existsSync(own)) return own
+  const bundled = path.join(bundledDir(), `${kind}s.jsonl`)
+  return fs.existsSync(bundled) ? bundled : own
 }
 
 /**
@@ -87,8 +136,24 @@ export function storePath(dataDir: string, kind: 'character' | 'artist'): string
  *
  * @param file - JSONL 路径。
  */
+/** 模块级缓存：包内数据有 7 MB，反复解析会让每次查询都卡上一秒。 */
+const storeCache = new Map<string, { mtimeMs: number; size: number; records: TagRecord[] }>()
+
 export function readStore(file: string): TagRecord[] {
   if (!fs.existsSync(file)) return []
+  try {
+    const stat = fs.statSync(file)
+    const hit = storeCache.get(file)
+    if (hit !== undefined && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.records
+    const parsed = parseStore(file)
+    storeCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, records: parsed })
+    return parsed
+  } catch {
+    return []
+  }
+}
+
+function parseStore(file: string): TagRecord[] {
   const out: TagRecord[] = []
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     const text = line.trim()
@@ -116,6 +181,15 @@ export function readStore(file: string): TagRecord[] {
  * @param records - 全部记录。
  */
 export function writeStore(file: string, records: readonly TagRecord[]): void {
+  // 护栏：绝不允许写进随包数据。曾经因为 storePath 会"回退到包内"，
+  // 测试里的 writeStore(storePath(...)) 把 12 MB 的库覆盖成了一条假记录。
+  // 用折叠大小写后的前缀判定：Windows 上 data/Danbooru/ 与 data/danbooru/ 是同一处，
+  // 只比'父目录相等'会被大小写变体绕过（实测把 data/Danbooru/characters.jsonl 写成了空文件）。
+  const guard = foldPathCase(path.resolve(path.dirname(file)));
+  const bundled = foldPathCase(path.resolve(bundledDir()));
+  if (guard === bundled || guard.startsWith(bundled + path.sep)) {
+    throw new Error(`拒绝写入随包数据目录：${file}（写入请用 ownStorePath）`)
+  }
   fs.mkdirSync(path.dirname(file), { recursive: true })
   // 带上 pid 与时间戳：两个进程同时同步时不会互踩同一个临时文件
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
@@ -127,8 +201,12 @@ export function writeStore(file: string, records: readonly TagRecord[]): void {
 /** 一条匹配结果，附上命中的原因。 */
 export interface Match {
   record: TagRecord
-  /** 命中方式：精确 / 前缀 / 包含。 */
-  how: 'exact' | 'prefix' | 'contains'
+  /**
+   * 命中方式。`tag` 表示直接命中 tag 名本身（最强），
+   * `exact` 是别名精确命中 —— 分清这两者很重要：查 `wlop` 应当先给 `wlop` 这个 tag，
+   * 而不是某个别名里含 wlop、热度却更高的 tag。
+   */
+  how: 'tag' | 'exact' | 'prefix' | 'contains'
 }
 
 /**
@@ -150,23 +228,34 @@ export function searchTags(records: readonly TagRecord[], query: string, limit =
 
   const matches: Match[] = []
   for (const record of records) {
-    const candidates = [record.tag.toLowerCase(), ...record.names.map(name => name.toLowerCase())]
+    const tagName = record.tag.toLowerCase()
+    const tagNormalized = tagName.replace(/[\s_]+/g, '_')
     let best: Match['how'] | undefined
-    for (const candidate of candidates) {
-      const normalized = candidate.replace(/[\s_]+/g, '_')
-      if (candidate === needle || normalized === loose) { best = 'exact'; break }
-      if (candidate.startsWith(needle) || normalized.startsWith(loose)) {
-        if (best === undefined) best = 'prefix'
-        continue
-      }
-      if (candidate.includes(needle) || candidate.includes(spaced)) {
-        if (best === undefined) best = 'contains'
+    // tag 名本身命中排最前
+    if (tagName === needle || tagNormalized === loose) best = 'tag'
+    else if (tagName.startsWith(needle) || tagNormalized.startsWith(loose)) best = 'prefix'
+    else if (tagName.includes(needle) || tagNormalized.includes(loose)) best = 'contains'
+
+    // tag 名只是"前缀"或"包含"命中时，别名可能精确命中 —— 那档更该优先
+    // （`hatsune_miku` 的别名里有 `miku`，查 miku 应当把它提上来）。
+    if (best === undefined || best === 'prefix' || best === 'contains') {
+      for (const name of record.names) {
+        const candidate = name.toLowerCase()
+        const normalized = candidate.replace(/[\s_]+/g, '_')
+        if (candidate === needle || normalized === loose) { best = 'exact'; break }
+        if (candidate.startsWith(needle) || normalized.startsWith(loose)) {
+          if (best === undefined) best = 'prefix'
+          continue
+        }
+        if (candidate.includes(needle) || candidate.includes(spaced)) {
+          if (best === undefined) best = 'contains'
+        }
       }
     }
     if (best !== undefined) matches.push({ record, how: best })
   }
 
-  const rank = { exact: 0, prefix: 1, contains: 2 }
+  const rank = { tag: 0, exact: 1, prefix: 2, contains: 3 }
 
   matches.sort((a, b) => (rank[a.how] - rank[b.how]) || (b.record.postCount - a.record.postCount))
   return matches.slice(0, limit)

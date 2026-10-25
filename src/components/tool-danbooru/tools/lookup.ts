@@ -202,17 +202,22 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
       if (query === '') return { ok: false, error: 'query 不能为空' }
 
       const kinds: Array<'character' | 'artist'> = kindArg === 'character' ? ['character'] : kindArg === 'artist' ? ['artist'] : ['character', 'artist']
-      const found: string[] = []
-      const rank = { exact: 0, prefix: 1, contains: 2 } as Record<string, number>
+      const rank = { tag: 0, exact: 1, prefix: 2, contains: 3 } as Record<string, number>
+      // 收集时带上档位：跨 kind 要统一排序，只留 tag 名会把档位信息丢掉 ——
+      // 查 `wlop` 时角色库里某个"别名含 wlop"的会压过画师库里 tag 名就叫 wlop 的那个。
+      const hits: Array<{ tag: string; how: string; postCount: number }> = []
 
       for (const kind of kinds) {
         const records = deps.cache.read(kind)
-        const matches = searchTags(records, query, limit).sort((a, b) => {
-          const byHow = (rank[a.how] ?? 3) - (rank[b.how] ?? 3)
-          return byHow !== 0 ? byHow : b.record.postCount - a.record.postCount
-        })
-        for (const match of matches) found.push(match.record.tag)
+        for (const match of searchTags(records, query, limit)) {
+          hits.push({ tag: match.record.tag, how: match.how, postCount: match.record.postCount })
+        }
       }
+      hits.sort((a, b) => {
+        const byHow = (rank[a.how] ?? 4) - (rank[b.how] ?? 4)
+        return byHow !== 0 ? byHow : b.postCount - a.postCount
+      })
+      const found: string[] = hits.map(hit => hit.tag)
 
       // 本地没命中（或压根没同步过）→ 直接问 Danbooru
       let source: 'local' | 'online' = 'local'

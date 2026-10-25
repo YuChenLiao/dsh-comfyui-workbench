@@ -90,26 +90,45 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 **本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
 
-数据来自 Danbooru 的 `tags.json`（角色 category=4、画师 category=1）与逐条的 `wiki_pages.json`（中文名在 `other_names` 里）。前者一次拉一千条，后者要逐条查（8 并发下实测约 5.5 条/秒）—— 所以**按热度阈值筛选**是唯一的降规模手段，长尾 tag 既没人用也没人翻译。
+**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。一次下载几 MB 就全有了：
 
 ```sh
-npm run danbooru:sync                      # 默认：角色 + 画师，热度 ≥ 100，每类最多 3000 条
-npm run danbooru:sync -- --kind character  # 只同步角色
-npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 就有 40 万+，按实测速率约 20 小时）
+npm run danbooru:zh      # 角色 3.5 万 + 画师 2.5 万，实测 6 秒
+```
+
+实测覆盖：角色 **35384 条，99.7% 有中文名或别名**；画师 **24881 条，95.8%**。这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
+
+**补充数据源**：也可以直接从 Danbooru 抓（`tags.json` + 逐条 `wiki_pages.json`），数据更新更及时、能拿到 wiki 里最新的别名，但要发几千到几十万次请求（8 并发约 5.5 条/秒），适合只抓热门段。
+
+```sh
+npm run danbooru:zh                        # 拉上游最新数据到插件数据目录（6 秒），覆盖本地的旧副本
+npm run danbooru:zh -- --kind character    # 只导入角色
+npm run danbooru:zh -- --dry               # 只看会导入多少条
+```
+
+注意它写的是**插件数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不会动仓库里的 `data/danbooru/` —— 后者是随包分发的快照。想把随包数据也更新，导入完再把它同步过去：
+
+```sh
+npm run danbooru:zh
+cp ~/.dsh-comfyui-workbench/danbooru/*.jsonl data/danbooru/
+```
+
+补充路径：直接从 Danbooru 抓（数据更新更及时、能拿到 wiki 里最新的别名）：
+
+```sh
+npm run danbooru:sync                      # 热度 ≥ 100，每类最多 3000 条
+npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 40 万+，按实测速率约 20 小时）
 ```
 
 `--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki，实测 8 并发下约 5.5 条/秒，40 万条要 20 小时左右。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400` 几分钟就好），需要时再放宽。
 
 产物是 `<插件数据目录>/danbooru/{characters,artists}.jsonl`，整份替换写入（先写临时文件再 rename，中途失败不会留半个文件）。
 
-**中文名覆盖率差别很大**，这点必须知道：
 
-- **角色**：很高。最热的 400 条里约 **94%** 有别名 —— 中文名优先，没有中文名时保留日文原名（`初音未来`/`初音ミク`、`博丽灵梦`、`散兵`）。这个比例会随网络状况小幅浮动（个别 wiki 请求失败时该条目的别名会缺）。
-- **画师**：**几乎为零**。实测最热的 400 条画师（最低热度约 1258），`other_names` 全为空 —— 这不是阈值问题，是 Danbooru 平台层面画师 wiki 就不填这个字段（`dairi`、`wlop`、`tony_taka` 的 wiki 页都是 `other_names: []`）。画师只能按 tag 查，而画师 tag 本身就是罗马音/英文名，够用。
 
 **没有别名时不会留空**：这种条目仍能按 tag 名查到（`scaramouche_(genshin_impact)`），`danbooru_lookup` 返回的就是 tag 本身 —— 它永远是 Danbooru 认的那个标准名。
 
-别名会过滤掉二创活动名、带年份的、纯英文变体。**CP 名**（`レイマリ` 这种两人合称）主要靠「是否被多个 tag 共用」判断 —— 那比猜字符可靠，也不会误伤 `初音ミク`；共用时只保留在热度最高的那条记录上。另有一层保守的字符过滤（带 `×`/`&` 之类的、字面含 `cp` 的、单独一个关系词的）。这样每个别名最多对应一条结果，不会出现"查一个名字弹出两个人、都标精确"。
+自抓路径（`danbooru:sync`）会过滤掉二创活动名、带年份的、纯英文变体；导入中文库（`danbooru:zh`）则照单全收 —— 那份数据的别名本来就经过整理，含社区昵称与旧译名。**CP 名**（`レイマリ` 这种两人合称）主要靠「是否被多个 tag 共用」判断 —— 那比猜字符可靠，也不会误伤 `初音ミク`；共用时只保留在热度最高的那条记录上。另有一层保守的字符过滤（带 `×`/`&` 之类的、字面含 `cp` 的、单独一个关系词的）。这样每个别名最多对应一条结果，不会出现"查一个名字弹出两个人、都标精确"。
 
 同步时若遇到限流或网络错误，会退避重试；仍失败的条目会在日志里报出条数（这些条目别名缺失，重跑一次即可补上）。
 
@@ -165,6 +184,12 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 
 - 设计方案：[docs/design.md](docs/design.md)
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)
+
+## 致谢
+
+标签数据来自 [amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira），收录 Danbooru 上图片数 > 50 的标签及其中文名、别名与注释。数据随插件分发在 `data/danbooru/`，上游的许可原文一并保留（见 [data/danbooru/LICENSE](data/danbooru/LICENSE) 与 [NOTICE.md](data/danbooru/NOTICE.md)）。
+
+本插件只做了格式转换（CSV → JSONL、字段名映射），未改动数据内容。上游更新后可 `npm run danbooru:zh` 重新导入。
 
 ## License
 

@@ -3,3 +3,5 @@
 *.png binary
 *.jpg binary
 *.gif binary
+# -text 只关掉换行转换（diff 仍按文本走，这是想要的）；不要改成 binary
+data/danbooru/*.jsonl -text

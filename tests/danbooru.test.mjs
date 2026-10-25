@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
 import {
+  bundledDir,
+  ownStorePath,
   createTagCache,
   pruneSharedAliases,
   danbooruLookupTool,
@@ -62,18 +65,19 @@ test('按中文名查询命中', () => {
   assert.equal(matches[0]?.how, 'exact')
 })
 
-test('按 Danbooru tag 查询命中', () => {
+test('按 Danbooru tag 查询命中（tag 名命中独立成档）', () => {
   const matches = searchTags(SAMPLE, 'hatsune_miku')
   assert.equal(matches[0]?.record.tag, 'hatsune_miku')
-  assert.equal(matches[0]?.how, 'exact')
+  // tag 名直接命中比"某个别名恰好相同"更强：查 wlop 应当先给 wlop 这个 tag
+  assert.equal(matches[0]?.how, 'tag')
 })
 
 test('空格与下划线等价', () => {
   assert.equal(searchTags(SAMPLE, 'hatsune miku')[0]?.record.tag, 'hatsune_miku')
-  assert.equal(searchTags(SAMPLE, 'hatsune miku')[0]?.how, 'exact')
+  assert.equal(searchTags(SAMPLE, 'hatsune miku')[0]?.how, 'tag')
 })
 
-test('分档顺序：精确 > 前缀 > 包含', () => {
+test('分档顺序：tag 名 > 别名精确 > 前缀 > 包含', () => {
   // 造三条同前缀但档位不同的记录，必须按档位排，不能只靠唯一命中"碰巧"过
   const pool = [
     record('hatsune_miku', 'character', 500, []),            // contains（不以 miku 开头）
@@ -81,7 +85,7 @@ test('分档顺序：精确 > 前缀 > 包含', () => {
     record('miku_append', 'character', 900, []),             // prefix（热度最高）
   ]
   const byExact = searchTags(pool, 'miku')
-  assert.deepEqual(byExact.map(m => m.how), ['exact', 'prefix', 'contains'], '档位顺序必须精确在前')
+  assert.deepEqual(byExact.map(m => m.how), ['tag', 'prefix', 'contains'], '档位顺序必须 tag 名在前')
 })
 
 test('同档内按帖子数降序', () => {
@@ -126,32 +130,28 @@ test('空查询返回空结果', () => {
 
 test('JSONL 读写往返，坏行被跳过', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-'))
-  const file = storePath(dir, 'character')
+  const file = ownStorePath(dir, 'character')
   try {
     writeStore(file, SAMPLE.filter(item => item.kind === 'character'))
     assert.equal(readStore(file).length, 3)
     // 追加半行（模拟同步中断），读的时候应当跳过而不是抛
     fs.appendFileSync(file, '{"tag":"broken"')
     assert.equal(readStore(file).length, 3)
-    assert.equal(readStore(storePath(dir, 'artist')).length, 0, '不存在的文件返回空数组')
+    assert.equal(readStore(ownStorePath(dir, 'artist')).length, 0, '不存在的文件返回空数组')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('库为空时走在线查询，不再要求先同步', async () => {
-  // 用户明确要求"本地没数据也允许通过网络查"，所以空库不再是错误态。
-  // 这里不强断言网络结果（CI 可能断网），只锁住"不再要求同步"这个行为变化。
+test('数据目录为空时用包内自带的库，不联网', async () => {
+  // 数据随包内聚之后，"空目录"不再等于"空库" —— 装好即可查
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-empty-'))
   try {
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
     const out = await tool.execute({ query: '甘雨' })
-    if (out.ok) {
-      assert.equal(out.source, 'online', '本地没有就该标成 online')
-      assert.ok(Array.isArray(out.tags) && out.tags.length > 0)
-    } else {
-      assert.doesNotMatch(String(out.error), /同步/, '不该再让用户先去同步')
-    }
+    assert.equal(out.ok, true)
+    assert.equal(out.tags[0], 'ganyu_(genshin_impact)', '首位应当是主 tag')
+    assert.equal(out.source, 'local', '包内库够用就不该联网')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -160,8 +160,8 @@ test('库为空时走在线查询，不再要求先同步', async () => {
 test('查询工具：中文与 tag 都能查，且能按 kind 分流', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-tool-'))
   try {
-    writeStore(storePath(dir, 'character'), SAMPLE.filter(item => item.kind === 'character'))
-    writeStore(storePath(dir, 'artist'), SAMPLE.filter(item => item.kind === 'artist'))
+    writeStore(ownStorePath(dir, 'character'), SAMPLE.filter(item => item.kind === 'character'))
+    writeStore(ownStorePath(dir, 'artist'), SAMPLE.filter(item => item.kind === 'artist'))
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
 
     const byChinese = await tool.execute({ query: '博丽灵梦' })
@@ -170,7 +170,7 @@ test('查询工具：中文与 tag 都能查，且能按 kind 分流', async () 
     assert.equal(byChinese.source, 'local')
 
     const byTag = await tool.execute({ query: 'wlop', kind: 'artist' })
-    assert.deepEqual(byTag.tags, ['wlop'])
+    assert.equal(byTag.tags[0], 'wlop', 'tag 名精确命中要排第一')
 
     const onlyArtist = await tool.execute({ query: 'a', kind: 'artist' })
     assert.ok(onlyArtist.tags.every(tag => ['dairi', 'wlop'].includes(tag)), `kind=artist 不该返回角色，实际：${JSON.stringify(onlyArtist.tags)}`)
@@ -185,10 +185,11 @@ test('查询工具：缓存失效后能读到新数据', async () => {
     const cache = createTagCache(dir)
     const tool = danbooruLookupTool({ dataDir: dir, cache })
     // 空库时 source 是 online（或者断网时干脆失败），无论如何都不是 local
+    // 包内自带库之后，"空目录"也有数据了，所以这里断言的是"读到的来源是本地"
     const before = await tool.execute({ query: '甘雨' })
-    assert.notEqual(before.source, 'local', '本地没数据不该标成 local')
+    assert.equal(before.source, 'local')
 
-    writeStore(storePath(dir, 'character'), SAMPLE.filter(item => item.kind === 'character'))
+    writeStore(ownStorePath(dir, 'character'), SAMPLE.filter(item => item.kind === 'character'))
     cache.invalidate('character')
     const after = await tool.execute({ query: '甘雨' })
     assert.equal(after.ok, true)
@@ -204,7 +205,7 @@ test('查询结果只有 tag，不带冗余字段', async () => {
   // 上下文是稀缺资源：模型要的是"名字 → tag"，多给 postCount/names/matched 只是噪音
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-shape-'))
   try {
-    writeStore(storePath(dir, 'artist'), [record('dairi', 'artist', 18859, [])])
+    writeStore(ownStorePath(dir, 'artist'), [record('dairi', 'artist', 18859, [])])
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
     const out = await tool.execute({ query: 'dairi' })
     assert.deepEqual(Object.keys(out).sort(), ['ok', 'source', 'tags'])
@@ -218,7 +219,7 @@ test('查询工具：档位优先于热度', async () => {
   // 高热度但只是前缀命中的，不能盖过精确命中
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-rank-'))
   try {
-    writeStore(storePath(dir, 'character'), [
+    writeStore(ownStorePath(dir, 'character'), [
       record('miku_nakano', 'character', 999999, []),
       record('miku', 'character', 5, []),
     ])
@@ -417,13 +418,14 @@ test('查询工具：限流与查无此人的错误文案必须不同', async ()
   try {
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
 
+    // 用内置库里肯定没有的名字，逼它走网络
     globalThis.fetch = async () => jsonRes({}, 429)
-    const limited = await tool.execute({ query: '甘雨' })
+    const limited = await tool.execute({ query: 'zzz_not_a_real_tag_zzz' })
     assert.equal(limited.ok, false)
     assert.match(limited.error, /限流/, `限流时应当说明是限流，实际：${limited.error}`)
 
     globalThis.fetch = async () => jsonRes([])
-    const missing = await tool.execute({ query: '紫薇仙子' })
+    const missing = await tool.execute({ query: 'zzz_not_a_real_tag_zzz' })
     assert.equal(missing.ok, false)
     assert.match(missing.error, /没找到/)
     assert.doesNotMatch(missing.error, /限流/, '查无此人不能说成限流')
@@ -564,5 +566,107 @@ test('降级：连接建立但不响应时，超时也要能触发换站', async
     globalThis.fetch = originalFetch
     useTimeout(0)
     useMirrors([])
+  }
+})
+
+test('跨 kind 时档位不丢：tag 名精确压过另一类的别名精确', async () => {
+  // 真实场景：`wlop` 在画师库里是 tag 名，而角色库里某条记录把 wlop 当别名。
+  // 收集时若只留 tag 名字符串，档位信息就丢了，别名那条会靠热度压上来。
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-crosskind-'))
+  try {
+    writeStore(ownStorePath(dir, 'character'), [record('princess_aeolian', 'character', 999999, ['wlop'])])
+    writeStore(ownStorePath(dir, 'artist'), [record('wlop', 'artist', 398, [])])
+    const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
+    const out = await tool.execute({ query: 'wlop' })
+    assert.equal(out.tags[0], 'wlop', `tag 名命中必须压过跨类的别名命中，实际：${JSON.stringify(out.tags)}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('数据目录为空时回退到包内自带的标签库', () => {
+  // 数据随包内聚，装好就该能查 —— 不该逼用户先联网同步
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-bundled-'))
+  try {
+    const bundled = bundledDir()
+    assert.equal(fs.existsSync(path.join(bundled, 'characters.jsonl')), true, `包内数据缺失：${bundled}`)
+
+    const viaEmpty = storePath(dir, 'character')
+    assert.equal(viaEmpty, path.join(bundled, 'characters.jsonl'), '数据目录没有时应当回退到包内那份')
+
+    // 用户自己导入过之后，优先用他的（可能更新）
+    const own = path.join(dir, 'danbooru', 'characters.jsonl')
+    fs.mkdirSync(path.dirname(own), { recursive: true })
+    fs.writeFileSync(own, '')
+    assert.equal(storePath(dir, 'character'), own, '用户数据存在时优先用自己的')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('包内自带数据能被正常查询（葱娘 / 米山舞）', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-bundled-q-'))
+  try {
+    const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
+    const c = await tool.execute({ query: '葱娘' })
+    assert.deepEqual(c.tags, ['hatsune_miku'], `葱娘应当命中初音，实际：${JSON.stringify(c.tags ?? c.error)}`)
+    assert.equal(c.source, 'local', '不该走网络')
+
+    const artist = await tool.execute({ query: '米山舞', kind: 'artist' })
+    assert.equal(artist.tags[0], 'yoneyama_mai')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('写入绝不碰包内数据（storePath 只用于读）', () => {
+  // 踩过一次：storePath 加了"回退到包内"之后，测试里的 writeStore(storePath(...))
+  // 把随包分发的 7 MB 数据覆盖成了一条假记录。写入必须走 ownStorePath。
+  // 独立推导包内数据位置（不用被测函数自己算，否则缺陷会被它自己掩盖）
+  const bundled = path.join(path.dirname(fileURLToPath(import.meta.url)), String.fromCharCode(46,46), 'data', 'danbooru', 'characters.jsonl')
+  const countLines = file => fs.readFileSync(file, 'utf8').split(String.fromCharCode(10)).filter((line) => line.trim() !== '').length
+  const beforeLines = countLines(bundled)
+  assert.ok(beforeLines > 30000, `包内数据应当有 3 万+ 条，实际 ${beforeLines} 行`)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-nowrite-'))
+  try {
+    assert.notEqual(storePath(dir, 'character'), ownStorePath(dir, 'character'), '空目录下两者必须指向不同文件')
+    writeStore(ownStorePath(dir, 'character'), [record('zzz_probe', 'character', 1, [])])
+    // 用行数而不是 size：同尺寸覆盖也能拦住
+    const afterLines = countLines(bundled)
+    assert.equal(afterLines, beforeLines, '包内数据文件不该被改动')
+    assert.equal(readStore(ownStorePath(dir, 'character')).length, 1)
+
+    // 护栏：直接往包内路径写必须抛错
+    assert.throws(() => writeStore(bundled, []), /拒绝写入随包数据目录/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("包内数据定位不依赖 cwd（装好之后 cwd 是用户项目目录）", () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "danbooru-cwd-"));
+  const before = process.cwd();
+  process.chdir(outside);
+  try {
+    // bundledDir 用 import.meta.url 定位，chdir 之后仍应找到包内那份
+    const recs = readStore(storePath(fs.mkdtempSync(path.join(os.tmpdir(), "danbooru-x-")), "character"));
+    assert.ok(recs.length > 30000, `cwd 在插件之外也该读到 3 万+ 条，实际 ${recs.length}`);
+  } finally {
+    process.chdir(before);
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+})
+
+test("护栏：大小写变体与子目录也写不进包内", () => {
+  // 只比"父目录相等"会被 data/Danbooru/ 绕过（Windows 上等价同一文件），实测真把库写成了空文件
+  const dir = bundledDir();
+  const blockers = [
+    path.join(dir, "characters.jsonl"),
+    path.join(dir, "Data", "characters.jsonl"),
+    path.join(path.dirname(dir), "Danbooru", "characters.jsonl"),
+    path.join(dir, "sub", "characters.jsonl"),
+  ];
+  for (const target of blockers) {
+    assert.throws(() => writeStore(target, []), /拒绝写入随包数据目录/, );
   }
 })

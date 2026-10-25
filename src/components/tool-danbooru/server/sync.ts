@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { getJson as getJsonWithFallback } from './api.js'
 
 import type { TagRecord } from './store.js'
-import { pickNames, pruneSharedAliases, readStore, storePath, writeStore } from './store.js'
+import { ownStorePath, pickNames, pruneSharedAliases, readStore, writeStore } from './store.js'
 
 /** 同步进度：给用户/模型看的可读状态。 */
 export interface SyncProgress {
@@ -191,7 +191,7 @@ export async function syncKind(kind: 'character' | 'artist', options: SyncOption
   const pruned = pruneSharedAliases(records)
   if (pruned > 0) log(`去掉 ${pruned} 个被多个 tag 共用的别名（CP 名/组合名）`)
 
-  const file = storePath(options.dataDir, kind)
+  const file = ownStorePath(options.dataDir, kind)
   const existing = readStore(file)
 
   // 整份替换的风险：中途 abort 或服务端返回空列表都会把好库写没。
