@@ -32,6 +32,7 @@ export async function runSync(
 ): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {}
   for (const kind of kinds) {
+    let failed = 0
     const options: SyncOptions = {
       dataDir: deps.dataDir,
       minPostCount: overrides.minPostCount ?? defaults.minPostCount,
@@ -39,12 +40,15 @@ export async function runSync(
       maxTags: overrides.maxTags ?? defaults.maxTags,
       concurrency: defaults.concurrency,
       log: message => deps.logger?.info?.(`[danbooru] ${message}`),
-      onProgress: (_progress: SyncProgress) => {},
+      onProgress: (progress: SyncProgress) => { failed = progress.failed },
     }
     const records = await syncKind(kind, options)
     result[kind] = {
       total: records.length,
       withNames: records.filter(record => record.names.length > 0).length,
+      // 真实失败数（wiki 查询没成功）。不要用"没有别名的条数"代替 —— 画师类
+      // 天生没有别名，那样报出来会让模型以为"全量查询失败"并重跑一次。
+      failed,
       top: records.slice(0, 3).map(record => record.tag),
     }
     deps.cache?.invalidate(kind)
@@ -88,10 +92,10 @@ export function danbooruSyncTool(deps: DanbooruDeps & { cache: TagCache }, defau
       const kindArg = asString(args.kind, 'all')
       const kinds: Array<'character' | 'artist'> = kindArg === 'character' ? ['character'] : kindArg === 'artist' ? ['artist'] : ['character', 'artist']
       // 0 是合法值（不限热度），不能用 `|| ` 兜底 —— 那会把 0 吞成默认值
-      const rawMin = args.minPostCount === undefined ? defaults.minPostCount : Number(args.minPostCount)
+      const rawMin = typeof args.minPostCount === 'number' ? args.minPostCount : defaults.minPostCount
       const minPostCount = Number.isFinite(rawMin) ? Math.max(rawMin, 0) : defaults.minPostCount
       // 非法值退回默认，而不是兜成 0（0 = 不限，方向正好相反）
-      const rawMax = args.maxTags === undefined ? defaults.maxTags : Number(args.maxTags)
+      const rawMax = typeof args.maxTags === 'number' ? args.maxTags : defaults.maxTags
       const maxTags = Number.isFinite(rawMax) ? Math.max(rawMax, 0) : defaults.maxTags
 
       try {

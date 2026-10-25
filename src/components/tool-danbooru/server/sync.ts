@@ -14,6 +14,8 @@ export interface SyncProgress {
   withNames: number
   /** 已写盘的条数。 */
   written: number
+  /** wiki 查询失败的条数（与"本来就没有别名"不是一回事）。 */
+  failed: number
 }
 
 /** 同步选项。 */
@@ -48,10 +50,17 @@ async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
     const res = await fetch(BASE + path, { headers: { 'User-Agent': UA }, signal })
     if (res.ok) return res.json()
     // 429 / 5xx 值得重试；404 与其它 4xx 直接失败
-    if (res.status !== 429 && res.status < 500) throw new Error(`Danbooru 返回 ${res.status}：${path}`)
-    if (attempt === 3 || signal?.aborted === true) throw new Error(`Danbooru 返回 ${res.status}：${path}`)
+    const fail = (): Error => {
+      const error = new Error(`Danbooru 返回 ${res.status}：${path}`) as Error & { status?: number }
+      error.status = res.status
+      return error
+    }
+    if (res.status !== 429 && res.status < 500) throw fail()
+    if (attempt === 3 || signal?.aborted === true) throw fail()
     const retryAfter = Number(res.headers.get('retry-after')) || 0
-    await new Promise(resolve => setTimeout(resolve, retryAfter > 0 ? retryAfter * 1000 : 800 * (attempt + 1)))
+    // Retry-After 要设上限：服务端回 3600 会让同步原地卡一小时
+    const wait = retryAfter > 0 ? Math.min(retryAfter, 30) * 1000 : 800 * (attempt + 1)
+    await new Promise(resolve => setTimeout(resolve, wait))
   }
   throw new Error(`Danbooru 请求失败：${path}`)
 }
@@ -114,9 +123,10 @@ async function fetchOtherNames(tag: string, signal?: AbortSignal): Promise<strin
       if (!Array.isArray(page.other_names)) return []
       return page.other_names.filter((name): name is string => typeof name === 'string')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      // 429 / 5xx 值得退避重试；404 说明本来就没有这一页，不必重试
-      if (message.includes('404')) return []
+      // 用 status 判断而不是匹配错误文本：tag 名里可能含 404（`404_(error)`），
+      // 文本匹配会把"查询失败"误判成"没有这一页"。
+      const status = (error as { status?: unknown }).status
+      if (status === 404) return []
       if (attempt === 2 || signal?.aborted === true) return undefined
       await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)))
     }
@@ -166,7 +176,7 @@ export async function syncKind(kind: 'character' | 'artist', options: SyncOption
       records.push({ tag: item.tag, kind, postCount: item.postCount, names: picked, updatedAt })
       done += 1
     }
-    options.onProgress?.({ kind, done, total: tags.length, withNames, written: records.length })
+    options.onProgress?.({ kind, done, total: tags.length, withNames, written: records.length, failed })
     if (done % 200 === 0) log(`  进度 ${done}/${tags.length}，其中有中文名 ${withNames}`)
   }
 

@@ -31,8 +31,17 @@ const flag = (name, fallback) => {
 
 const kindArg = String(flag('kind', 'all'))
 const kinds = kindArg === 'character' ? ['character'] : kindArg === 'artist' ? ['artist'] : ['character', 'artist']
-const minPostCount = Number(flag('min', 100))
-const maxTags = Number(flag('max', 3000))
+// 与工具路径对齐：非法值回默认。
+// 注意先挡类型：`--min` 不带值时 flag() 返回布尔 true（Number(true)=1），
+// 空串则 Number('')=0 —— 两者都会静默变成"全量/不限"，症状是同步跑 20 小时。
+const asCount = (raw, fallback) => {
+  if (typeof raw === 'boolean') return fallback
+  if (typeof raw === 'string' && raw.trim() === '') return fallback
+  const value = Number(raw)
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback
+}
+const minPostCount = asCount(flag('min', 100), 100)
+const maxTags = asCount(flag('max', 3000), 3000)
 const dry = flag('dry', false) === true
 
 const { DEFAULT_SYNC, syncKind, storePath, readStore } = await import('../lib/index.js')

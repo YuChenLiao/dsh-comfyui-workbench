@@ -4,7 +4,9 @@
 
 ### 新增
 
-- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 把标签与中文名抓到本地。数据来自 `tags.json`（角色 / 画师分类）与逐条的 `wiki_pages.json`（中文名在 `other_names`）；按热度阈值控制规模（`search[post_count]=>N`）；最热的 400 条角色里约 94% 有别名（中文优先，缺失时保留日文原名），画师因 Danbooru 不填 `other_names` 而无中文名。共用别名（CP 名）按「被多个 tag 共用」识别并只保留热度最高的一条。查询同时接受中文名、日文名与 Danbooru tag，空格与下划线等价，结果按「精确 → 前缀 → 包含」分档、同档按帖子数降序。**输出只含 tag**（不加 postCount / 别名 / 匹配方式，避免挤占上下文）；本地库为空或没命中时自动走在线查询（`source: 'online'`），所以没同步过也能用。同步支持全量（`--min 0 --max 0`）。
+- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 把标签与中文名抓到本地。数据来自 `tags.json`（角色 / 画师分类）与逐条的 `wiki_pages.json`（中文名在 `other_names`）；按热度阈值控制规模（`search[post_count]=>N`）；最热的 400 条角色里约 94% 有别名（中文优先，缺失时保留日文原名），画师因 Danbooru 不填 `other_names` 而无中文名。共用别名（CP 名）按「被多个 tag 共用」识别并只保留热度最高的一条。
+
+  上线后修掉的问题：热度阈值参数曾写成 `post_count_gte`（Danbooru 不认，阈值是死旋钮）；同步时把网络错误一律当"查不到"，限流下别名大面积丢失而日志显示"同步完成"；在线查询取 wiki 返回的第一条（顺序不代表热度，同一个名字本地与在线给出不同答案）；在线被限流时静默返回空，用户分不清"名字错了"与"被限流"；脚本参数传非法值时回退默认而不是变成 1/NaN（那会让同步静默跑成全量 20 小时）；退避等待吃服务端 `Retry-After` 但设 30 秒上限；`404` 判定改用状态码而不是匹配错误文本（tag 名里可能含 404）。查询同时接受中文名、日文名与 Danbooru tag，空格与下划线等价，结果按「精确 → 前缀 → 包含」分档、同档按帖子数降序。**输出只含 tag**（不加 postCount / 别名 / 匹配方式，避免挤占上下文）；本地库为空或没命中时自动走在线查询（`source: 'online'`），所以没同步过也能用。同步支持全量（`--min 0 --max 0`）。
 
 ### 修复
 

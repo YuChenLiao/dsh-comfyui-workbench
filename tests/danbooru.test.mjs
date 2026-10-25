@@ -11,6 +11,7 @@ import {
   pickNames,
   readStore,
   searchOnline,
+  searchOnlineDetailed,
   searchTags,
   syncKind,
   storePath,
@@ -384,5 +385,47 @@ test('在线：空格与下划线等价（hatsune miku ≡ hatsune_miku）', asy
     assert.equal(tags[0], 'hatsune_miku', `空格写法也该把精确名排首位，实际：${JSON.stringify(tags)}`)
   } finally {
     globalThis.fetch = originalFetch
+  }
+})
+
+test('在线：429 时标记为限流，文案与"没找到"区分开', async () => {
+  // 用户分不清"名字写错了"和"被限流了"—— 这两种情况的下一步动作完全不同
+  const originalFetch = globalThis.fetch
+  const jsonRes = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, headers: { get: () => null } })
+
+  try {
+    globalThis.fetch = async () => jsonRes({}, 429)
+    const limited = await searchOnlineDetailed('甘雨', 5)
+    assert.equal(limited.throttled, true, '应当标成限流')
+    assert.deepEqual(limited.tags, [])
+
+    globalThis.fetch = async () => jsonRes([])
+    const empty = await searchOnlineDetailed('紫薇仙子', 5)
+    assert.equal(empty.throttled, false, '空结果不是限流')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('查询工具：限流与查无此人的错误文案必须不同', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-throttle-'))
+  const originalFetch = globalThis.fetch
+  const jsonRes = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, headers: { get: () => null } })
+  try {
+    const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
+
+    globalThis.fetch = async () => jsonRes({}, 429)
+    const limited = await tool.execute({ query: '甘雨' })
+    assert.equal(limited.ok, false)
+    assert.match(limited.error, /限流/, `限流时应当说明是限流，实际：${limited.error}`)
+
+    globalThis.fetch = async () => jsonRes([])
+    const missing = await tool.execute({ query: '紫薇仙子' })
+    assert.equal(missing.ok, false)
+    assert.match(missing.error, /没找到/)
+    assert.doesNotMatch(missing.error, /限流/, '查无此人不能说成限流')
+  } finally {
+    globalThis.fetch = originalFetch
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 })

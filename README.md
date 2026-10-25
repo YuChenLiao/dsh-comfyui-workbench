@@ -86,7 +86,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 **本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
 
-数据来自 Danbooru 的 `tags.json`（角色 category=4、画师 category=1）与逐条的 `wiki_pages.json`（中文名在 `other_names` 里）。前者一次拉一千条，后者每条约 150ms —— 所以**按热度阈值筛选**是唯一的降规模手段，长尾 tag 既没人用也没人翻译。
+数据来自 Danbooru 的 `tags.json`（角色 category=4、画师 category=1）与逐条的 `wiki_pages.json`（中文名在 `other_names` 里）。前者一次拉一千条，后者要逐条查（8 并发下实测约 5.5 条/秒）—— 所以**按热度阈值筛选**是唯一的降规模手段，长尾 tag 既没人用也没人翻译。
 
 ```sh
 npm run danbooru:sync                      # 默认：角色 + 画师，热度 ≥ 100，每类最多 3000 条
@@ -94,7 +94,7 @@ npm run danbooru:sync -- --kind character  # 只同步角色
 npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 就有 40 万+，按实测速率约 20 小时）
 ```
 
-`--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki（约 150ms/条），40 万条按实测约 5.5 条/秒算将近 20 小时。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400` 几分钟就好），需要时再放宽。
+`--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki，实测 8 并发下约 5.5 条/秒，40 万条要 20 小时左右。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400` 几分钟就好），需要时再放宽。
 
 产物是 `<插件数据目录>/danbooru/{characters,artists}.jsonl`，整份替换写入（先写临时文件再 rename，中途失败不会留半个文件）。
 

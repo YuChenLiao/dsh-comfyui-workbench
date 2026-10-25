@@ -67,8 +67,30 @@ export async function searchOnline(
   limit: number,
   kind?: 'character' | 'artist',
 ): Promise<string[]> {
+  return (await searchOnlineDetailed(query, limit, kind)).tags
+}
+
+/** 在线查询结果：区分"查无此人"与"被限流"，两者对用户的含义完全不同。 */
+export interface OnlineResult {
+  tags: string[]
+  /** 是否遇到过 429 —— 此时"没找到"其实可能是"没查成"。 */
+  throttled: boolean
+}
+
+/**
+ * 同 {@link searchOnline}，但把限流状态一并带出来。
+ *
+ * @param query - 用户给的名字。
+ * @param limit - 最多几条。
+ * @param kind - 限定角色或画师。
+ */
+export async function searchOnlineDetailed(
+  query: string,
+  limit: number,
+  kind?: 'character' | 'artist',
+): Promise<OnlineResult> {
   const trimmed = query.trim()
-  if (trimmed === '') return []
+  if (trimmed === '') return { tags: [], throttled: false }
   const kinds: Array<'character' | 'artist'> = kind === undefined ? ['character', 'artist'] : [kind]
   const out: string[] = []
   const seen = new Set<string>()
@@ -78,10 +100,12 @@ export async function searchOnline(
     out.push(name)
   }
 
+  let throttled = false
   for (const one of kinds) {
     try {
       if (CJK.test(trimmed)) {
         const res = await fetch(`${BASE}/wiki_pages.json?search[other_names_match]=${encodeURIComponent(trimmed)}&limit=5`, { headers: { 'User-Agent': UA } })
+        if (res.status === 429) throttled = true
         if (res.ok) {
           const body = (await res.json()) as Array<{ title?: unknown }>
           const titles = (Array.isArray(body) ? body : [])
@@ -91,6 +115,7 @@ export async function searchOnline(
           for (const title of titles.slice(0, 5)) {
             try {
               const check = await fetch(`${BASE}/tags.json?search[name]=${encodeURIComponent(title)}&limit=1`, { headers: { 'User-Agent': UA } })
+              if (check.status === 429) throttled = true
               if (!check.ok) continue
               const rows = (await check.json()) as RawTag[]
               const row = Array.isArray(rows) ? rows[0] : undefined
@@ -110,6 +135,7 @@ export async function searchOnline(
           `${BASE}/tags.json?search[name_matches]=*${encodeURIComponent(trimmed)}*&search[category]=${CATEGORY[one]}&search[order]=count&limit=${limit}`,
           { headers: { 'User-Agent': UA } },
         )
+        if (res.status === 429) throttled = true
         if (res.ok) {
           const body = (await res.json()) as RawTag[]
           if (Array.isArray(body)) for (const tag of body) push(tag.name)
@@ -132,7 +158,7 @@ export async function searchOnline(
   const norm = (value: string): string => value.trim().toLowerCase().replace(/[\s_]+/g, '_')
   const target = norm(trimmed)
   out.sort((a, b) => Number(norm(b) === target) - Number(norm(a) === target))
-  return out.slice(0, limit)
+  return { tags: out.slice(0, limit), throttled }
 }
 
 /**
@@ -191,15 +217,24 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
 
       // 本地没命中（或压根没同步过）→ 直接问 Danbooru
       let source: 'local' | 'online' = 'local'
+      let throttled = false
       if (found.length === 0) {
         source = 'online'
         const only = kindArg === 'character' ? 'character' : kindArg === 'artist' ? 'artist' : undefined
-        found.push(...await searchOnline(query, limit, only))
+        const online = await searchOnlineDetailed(query, limit, only)
+        throttled = online.throttled
+        found.push(...online.tags)
       }
 
       const tags = [...new Set(found)].slice(0, limit)
       if (tags.length === 0) {
-        return { ok: false, error: `没找到「${query}」。试试日文原名或只用一部分名字。` }
+        // 被限流和查无此人对用户是两件事：前者该重试，后者该换个写法
+        return {
+          ok: false,
+          error: throttled
+            ? `Danbooru 正在限流，这次没查成（不是名字的问题）。稍后再试，或先跑一次 danbooru_sync 把常用标签落到本地。`
+            : `没找到「${query.trim()}」。试试日文原名或只用一部分名字。`,
+        }
       }
       return { ok: true, tags, source }
     },

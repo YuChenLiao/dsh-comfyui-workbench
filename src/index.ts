@@ -67,6 +67,7 @@ export {
   readStore,
   runSync,
   searchOnline,
+  searchOnlineDetailed,
   searchTags,
   storePath,
   syncKind,

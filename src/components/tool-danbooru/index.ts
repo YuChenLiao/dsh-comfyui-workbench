@@ -4,7 +4,7 @@
  * 与生图组件分开：它不碰 ComfyUI，只维护一份本地标签库（`<数据目录>/danbooru/*.jsonl`）。
  * 数据来自 Danbooru 的 tags + wiki 两个接口，同步是显式动作（几千次请求，不该被动触发）。
  */
-export { createTagCache, danbooruLookupTool, searchOnline } from './tools/lookup.js'
+export { createTagCache, danbooruLookupTool, searchOnline, searchOnlineDetailed } from './tools/lookup.js'
 export type { DanbooruDeps, TagCache } from './tools/lookup.js'
 export { danbooruSyncTool, runSync } from './tools/sync-tool.js'
 export type { SyncDefaults } from './tools/sync-tool.js'
