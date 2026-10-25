@@ -5,5 +5,6 @@
  * 「看清单 → 点开某个节点」合成一个工具（nodeId 的有无就是档位），
  * 「改说明 + 调参」也合成一个入口。
  */
-export { createTools } from './registry.js'
+export { createTools, registerTools, TOOL_GROUPS } from './registry.js'
+export type { ToolGroupDef, ToolRegistrationReport } from './registry.js'
 export type { Override, ToolBlock, ToolDeps, ToolSpec, ToolText } from './types.js'

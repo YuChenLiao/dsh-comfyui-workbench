@@ -13,8 +13,14 @@ export function createConfigHandler(deps: {
   workflowsDir: string
   /** 产物目录是怎么定下来的：配置 / 工作区 / 数据目录。 */
   outputSource?: 'config' | 'env' | 'service' | 'cwd' | 'data'
+  /** 惰性取诊断信息（工具在路由之后才注册，构造时求值会拿到空表）。 */
+  getDiagnostics?: () => {
+    components?: Record<string, boolean>
+    tools?: { registered: string[]; failed: Array<{ name: string; message: string }>; skipped: string[] }
+  }
 }): (url: URL, res: import('node:http').ServerResponse) => void {
   return (_url, res) => {
+    const diagnostics = deps.getDiagnostics?.() ?? {}
     sendJson(res, 200, {
       ok: true,
       config: {
@@ -26,6 +32,8 @@ export function createConfigHandler(deps: {
         runMode: deps.settings.runMode,
         returnImages: deps.settings.returnImages,
         timeoutMs: deps.settings.timeoutMs,
+        ...(diagnostics.components === undefined ? {} : { components: diagnostics.components }),
+        ...(diagnostics.tools === undefined ? {} : { tools: diagnostics.tools }),
       },
     })
   }

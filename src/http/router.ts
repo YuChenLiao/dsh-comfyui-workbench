@@ -67,7 +67,14 @@ export function createHandler(
   defaultOutputDir: string,
   /** 产物目录的来源（配置 / 工作区 / 数据目录），只用于展示与诊断。 */
   outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data' = 'config',
-): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  /** 启用的组件：关掉哪个，它那组路由就不注册（访问即 404）。 */
+  components: { gallery: boolean; workflow: boolean } = { gallery: true, workflow: true },
+  /** 诊断信息，透给 /config。惰性求值：工具注册在路由之后。 */
+  diagnostics: () => {
+    components?: Record<string, boolean>
+    tools?: { registered: string[]; failed: Array<{ name: string; message: string }>; skipped: string[] }
+  } = () => ({}),
+) : (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   // 产物目录已经由 index 解析好（默认在工作区下），传进来让授权根也包含它。
   const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, { ...settings, resolvedOutputDir: defaultOutputDir })
 
@@ -297,30 +304,50 @@ export function createHandler(
     sendJson(res, 200, { ok: true, rebuilt: records.length, roots: list.length })
   }
 
-  const routes: Record<string, Route> = {
-    '/assets': handleAssets,
-    '/assets/rebuild': handleRebuild,
-    '/roots': handleRoots,
-    '/items': handleItems,
-    '/meta': handleMeta,
-    '/workflow': handleWorkflow,
-    '/file': handleFile,
-    '/delete': handleDelete,
-    '/delete-many': handleDeleteMany,
-    '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir }),
-    '/free': async (_url, res) => {
-      try {
-        await client.free()
-        sendJson(res, 200, { ok: true })
-      } catch (error) {
-        sendJson(res, 200, { ok: false, message: error instanceof Error ? error.message : String(error) })
-      }
-    },
-    '/service': handleServiceStatus.bind(null, supervisor),
-    '/service/stop': handleServiceStop.bind(null, supervisor),
-    '/upload': createUploadHandler(uploadsDir),
-    '/config': createConfigHandler({ settings, outputDir: defaultOutputDir, uploadsDir, workflowsDir: workflowDir, outputSource }),
+  // 两个组件各自组装自己的路由。某一组装不出来只影响它自己 —— 这正是把它们
+  // 拆开的意义：相册挂了，生图与工作流面板照常可用。
+  const routes: Record<string, Route> = {}
+
+  if (components.gallery) {
+    Object.assign(routes, {
+      '/assets': handleAssets,
+      '/assets/rebuild': handleRebuild,
+      '/roots': handleRoots,
+      '/items': handleItems,
+      '/meta': handleMeta,
+      '/workflow': handleWorkflow,
+      '/file': handleFile,
+      '/delete': handleDelete,
+      '/delete-many': handleDeleteMany,
+      '/upload': createUploadHandler(uploadsDir),
+    } satisfies Record<string, Route>)
   }
+
+  if (components.workflow) {
+    Object.assign(routes, {
+      '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir }),
+      '/free': async (_url: URL, res: ServerResponse) => {
+        try {
+          await client.free()
+          sendJson(res, 200, { ok: true })
+        } catch (error) {
+          sendJson(res, 200, { ok: false, message: error instanceof Error ? error.message : String(error) })
+        }
+      },
+      '/service': handleServiceStatus.bind(null, supervisor),
+      '/service/stop': handleServiceStop.bind(null, supervisor),
+    } satisfies Record<string, Route>)
+  }
+
+  // 配置是元信息：不管关掉哪个组件都要能查，否则界面无法判断该显示什么。
+  routes['/config'] = createConfigHandler({
+    settings,
+    outputDir: defaultOutputDir,
+    uploadsDir,
+    workflowsDir: workflowDir,
+    outputSource,
+    getDiagnostics: diagnostics,
+  })
 
   return async (req, res) => {
     try {
@@ -329,7 +356,7 @@ export function createHandler(
 
       // ── 工作流：GET 列表 / POST 批量导出 / GET {id} 单份 ──
       // 放通用分派之前：这里的方法语义与"writable 集合"不一致（同一路径两种方法）。
-      if (sub === '/workflows') {
+      if (components.workflow && sub === '/workflows') {
         if (req.method === 'GET' || req.method === 'HEAD') {
           // 拿不到 object_info（ComfyUI 离线）就不标缺失，避免把"离线"说成"缺模型"。
           // 只做"顺手标一下缺什么模型"，不能因此把列表拖慢：
@@ -346,7 +373,7 @@ export function createHandler(
         sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
         return
       }
-      const detailId = workflowIdFromPath(sub)
+      const detailId = components.workflow ? workflowIdFromPath(sub) : undefined
       if (detailId !== undefined) {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这个接口是只读的。' })

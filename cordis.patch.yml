@@ -40,6 +40,12 @@
         uploadsDir: null
         # 资产索引文件；不写则用 ~/.dsh-comfyui-workbench/assets.jsonl。
         indexFile: null
+        # 关掉的组件（默认全开）。四个组件互相独立，某个出问题可以只关它：
+        #   panel.workflow     用户面板 · 工作流
+        #   panel.gallery      用户面板 · 相册
+        #   tool.generate      模型工具 · 生图（含列出/查看工作流）
+        #   tool.workflow-edit 模型工具 · 工作流编辑
+        disabledComponents: []
 
         # ── 服务托管 ──
         # 自动探测 ComfyUI 安装位置（判据：有 main.py 且有 models 目录）。

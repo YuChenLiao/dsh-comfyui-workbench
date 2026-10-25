@@ -24,11 +24,14 @@ import { resolveOutputDir, workspaceDirOf } from './host/workspace.js'
 
 // 供测试与诊断使用：产物目录的解析规则要能被单独验证。
 export { resolveOutputDir, workspaceDirOf } from './host/workspace.js'
+// 组件注册器要能被单独验证：某个工具构建失败不该拖累其他。
+export { registerTools, TOOL_GROUPS } from './tools/index.js'
 import type { HostContext, WebServerLike } from './host/types.js'
 import { createHandler, PREFIX } from './http/router.js'
 import { AssetIndex } from './store/index.js'
 import { stopAllWatchers } from './run/index.js'
-import { createTools } from './tools/index.js'
+import { registerTools, TOOL_GROUPS } from './tools/index.js'
+import type { ToolRegistrationReport } from './tools/index.js'
 import type { ToolSpec } from './tools/index.js'
 
 /** 插件名（同时是 loader entry 的默认 id）。 */
@@ -138,12 +141,30 @@ export function apply(ctx: HostContext, config: unknown): void {
     }
   }
 
+  // ── 组件开关 ──
+  // 四个组件互相独立：用户面板（工作流 / 相册）与模型工具（生图 / 工作流编辑）。
+  // 关掉一个只影响它自己 —— 出了问题时用户可以单独停用，而不是整插件卸载。
+  const disabled = new Set(settings.disabledComponents)
+  const isOn = (id: string): boolean => !disabled.has(id)
+  const componentState: Record<'panel.workflow' | 'panel.gallery' | 'tool.generate' | 'tool.workflow-edit', boolean> = {
+    'panel.workflow': isOn('panel.workflow'),
+    'panel.gallery': isOn('panel.gallery'),
+    'tool.generate': isOn('tool.generate'),
+    'tool.workflow-edit': isOn('tool.workflow-edit'),
+  }
+  for (const [id, on] of Object.entries(componentState)) {
+    if (!on) warn(`[${name}] 组件 ${id} 已按配置关闭。`)
+  }
+
   // ── HTTP 路由 ──
   const server = ctx.get?.('webServer') as WebServerLike | undefined
   if (server === undefined || typeof server.register !== 'function') {
     warn(`[${name}] 拿不到 webServer 服务，资产库 API 未注册。`)
   } else {
-    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir, outputDir, outputSource)
+    const handler = createHandler(ctx, settings, assetIndex, flowDir, client, supervisor, assertWritable, uploadsDir, outputDir, outputSource, {
+      gallery: componentState['panel.gallery'],
+      workflow: componentState['panel.workflow'],
+    }, () => ({ components: componentState, tools: report }))
     if (typeof ctx.effect === 'function') {
       ctx.effect(() => server.register({ kind: 'prefix', path: PREFIX, handler }), `${name}: http routes`)
     } else {
@@ -159,7 +180,8 @@ export function apply(ctx: HostContext, config: unknown): void {
     return
   }
 
-  for (const spec of createTools({
+  // 逐组注册：某一组的构建或注册抛错只影响它自己，其余照常上线。
+  const report: ToolRegistrationReport = registerTools(TOOL_GROUPS, {
     client,
     workflowsDir: flowDir,
     outputDir,
@@ -169,9 +191,14 @@ export function apply(ctx: HostContext, config: unknown): void {
     index: assetIndex,
     assertWritable,
     logger,
-  })) {
-    track(tools.register(spec))
-  }
+  }, {
+    enabled: TOOL_GROUPS.filter((group: { component: string }) => componentState[group.component as keyof typeof componentState]).map((group: { name: string }) => group.name),
+    register: (spec: ToolSpec) => track(tools.register(spec)),
+    warn,
+  })
 
-  info(`[${name}] 工作流工具已注册：list / inspect / run / edit（数据目录 ${pluginDataDir()}）`)
+  for (const failure of report.failed) {
+    warn(`[${name}] 工具 ${failure.name} 未注册：${failure.message}`)
+  }
+  info(`[${name}] 工作流工具已注册 ${report.registered.length} 个${report.skipped.length === 0 ? '' : `，按配置跳过 ${report.skipped.length} 个`}（数据目录 ${pluginDataDir()}）`)
 }

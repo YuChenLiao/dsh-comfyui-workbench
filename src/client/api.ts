@@ -38,6 +38,9 @@ export interface HostConfig {
   runMode: string
   returnImages: string
   timeoutMs: number
+  /** 各组件是否启用。 */
+  components?: Record<string, boolean>
+  tools?: { registered: string[]; failed: Array<{ name: string; message: string }>; skipped: string[] }
 }
 
 /** 取宿主配置。 */

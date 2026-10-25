@@ -31,6 +31,12 @@ export interface Settings {
   uploadsDir: string | null
   /** 资产索引文件；null 表示用默认（~/.dsh-comfyui-workbench/assets.jsonl）。 */
   indexFile: string | null
+  /**
+   * 关掉的组件 id。可用的有：
+   * `panel.workflow` / `panel.gallery` / `tool.generate` / `tool.workflow-edit`。
+   * 空数组表示全开；某个组件出问题时可以单独关掉，不影响其他。
+   */
+  disabledComponents: string[]
   /** 除 outputDir 外纳入索引的目录。 */
   assetRoots: string[]
   /** 未绑定变量是否报错（默认报错）。 */
@@ -125,6 +131,9 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     workflowsDir: typeof raw.workflowsDir === 'string' && raw.workflowsDir.trim() !== '' ? raw.workflowsDir.trim() : null,
     uploadsDir: typeof raw.uploadsDir === 'string' && raw.uploadsDir.trim() !== '' ? raw.uploadsDir.trim() : null,
     indexFile: typeof raw.indexFile === 'string' && raw.indexFile.trim() !== '' ? raw.indexFile.trim() : null,
+    disabledComponents: Array.isArray(raw.disabledComponents)
+      ? raw.disabledComponents.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map(item => item.trim())
+      : [],
     assetRoots: listOf(raw.assetRoots),
     strictVars: raw.strictVars !== false,
     runMode: oneOf(raw.runMode, ['conversation', 'direct'] as const, 'conversation'),
