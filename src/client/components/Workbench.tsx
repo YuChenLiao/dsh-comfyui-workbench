@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 import { fetchConfig } from '../api.js'
 import type { Translate } from '../i18n.js'
 import { WORKBENCH_CSS } from '../styles-workbench.js'
-import { Gallery } from './Gallery.js'
-import { WorkflowPanel } from './WorkflowPanel.js'
+import { Gallery } from '../../components/panel-gallery/client/Gallery.js'
+import { WorkflowPanel } from '../../components/panel-workflow/client/WorkflowPanel.js'
 
 export interface WorkbenchProps {
   t: Translate

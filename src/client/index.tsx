@@ -9,18 +9,18 @@
  * 打包后整体被 `window.__ModuleLoader__.load` 包住（见 scripts/build.mjs 的 banner），
  * React 由宿主通过 factory 的 require 注入。
  */
-import { Card } from './components/Card.js'
-import { ConfirmBulkRemove, ConfirmRemove } from './components/Confirm.js'
-import { Gallery } from './components/Gallery.js'
+import { Card } from '../components/panel-gallery/client/Card.js'
+import { ConfirmBulkRemove, ConfirmRemove } from '../components/panel-gallery/client/Confirm.js'
+import { Gallery } from '../components/panel-gallery/client/Gallery.js'
 import { Workbench } from './components/Workbench.js'
-import { WorkflowPanel } from './components/WorkflowPanel.js'
-import { Lightbox } from './components/Lightbox.js'
+import { WorkflowPanel } from '../components/panel-workflow/client/WorkflowPanel.js'
+import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import { addToConversation, findComposerEditor, pasteFile } from './conversation.js'
 import { metaLine, planPage } from './format.js'
 import { Icon } from './icons.js'
 import { DICT } from './i18n-data.js'
 import { activeLocaleOf, makeTranslate } from './i18n.js'
-import { CSS } from './styles.js'
+import { CSS } from '../components/panel-gallery/client/styles.js'
 
 export const name = 'dsh-comfyui-workbench'
 

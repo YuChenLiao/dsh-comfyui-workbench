@@ -45,10 +45,15 @@ const clientJob = {
   logLevel: 'info',
 }
 
-/** 测试与调试用的域产物：ESM 单文件，便于 node 直接 import（不经过宿主入口）。 */
-const domainJob = (domain) => ({
-  entryPoints: [`src/${domain}/index.ts`],
-  outfile: `lib/${domain}.js`,
+/**
+ * 测试与调试用的域产物：ESM 单文件，便于 node 直接 import（不经过宿主入口）。
+ *
+ * 产物名与源码目录解耦 —— 重构后 `workflow` 在 `shared/` 下、`store` 在相册组件里，
+ * 但测试与外部脚本仍按 `lib/workflow.js` 这类稳定名字引用。
+ */
+const domainJob = (name, dir = name) => ({
+  entryPoints: [`src/${dir}/index.ts`],
+  outfile: `lib/${name}.js`,
   bundle: true,
   format: 'esm',
   platform: 'node',
@@ -58,7 +63,14 @@ const domainJob = (domain) => ({
   logLevel: 'info',
 })
 
-const jobs = [hostJob, clientJob, domainJob('workflow'), domainJob('store'), domainJob('run'), domainJob('comfy')]
+const jobs = [
+  hostJob,
+  clientJob,
+  domainJob('workflow', 'shared/workflow'),
+  domainJob('store', 'components/panel-gallery/server/store'),
+  domainJob('run', 'shared/run'),
+  domainJob('comfy', 'shared/comfy'),
+]
 
 fs.mkdirSync('lib', { recursive: true })
 

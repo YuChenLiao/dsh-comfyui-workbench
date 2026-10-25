@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(here, '..')
 const clientDir = path.join(root, 'src', 'client')
+// 组件拆分后 UI 分散在 src/components/*/client，扫描要覆盖整个 src
+const srcDir = path.join(root, 'src')
 
 /** 收集一个目录下所有源码。 */
 function sources(dir) {
@@ -27,7 +29,11 @@ function sources(dir) {
 }
 
 /** 样式表文件（它们定义类名）。 */
-const STYLE_FILES = [path.join(clientDir, 'styles.ts'), path.join(clientDir, 'styles-workbench.ts')]
+// 样式表按组件分散：相册的在 panel-gallery/client、工作台外壳的在自己目录
+const STYLE_FILES = [
+  path.join(root, 'src', 'components', 'panel-gallery', 'client', 'styles.ts'),
+  path.join(clientDir, 'styles-workbench.ts'),
+]
 
 /** 样式表里定义过的类名。 */
 const defined = new Set()
@@ -38,7 +44,7 @@ for (const file of STYLE_FILES) {
 
 /** 组件源码里引用过的类名（含模板字符串里的静态片段）。 */
 const used = new Map()
-for (const file of sources(clientDir)) {
+for (const file of sources(srcDir)) {
   if (STYLE_FILES.includes(file)) continue
   const text = fs.readFileSync(file, 'utf8')
   for (const match of text.matchAll(/\b((?:cwb|cwf|cfa)-[a-z0-9-]+)/g)) {

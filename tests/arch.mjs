@@ -1,15 +1,18 @@
 /**
- * 架构自检：依赖方向必须单向，且各域只依赖允许的下层。
+ * 架构自检：组件边界与分层方向。
  *
- * 这不是风格检查，是把设计方案里的一句话变成可执行约束：
- *   scan   ← 只读磁盘，只依赖 node:*
- *   host   ← 宿主最小面，只依赖 node:*
- *   assets ← 依赖 scan / host
- *   http   ← 依赖 assets / scan / host
- *   index  ← 装配，可依赖全部
+ * 重构后 src 按"面向谁 + 对象"划分：
+ *   src/components/panel-gallery/        用户面板 · 相册（server + client）
+ *   src/components/panel-workflow/       用户面板 · 工作流
+ *   src/components/tool-generate/        模型工具 · 生图
+ *   src/components/tool-workflow-edit/   模型工具 · 工作流编辑
+ *   src/shared/                          公用逻辑（host / comfy / workflow / run / tools / http）
+ *   src/client/                          UI 外壳（页签、api、i18n、图标）
  *
- * 反向依赖（例如 scan import assets）会让"最底层"变成一句空话：
- * 上层一改，底层跟着重编译，测试也没法单独跑。
+ * 只钉三条真正会退化的约束，而不是维护一张精密的层级表：
+ *   1. shared 内部单向：host 最底层，上层不得反向依赖
+ *   2. 组件的 server 侧不得依赖任何 client（后端不该认识界面）
+ *   3. client 公共模块不得依赖具体组件（外壳不能被某个组件绑死）
  */
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -19,37 +22,34 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(here, '..')
 
-/** 每个域允许的跨域依赖（同域相对导入总是允许）。 */
-const ALLOWED = {
-  scan: [],
-  host: [],
-  assets: ['scan', 'host'],
-  workflow: ['host'],
-  comfy: ['host', 'workflow'],
-  run: ['comfy', 'workflow', 'scan', 'host'],
-  store: ['host', 'scan'],
-  tools: ['run', 'comfy', 'workflow', 'store', 'host'],
-  http: ['assets', 'scan', 'host', 'workflow', 'run', 'comfy', 'store'],
-  client: [], // 客户端只依赖自身与 react / react-dom（由宿主注入）
+/** shared 内部允许依赖的下层。 */
+const SHARED_ALLOWED = {
+  'shared/host': [],
+  // 工具规格里要写 client / logger 的类型，所以允许向下依赖这两层
+  'shared/tools': ['shared/host', 'shared/comfy', 'shared/workflow'],
+  'shared/http': [],
+  'shared/workflow': ['shared/host'],
+  'shared/comfy': ['shared/host', 'shared/workflow'],
+  'shared/run': ['shared/host', 'shared/comfy', 'shared/workflow'],
 }
 
-/** 收集一个目录下的所有源码。 */
-function sources(dir) {
-  const out = []
+/** 外壳里允许组装组件的文件（其余必须与组件无关）。 */
+const SHELL_ASSEMBLY = new Set(['src/client/index.tsx', 'src/client/components/Workbench.tsx'])
+
+function sources(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...sources(full))
+    if (entry.isDirectory()) sources(full, out)
     else if (/\.(ts|tsx)$/.test(entry.name)) out.push(full)
   }
   return out
 }
 
-/** 剥掉块注释与整行注释：注释里写 `import('sharp')` 不该被当成真实依赖。 */
+/** 剥掉注释：注释里写 import('sharp') 不该被当成真实依赖。 */
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
 
-/** 从源码里抽出所有静态 import 与动态 import 的目标。 */
 function importsOf(source) {
   const targets = []
   const patterns = [
@@ -64,62 +64,78 @@ function importsOf(source) {
   return targets
 }
 
-const violations = []
+/** 源码路径 → 所属单元（两级粒度）。 */
+function unitOf(rel) {
+  const parts = rel.split('/')
+  if (parts[0] !== 'src') return null
+  if (parts[1] === 'shared') return `shared/${parts[2] ?? ''}`
+  if (parts[1] === 'components') {
+    return parts[3] === 'server' || parts[3] === 'client' ? `components/${parts[2]}/${parts[3]}` : `components/${parts[2]}`
+  }
+  if (parts[1] === 'client') return 'client'
+  if (parts[1] === 'http') return 'http'
+  return 'root'
+}
 
-function checkDomain(domain, file) {
+const violations = []
+const files = sources(path.join(root, 'src'))
+
+for (const file of files) {
+  const rel = path.relative(root, file).split(path.sep).join('/')
+  const from = unitOf(rel)
+  if (from === null) continue
   const source = stripComments(fs.readFileSync(file, 'utf8'))
-  const allowed = ALLOWED[domain] ?? []
+
   for (const target of importsOf(source)) {
     if (target.startsWith('node:') || target === 'react' || target === 'react-dom' || target === 'react/jsx-runtime') continue
-    if (target.startsWith('.')) {
-      // 相对导入：算出它落在哪个域
-      const resolved = path.resolve(path.dirname(file), target)
-      const rel = path.relative(root, resolved).split(path.sep).join('/')
-      const segments = rel.split('/')
-      // src/<domain>/... 或 src/<domain>.ts
-      const domainOfTarget = segments[0] === 'src' ? segments[1].replace(/\.(ts|tsx)$/, '') : null
-      if (domainOfTarget === null) continue // 指向仓库外（理论上不该出现）
-      if (domainOfTarget === domain) continue
-      if (allowed.includes(domainOfTarget)) continue
-      // client 内部跨子目录是允许的（components / hooks / 同域）
-      violations.push(`${rel.replace('src/', '')} ← ${domain} 不允许依赖 ${domainOfTarget}`)
+    if (!target.startsWith('.')) {
+      violations.push(`${rel} 引入了外部包：${target}（运行时必须零依赖）`)
       continue
     }
-    violations.push(`${path.relative(root, file)} 引入了外部包：${target}（运行时必须零依赖）`)
+
+    const resolved = path.resolve(path.dirname(file), target)
+    const to = unitOf(path.relative(root, resolved).split(path.sep).join('/'))
+    if (to === null || to === from) continue
+
+    // 1. shared 内部单向
+    if (from.startsWith('shared/') && to.startsWith('shared/')) {
+      const allowed = SHARED_ALLOWED[from] ?? []
+      if (!allowed.includes(to)) violations.push(`${rel}：${from} 不允许依赖 ${to}`)
+      continue
+    }
+
+    // 2. server 不得依赖 client
+    if (from.includes('/server') && (to.includes('/client') || to === 'client')) {
+      violations.push(`${rel}：后端（${from}）不允许依赖界面（${to}）`)
+      continue
+    }
+
+    // 3. 外壳公共模块不得依赖具体组件
+    if (from === 'client' && to.startsWith('components/') && !SHELL_ASSEMBLY.has(rel)) {
+      violations.push(`${rel}：外壳模块不该依赖 ${to}（只有装配层可以）`)
+    }
   }
 }
 
-for (const domain of Object.keys(ALLOWED)) {
-  const dir = path.join(root, 'src', domain)
-  if (!fs.existsSync(dir)) continue
-  for (const file of sources(dir)) checkDomain(domain, file)
-}
-
+assert.deepEqual(violations, [], `组件边界被打破：\n  ${violations.join('\n  ')}`)
 
 // ── patch 文件与 Settings 字段一致 ──
 // 加了配置项却忘了写进 cordis.patch.yml，用户就不知道有这个开关。
-// 逐行扫而不是用正则抠接口块：转义太多，容易写错且难读。
-const configLines = fs.readFileSync(path.join(root, 'src', 'host', 'config.ts'), 'utf8').split(String.fromCharCode(10))
-const ifaceStart = configLines.findIndex(line => line.startsWith('export interface Settings'))
-assert.ok(ifaceStart >= 0, '找不到 Settings 接口')
-const ifaceEnd = configLines.findIndex((line, index) => index > ifaceStart && line === '}')
-assert.ok(ifaceEnd > ifaceStart, 'Settings 接口没有闭合')
+const configPath = path.join(root, 'src', 'shared', 'host', 'config.ts')
+const configLines = fs.readFileSync(configPath, 'utf8').split(String.fromCharCode(10))
+const settingsStart = configLines.findIndex(line => line.includes('export interface Settings'))
+assert.ok(settingsStart >= 0, '找不到 Settings 接口')
 
-const settingsKeys = new Set()
-for (const line of configLines.slice(ifaceStart + 1, ifaceEnd)) {
-  const match = /^ {2}([A-Za-z][A-Za-z0-9]*)\??:/.exec(line)
-  if (match !== null) settingsKeys.add(match[1])
+const fields = []
+for (const line of configLines.slice(settingsStart + 1)) {
+  if (line.startsWith('}')) break
+  const match = /^\s{2}([a-zA-Z][a-zA-Z0-9]*)\??:/.exec(line)
+  if (match !== null) fields.push(match[1])
 }
 
-const patchLines = fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8').split(String.fromCharCode(10))
-const patchKeys = new Set()
-for (const line of patchLines) {
-  const match = /^ {8}([a-z][A-Za-z0-9]*):/.exec(line)
-  if (match !== null) patchKeys.add(match[1])
-}
+const patch = fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8')
+const missing = fields.filter(field => !new RegExp(`^\\s*${field}:`, 'm').test(patch))
+assert.deepEqual(missing, [], `这些配置项没写进 cordis.patch.yml：${missing.join(', ')}`)
 
-const missingInPatch = [...settingsKeys].filter(key => !patchKeys.has(key))
-assert.deepEqual(missingInPatch, [], `这些配置项没写进 cordis.patch.yml：${missingInPatch.join(', ')}`)
-
-assert.deepEqual(violations, [], `架构违规：\n  ${violations.join('\n  ')}`)
-console.log(`arch: 全部通过（${Object.keys(ALLOWED).length} 个域的依赖方向符合约束）`)
+const units = new Set(files.map(file => unitOf(path.relative(root, file).split(path.sep).join('/'))))
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致）`)
