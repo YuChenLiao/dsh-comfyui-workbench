@@ -30,6 +30,8 @@ export interface SupervisorOptions {
    * 我们看不到。面板对这种情况会明说，而不是假装空白就是一切正常。
    */
   onOutput?: ((stream: 'out' | 'err', text: string) => void) | undefined
+  /** 安装探测器（测试可替换，默认走 detectInstallation）。 */
+  detect?: (() => string | undefined) | undefined
   logger?: LoggerLike | undefined
 }
 
@@ -181,6 +183,30 @@ export class ComfySupervisor {
   }
 
   /** 当前状态快照。 */
+  /**
+   * 探测到的安装目录（日志文件在它下面的 `user/` 里）。
+   *
+   * **不能只靠 `start()` 里那次赋值**：外部实例（Desktop 自己起的）根本不会走到
+   * `start()`，那时 `installDir` 永远是 undefined，日志就永远读不到 —— 而"想知道
+   * 启动进度"恰恰多半发生在外部实例上。所以这里补一次惰性探测。
+   */
+  installDirOf(): string | undefined {
+    if (this.installDir === undefined && !this.detectTried) {
+      this.detectTried = true
+      if (this.options.autoDetect) {
+        try {
+          this.installDir = (this.options.detect ?? detectInstallation)()
+        } catch {
+          // 探测失败就当没装，别把异常抛给调用方（它只是来读日志的）
+        }
+      }
+    }
+    return this.installDir
+  }
+
+  /** 是否已经尝试过安装探测（负缓存：没装也不能每 2 秒重扫一次盘）。 */
+  private detectTried = false
+
   status(): ServiceStatus {
     return {
       state: this.state,

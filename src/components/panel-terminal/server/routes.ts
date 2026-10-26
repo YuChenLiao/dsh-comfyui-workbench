@@ -4,8 +4,14 @@
  * 展示的是**命令行输出**（TUI），不是 GUI 截图 —— 用户想知道服务在干什么、
  * 卡在哪一步、模型加载到几成，这些只出现在终端里。
  *
- * 拿得到的前提是进程由本插件拉起：外部启动的实例，它的 stdout 在别人的终端里。
- * 面板对这种情况会明说，避免"一片空白"被当成"一切正常"。
+ * 数据有两个来源：
+ * - 本插件拉起的进程：直接接 stdout/stderr（实时，且日志里不会出现我们看不到的内容）
+ * - 外部启动的实例（Desktop 自己起的那些）：stdout 在别人的终端里，改读 ComfyUI 写的
+ *   `user/comfyui.log`。两条路只走一条 —— ComfyUI 的 logger 同时挂 Stream 与 File 两个
+ *   handler，两边都读会是每行两份。
+ *
+ * `LogTail.locate` 只认 `<安装目录>/user/comfyui.log`；若用 `--user-directory` 或
+ * `--base-directory` 改过位置，这里就找不到（能接受：找不到就是没日志，面板会说明）。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 

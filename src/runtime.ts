@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { ComfyClient, ComfySupervisor } from './shared/comfy/index.js'
 import { TerminalBuffer } from './shared/comfy/output-buffer.js'
+import { LogTail } from './shared/comfy/log-tail.js'
 import { isAuthorized } from './shared/authz/authorize.js'
 import { rootsOf } from './shared/authz/roots.js'
 import type { Settings } from './shared/host/config.js'
@@ -258,6 +259,32 @@ function create(ctx: HostContext, config: unknown): Runtime {
     logger,
     onOutput: (stream, text) => terminal.push(stream, text),
   })
+
+  // 外部实例（Desktop 自己起的那些）拿不到 stdout，只能读它写的日志文件。
+  // 定时拉一次：成本只是 stat + 可能的增量读，比"让用户干等"划算得多。
+  const logTailRef: { current: LogTail | undefined } = { current: undefined }
+  const pumpLog = (): void => {
+    // 自己拉起的进程已经把 stdout 接过来了；ComfyUI 的 logger 同时挂 StreamHandler 与
+    // FileHandler，两边都读就是每行两份。所以只在"不是我们拉起的"时才看日志。
+    if (supervisor.status().managed) return
+    const installDir = supervisor.installDirOf()
+    const file = LogTail.locate(installDir)
+    if (file === undefined) return
+    if (logTailRef.current === undefined || logTailRef.current.path !== file) {
+      logTailRef.current = new LogTail(file)
+      terminal.push('out', `—— 以下来自日志文件 ${file} ——\n`)
+    }
+    const chunk = logTailRef.current.poll()
+    if (chunk !== '') terminal.push('out', chunk)
+  }
+  // 不依赖 autoStart：读日志文件没有副作用，外部实例恰恰最常见
+  const logTimer = setInterval(pumpLog, 2_000)
+  logTimer.unref?.()
+  pumpLog()
+  // 热重载会重新 create；不清掉的话每个旧实例都留一条定时器往死掉的 buffer 里 push
+  if (typeof ctx.effect === 'function') {
+    ctx.effect(() => () => { clearInterval(logTimer) }, 'runtime: log pump')
+  }
 
   const client = new ComfyClient({
     baseUrl: settings.baseUrl,

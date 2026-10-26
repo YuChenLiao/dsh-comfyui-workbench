@@ -172,3 +172,125 @@ test('epoch：缓冲重建后代号会变（前端据此判断旧 cursor 失效�
   b.push('out', 'y\n')
   assert.notEqual(b.since(0).epoch, first.epoch, '新实例必须有不同代号')
 })
+
+
+test('日志跟踪：首次给末尾 N 行，之后只给新增，轮转后重来', async () => {
+  // 外部启动的 ComfyUI 拿不到 stdout，只能读 user/comfyui.log —— 这条路径要可靠。
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { LogTail, readTail } = await import('../lib/index.js')
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'logtail-'))
+  const file = path.join(dir, 'comfyui.log')
+  try {
+    const lines = Array.from({ length: 300 }, (_, i) => `line-${i + 1}`)
+    fs.writeFileSync(file, lines.join('\n') + '\n')
+
+    assert.deepEqual(readTail(file, 3).split('\n'), ['line-298', 'line-299', 'line-300'])
+
+    const tail = new LogTail(file)
+    const first = tail.poll()
+    assert.equal(first.split('\n').filter(Boolean).length, 200, '首次只给末尾 200 行')
+    assert.ok(first.includes('line-300'))
+    assert.equal(tail.poll(), '', '没有新增就是空串')
+
+    fs.appendFileSync(file, 'line-301\n')
+    assert.equal(tail.poll().trim(), 'line-301', '增量只给新增的那一行')
+
+    // 变小 = 被轮转/截断
+    fs.writeFileSync(file, 'fresh-1\nfresh-2\n')
+    const afterRotate = tail.poll()
+    assert.ok(afterRotate.includes('fresh-1') && afterRotate.includes('fresh-2'), '轮转后要重新从头给')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('日志跟踪：文件不存在时安静返回空（服务没起来是常态）', async () => {
+  const { LogTail } = await import('../lib/index.js')
+  const tail = new LogTail('/definitely/not/here/comfyui.log')
+  assert.equal(tail.poll(), '')
+  assert.equal(LogTail.locate(undefined), undefined)
+  assert.equal(LogTail.locate('/nope'), undefined)
+})
+
+
+test('readTail 跨块不切碎多字节字符', async () => {
+  // 逐块 toString 会把跨 64KB 边界的汉字切成 U+FFFD。长中文行/长堆栈会命中。
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { readTail } = await import('../lib/index.js')
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tail-utf8-'))
+  const file = path.join(dir, 'a.log')
+  try {
+    const big = '测试中文行'.repeat(3000)
+    fs.writeFileSync(file, [big, big, big].join('\n') + '\n')
+    const out = readTail(file, 200)
+    assert.equal((out.match(/\uFFFD/g) ?? []).length, 0, '不该出现替换字符')
+    assert.equal(out.split('\n').filter(Boolean).length, 3)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('installDirOf 惰性探测且只探一次（外部实例从不进 start()）', async () => {
+  // installDir 原本只在 start() 里赋值，外部实例走不到那里 → 日志永远读不到。
+  // 这条要能守住"探测与拉起解耦"和"负缓存"，所以用可替换的探测器计数，
+  // 而不是断言返回值类型（那样删掉缓存也照样绿）。
+  const { ComfySupervisor } = await import('../lib/index.js')
+  let calls = 0
+  const sup = new ComfySupervisor({
+    baseUrl: 'http://127.0.0.1:1',
+    autoDetect: true,
+    autoStart: false,
+    readyTimeoutMs: 1000,
+    idleShutdownMs: 0,
+    // 注入探测器：被调用就计数
+    detect: () => {
+      calls += 1
+      return '/fake/comfy'
+    },
+  })
+  assert.equal(sup.installDirOf(), '/fake/comfy', '未 start 也要能拿到安装目录')
+  assert.equal(calls, 1, '第一次应当探测')
+  assert.equal(sup.installDirOf(), '/fake/comfy')
+  assert.equal(calls, 1, '负缓存：第二次不该再探测')
+
+  // autoDetect 关掉时不探测
+  let off = 0
+  const sup2 = new ComfySupervisor({
+    baseUrl: 'http://127.0.0.1:1',
+    autoDetect: false,
+    autoStart: false,
+    readyTimeoutMs: 1000,
+    idleShutdownMs: 0,
+    detect: () => {
+      off += 1
+      return '/x'
+    },
+  })
+  assert.equal(sup2.installDirOf(), undefined, 'autoDetect=false 时不该给目录')
+  assert.equal(off, 0, 'autoDetect=false 时不该探测')
+
+  // 负缓存真正起作用的场景是「探测失败」：没装 ComfyUI 时 pumpLog 每 2 秒问一次，
+  // 不缓存就会每 2 秒扫一遍盘。探测器返回 undefined 才走到这条分支。
+  let miss = 0
+  const sup3 = new ComfySupervisor({
+    baseUrl: 'http://127.0.0.1:1',
+    autoDetect: true,
+    autoStart: false,
+    readyTimeoutMs: 1000,
+    idleShutdownMs: 0,
+    detect: () => {
+      miss += 1
+      return undefined
+    },
+  })
+  assert.equal(sup3.installDirOf(), undefined)
+  assert.equal(sup3.installDirOf(), undefined)
+  assert.equal(sup3.installDirOf(), undefined)
+  assert.equal(miss, 1, '探测失败也只该试一次（否则每 2 秒扫一次盘）')
+})

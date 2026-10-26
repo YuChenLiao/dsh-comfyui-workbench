@@ -168,7 +168,7 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
         : state === 'starting'
           ? t('termStarting')
           : state === 'unknown'
-            ? t('termNotStarted')
+            ? (lines.length > 0 ? t('termLogOnly') : t('termNotStarted'))
           : lines.length === 0
             ? t('termEmpty')
             : ''
