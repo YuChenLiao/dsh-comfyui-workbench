@@ -1,25 +1,38 @@
 # CHANGELOG
 
-## 0.2.0
+## 0.3.0
 
 ### 新增
 
-- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 把标签与中文名抓到本地。数据来自 `tags.json`（角色 / 画师分类）与逐条的 `wiki_pages.json`（中文名在 `other_names`）；按热度阈值控制规模（`search[post_count]=>N`）；最热的 400 条角色里 392 条有别名（约 98%，中文优先，缺失时保留日文原名；共用别名去重前 395 条），画师因 Danbooru 不填 `other_names` 而无中文名。共用别名（CP 名）按「被多个 tag 共用」识别并只保留热度最高的一条。
+- **Danbooru 标签库组件**（`comfyui-workbench:danbooru`，可单独开关）：`danbooru_lookup` 支持按中文名或 Danbooru tag 查角色 / 画师，`danbooru_sync` 支持从 Danbooru 自抓。查询同时接受中文名、日文名与 Danbooru tag，空格与下划线等价，结果按「tag 名 → 别名精确 → 前缀 → 包含」分档、同档按帖子数降序。**输出只含 tag**（不带 postCount / 别名 / 匹配方式，避免挤占上下文）。本地库为空或没命中时自动走在线查询（`source: 'online'`），没同步过也能用。
 
-  **首选数据源改为社区中文库**：[`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（含社区昵称）与注释。`npm run danbooru:zh` 约 5 秒（视网速）导入角色 3.5 万、画师 2.5 万，去掉共用别名后 98.7% / 94.9% 有中文名或别名（上游 CSV 为 99.7% / 95.8%） —— 自抓 wiki 对画师几乎拿不到中文名（平台不填 `other_names`），且 400 条就要 100 秒。自抓保留为补充路径（数据更新更及时）。
+  **数据随包内置**：`data/danbooru/` 里带 60,265 条（角色 35,384 + 画师 24,881，约 12MB），装好即可离线查询，不必先联网同步。来源是社区维护的中文库 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira），含中文名、别名（社区昵称如「葱娘」）与注释；上游 LICENSE 随数据保留。去掉被多条记录共用的别名后，角色 98.7% / 画师 94.9% 有中文名或别名（上游 CSV 为 99.7% / 95.8%）。`npm run danbooru:zh` 约 5 秒可重新导入（视网速）；自抓 wiki 作为补充路径保留（数据更新更及时，但对画师几乎拿不到中文名 —— Danbooru 平台不填 `other_names`）。
 
-  **查询档位细化**：tag 名直接命中独立成一档（高于"某个别名恰好相同"），否则查 `wlop` 会先给一个别名里含 wlop、热度更高的 tag。跨 kind 时档位也不再丢失。
+  **数据源降级**：`safebooru.donmai.us` 是 Danbooru 官方镜像（同接口、同数据，实测 `post_count` / `other_names` / 别名反查结果逐字段一致）。主站超时（8 秒）、`5xx`、`429` 或端点 `404` 时自动切换，`404` 也算镜像不可用 —— Danbooru 的"查无此项"是 `200 + []`，`404` 只表示这个站没有该端点。切过一次之后优先走能用的那个。`aibooru.online` 这类"同一套软件、不同数据库"的站不能当镜像（`hatsune_miku` 只有 1821 帖 vs 主站 148311）。
 
-  **产物目录按会话解析**：多工作区下产物落错地方 —— 原因是 `workspaceRegistry` 只知道有哪些工作区、
-  不知道当前会话属于哪个，cwd 匹配不上时取列表首项，于是图落进了不相关的工作区。改成执行期用
-  `workingDirectory.get(session)` 取会话自己的工作区（`comfyui_run` 的 `exec.agent` 就带着 session）；
-  续查分支同步；`<会话工作区>/comfyui-output` 一棵也并进授权根，免得落对了却被 `forbidden_output` 拦下（只放这一棵，不把整个会话目录变成授权面）。配置项 `outputDir` 仍然最优先。面板直连（`runMode=direct`）与面板续查没有会话上下文，仍用启动期目录。
+  **随包附带两个数据脚本**：`import-danbooru-zh.mjs`（从上游 CSV 重新导入）与 `sync-danbooru.mjs`（从 Danbooru 自抓），装包的人不必 clone 仓库就能自己更新数据。刻意排除了 `build.mjs`（依赖 devDep `esbuild`，装后跑必然 `ERR_MODULE_NOT_FOUND`）与 `acceptance.mjs`（打本机端口、写真数据目录）。
 
-  **打包收窄**：`package.json` 的 `files` 此前把整个 `scripts/` 目录都发出去，包含 `build.mjs`（依赖 devDep `esbuild`，装后跑必然 `ERR_MODULE_NOT_FOUND`）与 `acceptance.mjs`（打本机端口、写真实数据目录）。现在只发 `import-danbooru-zh.mjs` 与 `sync-danbooru.mjs` 两个数据脚本。
+### 修复
 
-  **数据源降级**：`safebooru.donmai.us` 是 Danbooru 官方镜像（同接口、同数据，实测 `post_count` / `other_names` / 别名反查结果逐字段一致）。主站超时（8 秒）、`5xx`、`429` 或端点 `404` 时自动切换，`404` 也算镜像不可用 —— Danbooru 的"查无此项"是 `200 + []`，`404` 只表示这个站没有该端点。切过一次之后优先走能用的那个，不再每次先撞坏站。`aibooru.online` 这类"同一套软件、不同数据库"的站不能当镜像（`hatsune_miku` 只有 1821 帖 vs 主站 148311）。
+含 0.3.0 新组件在开发期发现并修掉的缺陷（0.2.0 没有这个组件，升级者不会踩到）。
 
-  上线后修掉的问题：热度阈值参数曾写成 `post_count_gte`（Danbooru 不认，阈值是死旋钮）；同步时把网络错误一律当"查不到"，限流下别名大面积丢失而日志显示"同步完成"；在线查询取 wiki 返回的第一条（顺序不代表热度，同一个名字本地与在线给出不同答案）；在线被限流时静默返回空，用户分不清"名字错了"与"被限流"；脚本参数传非法值时回退默认而不是变成 1/NaN（那会让同步静默跑成全量 30 小时）；退避等待吃服务端 `Retry-After` 但设 30 秒上限；`404` 判定改用状态码而不是匹配错误文本（tag 名里可能含 404）。查询同时接受中文名、日文名与 Danbooru tag，空格与下划线等价，结果按「精确 → 前缀 → 包含」分档、同档按帖子数降序。**输出只含 tag**（不加 postCount / 别名 / 匹配方式，避免挤占上下文）；本地库为空或没命中时自动走在线查询（`source: 'online'`），所以没同步过也能用。同步支持全量（`--min 0 --max 0`）。
+- **产物落到不相关的工作区**：`workspaceRegistry` 只知道有哪些工作区、不知道当前会话属于哪个，cwd 匹配不上时取列表首项 —— 而那个顺序与用户当前在哪个工作区无关，于是图落进了别人的目录。改成执行期用 `workingDirectory.get(session)` 取会话自己的工作区（`comfyui_run` 的 `exec.agent` 就带着 session），续查分支同步；`<会话工作区>/comfyui-output` 一棵并进写入授权，相册的读取授权也追加同一份（只修写入侧会变成"产物落对了、相册却列不出来、`/file` 还 403"）。该目录做 `canonical`，否则工作区是 junction / 符号链接时产物目录会把自己拒掉。配置项 `outputDir` 仍然最优先；面板直连（`runMode=direct`）与面板续查没有会话上下文，仍用启动期目录。
+- **热度阈值是死旋钮**：参数写成 `post_count_gte`（Danbooru 不认，静默忽略），无论传多少都返回最热的那批。正确写法是 `search[post_count]=>N`。
+- **限流下别名大面积丢失却报"同步完成"**：网络错误被一律当成"查不到"，覆盖率从 94% 掉到 61% 而日志正常。现在区分失败与空结果，日志报失败条数，退避吃服务端 `Retry-After`（30 秒上限）。
+- **在线查询给出与本地不同的答案**：取 wiki 返回的第一条（顺序不代表热度）。改为逐条回查 `post_count` 后取最热。
+- **在线被限流时静默返回空**：用户分不清"名字错了"与"被限流"。现在两种文案分开。
+- **`404` 判定用错误文本匹配**：tag 名里可能含 404。改用状态码。
+- **脚本参数传非法值时回退成 1/NaN**：`--min` 不带值会让 `Number(true) = 1`，静默跑成全量（全量 40 万条，实测 3~4 条/秒，约 30 小时）。现在挡类型。
+
+### 工程
+
+- **测试一直在测旧的 `lib`**：`npm test` 直接跑产物，而改代码只改 `src` —— 忘了 build 就变成"测试全绿、发包是旧的"。加 `pretest` 自动 build，守护断言明确盯产物（`lib/entries/gallery.js`）而不是源码。另加 `prepublishOnly` 在发布前重建，保证包内 `lib` 与 `src` 同步。
+- 修掉五处形同虚设的测试（都是变异验证揭出来的）：断言硬依赖本机磁盘路径；某条靠"路径不存在"蒙对了规则；只测工具函数、没测工具有没有把参数传下去；测试自己传参数，测的是"支持"而不是"接没接上"；守护读 `src` 而运行时走 `lib`。
+- **用户自己的库不会顶掉随包数据**：读路径优先用户数据目录、没有才回退包内；写路径只写用户目录，
+  且 `writeStore` 拒绝任何指向随包数据目录的目标（含大小写变体与子目录）—— 否则一次写错就把随包的 12MB 覆盖掉。
+- `files` 去掉一个不存在的根级 `client.js`。
+
+## 0.2.0
 
 ### 修复
 
