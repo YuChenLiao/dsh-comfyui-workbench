@@ -545,7 +545,7 @@ interface WorkflowListEntry {
     baseUrl: http://127.0.0.1:8188   # 设置里的输入框写这里
     autoDetect: true                 # 探安装位置
     autoStart: true                  # 按需拉起
-    startCommand: []                 # 特殊情况才填：["python","main.py","--port","8188"]
+    startCommand: []                 # 特殊情况才填：["D:/ComfyUI/venv/Scripts/python.exe","D:/ComfyUI/main.py","--port","8188"]（该模式不自动设 cwd，实际继承 dsh 进程的 cwd）
     readyTimeoutMs: 180000
     idleShutdownMs: 300000
 ```
@@ -674,7 +674,7 @@ ctx.inject(['betterSidebar'], (scope) => {
     baseUrl: http://127.0.0.1:8188   # 设置里的输入框写这里
     autoDetect: true          # 自动探测 ComfyUI 安装位置
     autoStart: true           # 未运行时按需拉起
-    startCommand: []          # 特殊情况才填：["python","main.py","--port","8188"]
+    startCommand: []          # 特殊情况才填：["D:/ComfyUI/venv/Scripts/python.exe","D:/ComfyUI/main.py","--port","8188"]（该模式不自动设 cwd，实际继承 dsh 进程的 cwd）
     readyTimeoutMs: 180000    # 冷启就绪上限
     idleShutdownMs: 300000    # 空闲回收（0=不回收）
     headers: {}               # 鉴权透传，不内置任何默认

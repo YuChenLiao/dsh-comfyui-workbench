@@ -144,7 +144,7 @@ const units = new Set(files.map(file => unitOf(path.relative(root, file).split(p
 // 组件 entry 的 inject 必须有守护：漏了 workspaceRegistry 会让探测静默失效（踩过一次）。
 // 只有创建共享 runtime 的 entry 需要注入 workspaceRegistry（产物目录探测要用）。
 // danbooru 不碰 runtime，单独校验它的注入。
-const entryFiles = ['gallery', 'workflow', 'generate', 'edit']
+const entryFiles = ['gallery', 'workflow', 'generate', 'edit', 'terminal']
 for (const entry of entryFiles) {
   const mod = await import(pathToFileURL(path.join(root, 'lib', 'entries', `${entry}.js`)).href)
   assert.ok(Array.isArray(mod.inject) && mod.inject.includes('workspaceRegistry'), `entries/${entry}.js 的 inject 必须含 workspaceRegistry，实际：${JSON.stringify(mod.inject)}`)
@@ -153,7 +153,11 @@ const danbooruMod = await import(pathToFileURL(path.join(root, 'lib', 'entries',
 assert.ok(Array.isArray(danbooruMod.inject) && danbooruMod.inject.includes('tools'), 'entries/danbooru.js 应当只依赖 tools')
 assert.ok(!danbooruMod.inject.includes('workspaceRegistry'), 'danbooru 不建 runtime，不该被要求注入 workspaceRegistry')
 
+// 终端面板要建共享运行时（缓冲挂在 runtime 上），注入要求与其它面板一致。
+const terminalMod = await import(pathToFileURL(path.join(root, 'lib', 'entries', 'terminal.js')).href)
+assert.ok(Array.isArray(terminalMod.inject) && terminalMod.inject.includes('webServer'), 'entries/terminal.js 应当注入 webServer')
+
 const coreMod = await import(pathToFileURL(path.join(root, 'lib', 'index.js')).href)
 assert.ok(coreMod.inject.includes('workspaceRegistry'), '包根 entry 的 inject 必须含 workspaceRegistry')
 
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，6 条 entry 注入齐备）`)
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，7 条 entry 注入齐备）`)

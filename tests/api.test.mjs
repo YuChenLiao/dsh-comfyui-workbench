@@ -269,12 +269,51 @@ test('POST /upload：不是图片就拒绝，扩展名不认也拒绝', async ()
   }
 })
 
-test('工具注册：4 个工具都带必要字段', async () => {
+test('终端面板：GET /terminal 不能被方法校验拦成 405', async () => {
+  // 这条必须走真实的 createDispatch —— 前两轮分别漏了"POST 被 WRITABLE 漏掉"
+  // 和"GET 被 WRITABLE 封死"，都是因为测试直接调组件路由、绕过了方法校验层。
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out],
+    outputDir: dirs.out,
+    workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads,
+    indexFile: dirs.index,
+    // 别让测试真去拉 ComfyUI
+    autoStart: false,
+    autoDetect: false,
+  })
+  try {
+    // 这里是真 http server，直接 fetch（boot 返回的是 origin 而不是封装好的 get/post）
+    const read = await fetch(`${app.origin}/comfyui-workbench/api/terminal?since=0`)
+    assert.equal(read.status, 200, 'GET 必须可用（面板靠它轮询）')
+    const readBody = await read.json()
+    assert.equal(readBody.ok, true)
+    assert.ok(Array.isArray(readBody.lines))
+
+    const clear = await fetch(`${app.origin}/comfyui-workbench/api/terminal`, { method: 'POST' })
+    assert.equal(clear.status, 200, 'POST 是清屏')
+
+    const start = await fetch(`${app.origin}/comfyui-workbench/api/terminal?action=start`, { method: 'POST' })
+    assert.equal(start.status, 200, 'POST ?action=start 是拉起服务')
+  } finally {
+    await app.close()
+  }
+})
+
+test('工具注册：6 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
-    assert.deepEqual(names, ['comfyui_run', 'comfyui_workflow_edit', 'comfyui_workflow_inspect', 'comfyui_workflow_list'])
+    assert.deepEqual(names, [
+      'comfyui_run',
+      'comfyui_workflow_edit',
+      'comfyui_workflow_inspect',
+      'comfyui_workflow_list',
+      'danbooru_lookup',
+      'danbooru_sync',
+    ])
     for (const spec of app.tools) {
       assert.equal(typeof spec.description, 'string')
       assert.ok(spec.description.length > 20, `${spec.name} 的描述应当能让模型判断何时用`)

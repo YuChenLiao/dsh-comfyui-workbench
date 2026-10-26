@@ -10,7 +10,7 @@ import path from 'node:path'
 import { createWorkflowRoutes } from '../components/panel-workflow/server/routes.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
-import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from '../runtime.js'
+import { acquire, ensureHttp, mountRoutes, release } from '../runtime.js'
 
 /** 组件被配置关闭时的统一提示。 */
 function warnDisabled(id: string): void {
@@ -64,10 +64,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
     settings: rt.settings,
     assertWritable: rt.assertWritable,
     defaultOutputDir: rt.outputDir,
-    outputSource: rt.outputSource,
-    getDiagnostics: () => ({ components: componentStateOf(rt), tools: rt.tools }),
     getExporter: () => rt.exportWorkflows,
-    workspaceProbe: rt.outputProbe as unknown as Record<string, unknown>,
   })
 
   const table = {

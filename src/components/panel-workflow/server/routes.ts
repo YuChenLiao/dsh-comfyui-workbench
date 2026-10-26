@@ -4,7 +4,6 @@ import type { Settings } from '../../../shared/host/config.js'
 import type { ComfyClient, ComfySupervisor } from '../../../shared/comfy/index.js'
 import { availableModels } from '../../../shared/comfy/index.js'
 import { sendJson } from '../../../shared/http/respond.js'
-import { createConfigHandler } from './config-api.js'
 import { createRunHandler } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
 import { handleWorkflowDetail, handleWorkflowList, handleWorkflowUpdate, workflowIdFromPath } from './workflows-api.js'
@@ -21,12 +20,8 @@ export interface WorkflowRouteDeps {
   settings: Settings
   assertWritable: (dir: string) => void
   defaultOutputDir: string
-  outputSource: 'config' | 'env' | 'workingDirectory' | 'service' | 'cwd' | 'data'
-  getDiagnostics: () => Record<string, unknown>
   /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
   getExporter: () => Route | undefined
-  /** 产物目录探测的取证记录。 */
-  workspaceProbe?: Record<string, unknown>
 }
 
 /** 工作流组件额外暴露的动态路径处理器（`/workflows` 与 `/workflows/:id`）。 */
@@ -51,7 +46,7 @@ export interface WorkflowRoutes {
  * 关掉这个组件时，`/run`、`/workflows` 这些路径整体消失，相册不受影响。
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
-  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, outputSource, getDiagnostics, getExporter } = deps
+  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, getExporter } = deps
 
 
   return {
@@ -91,14 +86,6 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
       },
       '/service': handleServiceStatus.bind(null, supervisor),
       '/service/stop': handleServiceStop.bind(null, supervisor),
-      '/config': createConfigHandler({
-        settings,
-        outputDir: defaultOutputDir,
-        workflowsDir: workflowDir,
-        outputSource,
-        ...(deps.workspaceProbe === undefined ? {} : { workspaceProbe: deps.workspaceProbe }),
-        getDiagnostics,
-      }),
     },
     list: async (url, res) => {
       // 拿不到 object_info（ComfyUI 离线）就不标缺失，避免把"离线"说成"缺模型"；

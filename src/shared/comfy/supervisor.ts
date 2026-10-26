@@ -23,6 +23,13 @@ export interface SupervisorOptions {
   readyTimeoutMs: number
   /** 空闲多久后停止自己拉起的进程；0 表示不回收。 */
   idleShutdownMs: number
+  /**
+   * 子进程的输出回调（终端面板用）。
+   *
+   * 只有"插件自己拉起的"进程才有输出 —— 外部实例的 stdout 在别的终端里，
+   * 我们看不到。面板对这种情况会明说，而不是假装空白就是一切正常。
+   */
+  onOutput?: ((stream: 'out' | 'err', text: string) => void) | undefined
   logger?: LoggerLike | undefined
 }
 
@@ -240,10 +247,18 @@ export class ComfySupervisor {
     try {
       const child = spawn(argv[0] as string, argv.slice(1), {
         cwd,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
         windowsHide: true,
+        env: {
+          ...process.env,
+          // 不指定的话 Windows 上 Python 按控制台代码页输出（GBK），
+          // 面板里就是满屏乱码。统一成 UTF-8，解码侧才稳定。
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUNBUFFERED: '1',
+        },
       })
+      this.pipeOutput(child)
       child.on('exit', () => {
         if (this.child === child) {
           this.child = null
@@ -277,6 +292,32 @@ export class ComfySupervisor {
     this.state = 'failed'
     this.detail = `等待 ${Math.round(this.options.readyTimeoutMs / 1000)} 秒仍未就绪。`
     return false
+  }
+
+  /**
+   * 把子进程的 stdout/stderr 接到 options.onOutput。
+   *
+   * 用 TextDecoder 而不是 `setEncoding('utf8')`：进程退出时可能把多字节字符截断在
+   * 半个字符上，`decode(..., { stream: true })` 能跨块拼接，最后再 flush 一次。
+   */
+  private pipeOutput(child: ChildProcess): void {
+    const sink = this.options.onOutput
+    const attach = (stream: 'out' | 'err', readable: NodeJS.ReadableStream | null): void => {
+      if (readable === null) return
+      const decoder = new TextDecoder('utf-8', { fatal: false })
+      readable.on('data', (chunk: Buffer | string) => {
+        const text = typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
+        if (text !== '') sink?.(stream, text)
+      })
+      readable.on('end', () => {
+        const rest = decoder.decode()
+        if (rest !== '') sink?.(stream, rest)
+      })
+      // 流错误不该影响服务本身
+      readable.on('error', () => { /* 忽略 */ })
+    }
+    attach('out', child.stdout)
+    attach('err', child.stderr)
   }
 
   /** 启动空闲回收定时器（只针对自己拉起的进程）。 */

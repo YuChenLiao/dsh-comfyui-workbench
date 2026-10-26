@@ -63,7 +63,7 @@ const domainJob = (name, dir = name) => ({
   logLevel: 'info',
 })
 
-/** 四个组件各自一个入口：宿主按 entry 分别加载，才能单独开关。 */
+/** 每个组件各自一个入口：宿主按 entry 分别加载，才能单独开关。 */
 const entryJob = name => ({
   entryPoints: [`src/entries/${name}.ts`],
   // 独立目录：lib/<name>.js 已被 domain bundle 占用（workflow/store/run/comfy），别名会互相覆盖
@@ -83,6 +83,7 @@ const jobs = [
   entryJob('generate'),
   entryJob('edit'),
   entryJob('danbooru'),
+  entryJob('terminal'),
   hostJob,
   clientJob,
   domainJob('workflow', 'shared/workflow'),

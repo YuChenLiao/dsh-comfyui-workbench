@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import path from 'node:path'
 
 import { ComfyClient, ComfySupervisor } from './shared/comfy/index.js'
+import { TerminalBuffer } from './shared/comfy/output-buffer.js'
 import { isAuthorized } from './shared/authz/authorize.js'
 import { rootsOf } from './shared/authz/roots.js'
 import type { Settings } from './shared/host/config.js'
@@ -42,6 +43,8 @@ export interface Runtime {
   settings: Settings
   client: ComfyClient
   supervisor: ComfySupervisor
+  /** ComfyUI 子进程的终端输出（面板读它）。 */
+  terminal: TerminalBuffer
   index: AssetIndex
   flowDir: string
   outputDir: string
@@ -70,6 +73,7 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
   return {
     'panel.gallery': !disabled.has('panel.gallery'),
     'panel.workflow': !disabled.has('panel.workflow'),
+    'panel.terminal': !disabled.has('panel.terminal'),
     'tool.generate': !disabled.has('tool.generate'),
     'tool.workflow-edit': !disabled.has('tool.workflow-edit'),
     'tool.danbooru': !disabled.has('tool.danbooru'),
@@ -240,6 +244,10 @@ function create(ctx: HostContext, config: unknown): Runtime {
     return dir
   }
 
+  // 终端面板的数据源：supervisor 往里写，面板路由从这里读。
+  // 放在 runtime 上而不是组件里 —— 进程是 runtime 拉起的，组件可能还没加载。
+  const terminal = new TerminalBuffer(2000)
+
   const supervisor = new ComfySupervisor({
     baseUrl: settings.baseUrl,
     autoDetect: settings.autoDetect,
@@ -248,6 +256,7 @@ function create(ctx: HostContext, config: unknown): Runtime {
     readyTimeoutMs: settings.readyTimeoutMs,
     idleShutdownMs: settings.idleShutdownMs,
     logger,
+    onOutput: (stream, text) => terminal.push(stream, text),
   })
 
   const client = new ComfyClient({
@@ -293,6 +302,7 @@ function create(ctx: HostContext, config: unknown): Runtime {
     settings,
     client,
     supervisor,
+    terminal,
     index,
     flowDir,
     outputDir,

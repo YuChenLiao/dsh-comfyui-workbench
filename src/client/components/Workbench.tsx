@@ -5,6 +5,7 @@ import type { Translate } from '../i18n.js'
 import { WORKBENCH_CSS } from '../styles-workbench.js'
 import { Gallery } from '../../components/panel-gallery/client/Gallery.js'
 import { WorkflowAdmin } from '../../components/panel-workflow/client/WorkflowAdmin.js'
+import { Terminal } from '../../components/panel-terminal/client/Terminal.js'
 
 export interface WorkbenchProps {
   t: Translate
@@ -14,12 +15,13 @@ export interface WorkbenchProps {
   openSidebar: () => boolean
 }
 
-type TabId = 'assets' | 'workflow'
+type TabId = 'assets' | 'workflow' | 'terminal'
 
 /** 页签与组件的对应关系：关掉哪个组件，对应页签就不会出现。 */
-const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' }> = [
+const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' | 'tabTerminal' }> = [
   { id: 'assets', component: 'panel.gallery', label: 'tabAssets' },
   { id: 'workflow', component: 'panel.workflow', label: 'tabWorkflowAdmin' },
+  { id: 'terminal', component: 'panel.terminal', label: 'tabTerminal' },
 ]
 
 /**
@@ -34,6 +36,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
   const [enabled, setEnabled] = useState<Record<string, boolean>>({
     'panel.gallery': true,
     'panel.workflow': true,
+    'panel.terminal': true,
   })
 
   useEffect(() => {
@@ -75,9 +78,13 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
             </nav>
           ) : null}
           <div className="cwb-body">
-            {current === 'assets'
-              ? <Gallery t={t} visible={visible} {...(embedded === true ? { embedded } : {})} goToConversation={goToConversation} openSidebar={openSidebar} />
-              : <WorkflowAdmin t={t} visible={visible} />}
+            {current === 'assets' ? (
+              <Gallery t={t} visible={visible} {...(embedded === true ? { embedded } : {})} goToConversation={goToConversation} openSidebar={openSidebar} />
+            ) : current === 'workflow' ? (
+              <WorkflowAdmin t={t} visible={visible} />
+            ) : current === 'terminal' ? (
+              <Terminal t={t} visible={visible} />
+            ) : null}
           </div>
         </>
       )}

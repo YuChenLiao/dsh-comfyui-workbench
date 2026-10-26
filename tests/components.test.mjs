@@ -70,13 +70,14 @@ const baseConfig = d => ({
   autoDetect: false,
 })
 
-test('默认全开：两组路由与四个工具都在', async () => {
+test('默认全开：两组路由与六个工具都在', async () => {
   const d = dirs()
   const app = await boot(baseConfig(d))
   try {
     assert.equal((await app.get('/comfyui-workbench/api/items')).status, 200)
     assert.equal((await app.get('/comfyui-workbench/api/workflows')).status, 200)
-    assert.equal(app.tools.length, 4)
+    // 四个 comfyui_* 工具 + danbooru_lookup / danbooru_sync
+    assert.equal(app.tools.length, 6)
   } finally {
     await app.close()
   }
