@@ -10,6 +10,11 @@
 
   **查询档位细化**：tag 名直接命中独立成一档（高于"某个别名恰好相同"），否则查 `wlop` 会先给一个别名里含 wlop、热度更高的 tag。跨 kind 时档位也不再丢失。
 
+  **产物目录按会话解析**：多工作区下产物落错地方 —— 原因是 `workspaceRegistry` 只知道有哪些工作区、
+  不知道当前会话属于哪个，cwd 匹配不上时取列表首项，于是图落进了不相关的工作区。改成执行期用
+  `workingDirectory.get(session)` 取会话自己的工作区（`comfyui_run` 的 `exec.agent` 就带着 session）；
+  续查分支同步；`<会话工作区>/comfyui-output` 一棵也并进授权根，免得落对了却被 `forbidden_output` 拦下（只放这一棵，不把整个会话目录变成授权面）。配置项 `outputDir` 仍然最优先。面板直连（`runMode=direct`）与面板续查没有会话上下文，仍用启动期目录。
+
   **打包收窄**：`package.json` 的 `files` 此前把整个 `scripts/` 目录都发出去，包含 `build.mjs`（依赖 devDep `esbuild`，装后跑必然 `ERR_MODULE_NOT_FOUND`）与 `acceptance.mjs`（打本机端口、写真实数据目录）。现在只发 `import-danbooru-zh.mjs` 与 `sync-danbooru.mjs` 两个数据脚本。
 
   **数据源降级**：`safebooru.donmai.us` 是 Danbooru 官方镜像（同接口、同数据，实测 `post_count` / `other_names` / 别名反查结果逐字段一致）。主站超时（8 秒）、`5xx`、`429` 或端点 `404` 时自动切换，`404` 也算镜像不可用 —— Danbooru 的"查无此项"是 `200 + []`，`404` 只表示这个站没有该端点。切过一次之后优先走能用的那个，不再每次先撞坏站。`aibooru.online` 这类"同一套软件、不同数据库"的站不能当镜像（`hatsune_miku` 只有 1821 帖 vs 主站 148311）。

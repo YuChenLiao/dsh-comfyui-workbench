@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import path from 'node:path'
 
 import { ComfyClient, ComfySupervisor } from './shared/comfy/index.js'
 import { isAuthorized } from './shared/authz/authorize.js'
@@ -6,9 +7,10 @@ import { rootsOf } from './shared/authz/roots.js'
 import type { Settings } from './shared/host/config.js'
 import { resolveSettings } from './shared/host/config.js'
 import { resolveLogger } from './shared/host/logger.js'
-import { ensureDir, pluginDataDir, workflowsDir } from './shared/host/paths.js'
+import { canonical, ensureDir, pluginDataDir, workflowsDir } from './shared/host/paths.js'
 import type { HostContext } from './shared/host/types.js'
 import { resolveOutputDir } from './shared/host/workspace.js'
+import { sessionWorkspaceDir } from './shared/host/workspace.js'
 import { probeWorkspace } from './shared/host/workspace.js'
 import type { WorkspaceProbe } from './shared/host/workspace.js'
 import { AssetIndex } from './components/panel-gallery/server/store/index.js'
@@ -43,11 +45,15 @@ export interface Runtime {
   index: AssetIndex
   flowDir: string
   outputDir: string
-  outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
+  /** 按会话解析产物目录（多工作区）；拿不到会话信息就回退 outputDir。 */
+  resolveOutputDirFor: (agent: unknown) => string
+  /** 会话产物目录（已 canonical），相册的授权根要含它。 */
+  sessionOutputDirs: Set<string>
+  outputSource: 'config' | 'env' | 'workingDirectory' | 'service' | 'cwd' | 'data'
   /** 产物目录是怎么探测出来的（诊断用）。 */
   outputProbe: WorkspaceProbe
   uploadsDir: string
-  assertWritable: (dir: string) => void
+  assertWritable: (dir: string, agent?: unknown) => void
   logger: ReturnType<typeof resolveLogger>
   warn: (message: string) => void
   info: (message: string) => void
@@ -218,6 +224,22 @@ function create(ctx: HostContext, config: unknown): Runtime {
   const outputDir = resolved.dir
   ensureDir(outputDir)
 
+  // 启动期定下的 outputDir 是"没有会话信息时"的默认值。多工作区场景下
+  // 每次调用都要问一次会话级目录 —— registry 只知道有哪些工作区，不知道
+  // 当前这个会话属于哪个，靠它猜会把产物丢进不相关的工作区。
+  // 会话产物目录登记表：相册的授权根也要含它，否则产物落对了却读不出来。
+  const sessionOutputDirs = new Set<string>()
+
+  const resolveOutputDirFor = (agent: unknown): string => {
+    if (settings.outputDir !== null) return settings.outputDir
+    const sessionDir = sessionWorkspaceDir(ctx, agent)
+    if (sessionDir === undefined) return outputDir
+    const dir = path.join(sessionDir, 'comfyui-output')
+    ensureDir(dir)
+    sessionOutputDirs.add(canonical(dir))
+    return dir
+  }
+
   const supervisor = new ComfySupervisor({
     baseUrl: settings.baseUrl,
     autoDetect: settings.autoDetect,
@@ -238,12 +260,23 @@ function create(ctx: HostContext, config: unknown): Runtime {
   const index = settings.indexFile === null ? new AssetIndex() : new AssetIndex(settings.indexFile)
 
   const rootsSettings = { ...settings, resolvedOutputDir: outputDir }
-  const assertWritable = (dir: string): void => {
+  const assertWritable = (dir: string, agent?: unknown): void => {
     const roots = rootsOf(ctx, rootsSettings)
     if (roots.length === 0) return
-    if (!isAuthorized(dir, roots)) {
-      throw new Error(`输出目录不在授权范围内：${dir}。请在配置的 assetRoots 里加上它，或改用 workspace 内的目录。`)
+    // 会话级工作区可能还没登记进 registry（新开的工作区、或 registry 缓存过期）——
+    // 只按 defaultDirectory 判的话，产物落在正确的工作区里却会被拦下来。
+    if (isAuthorized(dir, roots)) return
+    // 只放行 <会话工作区>/comfyui-output 这一棵，不把整个会话 cwd 变成授权面 ——
+    // 会话 cwd 可以是盘根（实测设成 D:\ 就等于整盘放行），那样这道闸就形同虚设。
+    const sessionDir = sessionWorkspaceDir(ctx, agent)
+    if (sessionDir !== undefined) {
+      // 与 rootsOf 同语义：目标路径在 isAuthorized 里会先 realpath，
+      // 这里不规范化的话，工作区是 junction / 符号链接时产物目录会把自己拒掉。
+      const sessionOutput = canonical(path.join(sessionDir, 'comfyui-output'))
+      sessionOutputDirs.add(sessionOutput)
+      if (isAuthorized(dir, [...roots, { path: sessionOutput, label: 'session-output', kind: 'workspace' }])) return
     }
+    throw new Error(`输出目录不在授权范围内：${dir}。请在配置的 assetRoots 里加上它，或改用 workspace 内的目录。`)
   }
 
   // track 用调用方的 ctx：创建者 entry 卸载后，rt.ctx 已失效，再挂 effect 会抛
@@ -263,6 +296,8 @@ function create(ctx: HostContext, config: unknown): Runtime {
     index,
     flowDir,
     outputDir,
+    resolveOutputDirFor,
+    sessionOutputDirs,
     outputSource: resolved.source,
     outputProbe: probe,
     uploadsDir,

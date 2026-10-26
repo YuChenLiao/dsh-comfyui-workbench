@@ -40,6 +40,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     client: rt.client,
     workflowsDir: rt.flowDir,
     outputDir: rt.outputDir,
+    resolveOutputDirFor: rt.resolveOutputDirFor,
     timeoutMs: rt.settings.timeoutMs,
     pollIntervalMs: rt.settings.pollIntervalMs,
     overrides: new Map(),

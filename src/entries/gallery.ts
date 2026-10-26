@@ -36,6 +36,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     index: rt.index,
     uploadsDir: rt.uploadsDir,
     defaultOutputDir: rt.outputDir,
+    extraRoots: () => [...rt.sessionOutputDirs],
   })
 
   // 批量导出的实现在这里，但路由归工作流组件（同一路径的 GET 是列表）。

@@ -37,7 +37,9 @@
     "accept": "node scripts/acceptance.mjs",
     "accept:full": "node scripts/acceptance.mjs --run",
     "danbooru:sync": "node scripts/sync-danbooru.mjs",
-    "danbooru:zh": "node scripts/import-danbooru-zh.mjs"
+    "danbooru:zh": "node scripts/import-danbooru-zh.mjs",
+    "pretest": "node scripts/build.mjs",
+    "prepublishOnly": "node scripts/build.mjs"
   },
   "engines": {
     "node": ">=20"

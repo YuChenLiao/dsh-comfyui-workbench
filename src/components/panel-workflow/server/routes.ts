@@ -21,7 +21,7 @@ export interface WorkflowRouteDeps {
   settings: Settings
   assertWritable: (dir: string) => void
   defaultOutputDir: string
-  outputSource: 'config' | 'env' | 'service' | 'cwd' | 'data'
+  outputSource: 'config' | 'env' | 'workingDirectory' | 'service' | 'cwd' | 'data'
   getDiagnostics: () => Record<string, unknown>
   /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
   getExporter: () => Route | undefined

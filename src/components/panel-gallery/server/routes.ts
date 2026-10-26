@@ -6,6 +6,7 @@ import type { Settings } from '../../../shared/host/config.js'
 import type { AssetIndex, AssetStatus } from './store/index.js'
 import { rebuildFromSidecars } from './store/index.js'
 import type { HostContext } from '../../../shared/host/types.js'
+import { foldPathCase } from '../../../shared/host/paths.js'
 import { isAuthorized } from './assets/authorize.js'
 import { rootsOf } from './assets/roots.js'
 import { clearScanCache } from './assets/scan-cache.js'
@@ -21,6 +22,8 @@ export type Route = (url: URL, res: ServerResponse, req: IncomingMessage) => voi
 
 /** 相册组件对外提供的路由（全部是精确路径）。 */
 export interface GalleryRouteDeps {
+  /** 额外的授权根（会话级产物目录），在 rootsOf 的缓存之外追加。 */
+  extraRoots?: () => readonly string[]
   ctx: HostContext
   settings: Settings
   index: AssetIndex
@@ -36,7 +39,23 @@ export interface GalleryRouteDeps {
 export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Route> {
   const { ctx, settings, index, uploadsDir, defaultOutputDir } = deps
   // 产物目录已经由 index 解析好（默认在工作区下），传进来让授权根也包含它。
-  const roots = (): ReturnType<typeof rootsOf> => rootsOf(ctx, { ...settings, resolvedOutputDir: defaultOutputDir })
+  const roots = (): ReturnType<typeof rootsOf> => {
+    const base = rootsOf(ctx, { ...settings, resolvedOutputDir: defaultOutputDir })
+    // 会话级产物目录：产物落在 <会话>/comfyui-output，而 rootsOf 只认 registry 与默认目录。
+    // 不追加的话，出图成功了相册却列不出来、/file 还 403 —— 比落错地方更难查。
+    const extras = deps.extraRoots?.() ?? []
+    // 折叠大小写再判重：Windows 下 D:\ws 与 d:\ws 是同一处，原文比较会出两条同样的根。
+    const seen = new Set(base.map(root => foldPathCase(root.path)))
+    const merged = [...base]
+    for (const dir of extras) {
+      if (dir === '') continue
+      const key = foldPathCase(dir)
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push({ path: dir, label: 'session-output', kind: 'workspace' })
+    }
+    return merged
+  }
 
   const handleRoots = (_url: URL, res: ServerResponse): void => {
     const list = roots()

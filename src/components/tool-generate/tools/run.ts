@@ -147,7 +147,10 @@ export function runTool(deps: ToolDeps): ToolSpec {
       const resumeId = asString(args.promptId).trim()
       if (resumeId !== '') {
         try {
-          const outcome = await resumeRun(deps.client, resumeId, { outputDir: deps.outputDir })
+          // 续查也要用会话级目录，否则用户手动带 promptId 回来问结果时，产物会落到
+          // 启动期那个（多工作区下不相关的）目录里。
+          const resumeOutputDir = deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir
+          const outcome = await resumeRun(deps.client, resumeId, { outputDir: resumeOutputDir })
           return formatOutcome(outcome, deps)
         } catch (error) {
           return failureOf(error)
@@ -156,7 +159,9 @@ export function runTool(deps: ToolDeps): ToolSpec {
 
       const loaded = loadWorkflow(deps, args)
 
-      const outputDir = asString(args.outputPath).trim() !== '' ? asString(args.outputPath).trim() : deps.outputDir
+      const outputDir = asString(args.outputPath).trim() !== ''
+        ? asString(args.outputPath).trim()
+        : (deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir)
       const timeoutMs = asInt(args.timeoutMs, deps.timeoutMs, 1_000, 3_600_000)
 
       // 一次性覆盖：来自 comfyui_workflow_edit（persist=false）。用完即清。
@@ -172,7 +177,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
       }
 
       try {
-        deps.assertWritable(outputDir)
+        deps.assertWritable(outputDir, exec?.agent)
       } catch (error) {
         return { ok: false, code: 'forbidden_output', message: error instanceof Error ? error.message : String(error) }
       }

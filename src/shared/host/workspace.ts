@@ -11,7 +11,7 @@ interface ServiceBag {
 /** 产物目录候选：目录 + 它是怎么来的。 */
 export interface WorkspaceGuess {
   dir: string
-  source: 'env' | 'service' | 'cwd'
+  source: 'env' | 'workingDirectory' | 'service' | 'cwd'
 }
 
 /** 一次探测的取证记录：只用于诊断，不参与决策。 */
@@ -22,6 +22,8 @@ export interface WorkspaceProbe {
   cwd: string
   /** cwd 是否被判为宿主内部目录。 */
   cwdInternal: boolean
+  /** workingDirectory 服务给出的当前目录（没有则为 null）。 */
+  workingDirectory: string | null
   /** workspaceRegistry 服务取到几个路径。 */
   serviceCount: number
   /** 服务对外暴露的可疑名字（只记录存在的）。 */
@@ -50,7 +52,15 @@ function cwdCandidate(): string | undefined {
 /**
  * 猜当前工作区目录。
  *
- * 顺序：环境变量 → workspaceRegistry 服务（优先与 cwd 同前缀的）→ 进程 cwd。
+ * 顺序：环境变量 → workingDirectory 的部署级 fallback → workspaceRegistry（与 cwd
+ * 同前缀中最深的）→ 进程 cwd。
+ *
+ * 注意这里**不含会话级**：这个函数拿不到 agent。会话级由 `sessionWorkspaceDir` 单独解析，
+ * 在 runtime 的 `resolveOutputDirFor` 里优先使用（但配置项 `outputDir` 仍然最优先）。多工作区下 probeWorkspace 的结果只是
+ * 「没有会话信息时」的兜底。
+ *
+ * 注意 registry 的返回顺序不可靠：cwd 匹配不上时取首项，那个顺序与用户当前在哪个
+ * 工作区无关 —— 多工作区场景下产物会落到不相关的工作区。所以能用会话级就别用 registry。
  * 都没有就返回 undefined，由调用方决定兜底位置。
  *
  * 之前只用一个猜出来的字段名，字段不存在时静默退回插件数据目录，
@@ -71,6 +81,7 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
     env: typeof process.env.DSH_WORKSPACE === 'string' && process.env.DSH_WORKSPACE.trim() !== '' ? process.env.DSH_WORKSPACE : null,
     cwd,
     cwdInternal: looksInternal(cwd),
+    workingDirectory: null,
     serviceCount: 0,
     serviceKeys: [],
   }
@@ -87,7 +98,31 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
 
   const explicit = process.env.DSH_WORKSPACE
   if (typeof explicit === 'string' && explicit.trim() !== '') {
+    // env 优先时也要把服务给出的值记进诊断，否则这个字段在 env 场景下恒为 null，
+    // 读 probe 的人分不清「没挂服务」和「被 env 压过」。
+    try {
+      const wd = ctx.get?.('workingDirectory') as { defaultDirectory?: unknown } | undefined
+      if (typeof wd?.defaultDirectory === 'string') probe.workingDirectory = wd.defaultDirectory
+    } catch {
+      // 取不到就不记
+    }
     return { guess: { dir: path.resolve(explicit.trim()), source: 'env' as const }, probe }
+  }
+
+  // workingDirectory 是"当前工作目录"的正规来源（宿主自己的 cwd 服务）。
+  // 之前只靠 workspaceRegistry.list() 的返回顺序猜，cwd 匹配不上时取第一个 ——
+  // 那个顺序跟用户当前在哪个工作区无关，产物会落到不相关的工作区里。
+  try {
+    const wd = ctx.get?.('workingDirectory') as { defaultDirectory?: unknown } | undefined
+    const dir = wd?.defaultDirectory
+    // 先记原值：被排除时也要能从诊断里看出【它本来是哪个路径】，否则分不清
+    // 「服务没挂载」和「路径被判成内部目录」。
+    if (typeof dir === 'string' && dir !== '') probe.workingDirectory = dir
+    if (typeof dir === 'string' && dir !== '' && !looksInternal(dir)) {
+      return { guess: { dir: path.resolve(dir), source: 'workingDirectory' as const }, probe }
+    }
+  } catch {
+    // 服务未挂载：继续往下探
   }
 
   let paths: string[] = []
@@ -127,6 +162,50 @@ export function probeWorkspace(ctx: ServiceBag): { guess: WorkspaceGuess | undef
 }
 
 /**
+ * 从 Agent 上取会话级的工作区目录。
+ *
+ * 这是唯一能区分"同一个进程里多个工作区"的来源：workspaceRegistry 只知道有哪些，
+ * 不知道当前会话属于哪个。不同 DSH 版本把会话挂在 agent 的不同字段上，所以这里
+ * 防御式地挨个试 —— 拿不到就返回 undefined，由调用方回退。
+ *
+ * @param ctx - 宿主上下文。
+ * @param agent - 发起本次调用的 Agent（ToolExec.agent）。
+ */
+export function sessionWorkspaceDir(ctx: ServiceBag, agent: unknown): string | undefined {
+  if (agent === null || typeof agent !== 'object') return undefined
+  const holder = agent as { session?: unknown; sessionId?: unknown; id?: unknown }
+  const session = holder.session ?? holder.sessionId ?? holder.id
+  if (session === undefined || session === null) return undefined
+
+  let service: unknown
+  try {
+    service = ctx.get?.('workingDirectory')
+  } catch {
+    return undefined
+  }
+  if (service === null || typeof service !== 'object') return undefined
+
+  const getter = (service as { get?: unknown }).get
+  if (typeof getter !== 'function') return undefined
+
+  let result: unknown
+  try {
+    result = (getter as (session: unknown) => unknown).call(service, session)
+  } catch {
+    return undefined
+  }
+  if (typeof result === 'string') {
+    return result !== '' && !looksInternal(result) ? path.resolve(result) : undefined
+  }
+  if (result !== null && typeof result === 'object') {
+    const candidate = (result as { path?: unknown; directory?: unknown }).path
+      ?? (result as { path?: unknown; directory?: unknown }).directory
+    if (typeof candidate === 'string' && candidate !== '' && !looksInternal(candidate)) return path.resolve(candidate)
+  }
+  return undefined
+}
+
+/**
  * 决定产物目录（并建出来）。
  *
  * 宁可在用户的工作区里新建一个 `comfyui-output`，也不要退回插件私有数据目录 ——
@@ -140,7 +219,7 @@ export function resolveOutputDir(
   configured: string | null,
   guess: WorkspaceGuess | undefined,
   dataDir: string,
-): { dir: string; source: 'config' | 'env' | 'service' | 'cwd' | 'data' } {
+): { dir: string; source: 'config' | 'env' | 'workingDirectory' | 'service' | 'cwd' | 'data' } {
   if (configured !== null) return { dir: configured, source: 'config' }
   if (guess !== undefined) {
     return { dir: path.join(guess.dir, 'comfyui-output'), source: guess.source }

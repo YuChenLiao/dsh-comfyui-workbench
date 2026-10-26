@@ -51,6 +51,8 @@ export interface ToolDeps {
   client: ComfyClient
   workflowsDir: string
   outputDir: string
+  /** 按会话解析产物目录：多工作区时用会话自己的工作区，拿不到就回退 outputDir。 */
+  resolveOutputDirFor?: (agent: unknown) => string
   timeoutMs: number
   pollIntervalMs: number
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */
@@ -59,7 +61,7 @@ export interface ToolDeps {
   /** 输出目录校验（注入，避免 tools 直接依赖 assets）。 */
   /** 资产索引：产物落盘后登记，相册面板据此列出。 */
   index: AssetIndex
-  assertWritable: (dir: string) => void
+  assertWritable: (dir: string, agent?: unknown) => void
   logger?: LoggerLike | undefined
 }
 

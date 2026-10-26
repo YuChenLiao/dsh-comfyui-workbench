@@ -55,7 +55,9 @@ export function applyAll(ctx: HostContext, config: unknown): void {
 }
 
 // 测试与诊断用：这些能力要能被单独验证。
-export { probeWorkspace, resolveOutputDir, workspaceDirOf } from './shared/host/workspace.js'
+export { runTool } from './components/tool-generate/tools/run.js'
+export { createGalleryRoutes } from './components/panel-gallery/server/routes.js'
+export { probeWorkspace, resolveOutputDir, sessionWorkspaceDir, workspaceDirOf } from './shared/host/workspace.js'
 export { isAuthorized } from './shared/authz/authorize.js'
 export { foldPathCase } from './shared/host/paths.js'
 export {

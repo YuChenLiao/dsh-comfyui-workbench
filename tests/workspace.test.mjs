@@ -8,9 +8,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
-import { foldPathCase, isAuthorized, resolveOutputDir, workspaceDirOf } from '../lib/index.js'
+import { foldPathCase, isAuthorized, probeWorkspace, resolveOutputDir, runTool, sessionWorkspaceDir, workspaceDirOf } from '../lib/index.js'
 
 const fakeCtx = (paths) => ({ get: (name) => (name === 'workspaceRegistry' ? { list: () => paths.map(item => ({ path: item })) } : undefined) })
 
@@ -191,6 +192,294 @@ test('授权校验：子路径放行、兄弟目录拒绝、大小写按平台�
     } finally {
       Object.defineProperty(process, 'platform', originalPlatform)
     }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test("workingDirectory 优先于注册表顺序（产物要落在用户当前的工作区）", () => {
+  // 曾经只靠 workspaceRegistry.list() 猜：cwd 匹配不上时取 paths[0]，
+  // 而那个顺序跟用户当前在哪个工作区无关 —— 产物会落到不相关的工作区里。
+  const ctx = {
+    get: (name) =>
+      name === "workingDirectory"
+        ? { defaultDirectory: os.tmpdir() }
+        : name === "workspaceRegistry"
+          ? { list: () => [{ path: "D:/dsh" }, { path: "D:/job-query" }] }
+          : undefined,
+  };
+  const { guess } = probeWorkspace(ctx);
+  assert.equal(guess?.source, "workingDirectory");
+  assert.equal(guess.dir, path.resolve(os.tmpdir()));
+  assert.equal(resolveOutputDir(null, guess, os.tmpdir()).dir, path.join(path.resolve(os.tmpdir()), "comfyui-output"));
+})
+
+test("workingDirectory 不可用时回退到注册表", () => {
+  const ctx = { get: (name) => (name === "workspaceRegistry" ? { list: () => [{ path: "D:/dsh" }] } : undefined) };
+  const { guess } = probeWorkspace(ctx);
+  assert.equal(guess?.source, "service");
+})
+
+test("workingDirectory 指向宿主内部目录时忽略", () => {
+  const ctx = {
+    get: (name) =>
+      name === "workingDirectory"
+        ? { defaultDirectory: path.join(os.homedir(), '.dsh', 'profiles', 'desktop') }
+        : name === "workspaceRegistry"
+          ? { list: () => [{ path: "D:/dsh" }] }
+          : undefined,
+  };
+  const { guess } = probeWorkspace(ctx);
+  assert.equal(guess?.source, "service", "内部目录不能当工作区");
+})
+
+test("会话级工作区：同一个进程里能区分不同会话", () => {
+  // 用户报过的真 bug：产物落进了不相关的工作区。registry 只知道有哪些工作区，
+  // 不知道当前会话属于哪个 —— 只能靠 workingDirectory.get(session)。
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "ws-session-"));
+  const wsA = path.join(base, "a");
+  const wsB = path.join(base, "b");
+  fs.mkdirSync(wsA);
+  fs.mkdirSync(wsB);
+  try {
+    const ctx = {
+      get: (name) =>
+        name === "workingDirectory"
+          ? {
+              defaultDirectory: path.join(os.homedir(), ".dsh", "profiles", "desktop"),
+              get: (session) => (session === "sess-a" ? { path: wsA } : session === "sess-b" ? wsB : undefined),
+            }
+          : name === "workspaceRegistry"
+            ? { list: () => [{ path: path.join(base, "unrelated") }] }
+            : undefined,
+    };
+    assert.equal(sessionWorkspaceDir(ctx, { session: "sess-a" }), wsA);
+    assert.equal(sessionWorkspaceDir(ctx, { session: "sess-b" }), wsB, "字符串形式也要认");
+    assert.equal(sessionWorkspaceDir(ctx, { session: "sess-c" }), undefined, "会话没有记录时不能乱猜");
+    assert.equal(sessionWorkspaceDir(ctx, {}), undefined, "没有会话信息时返回 undefined");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+})
+
+test("会话级工作区拒绝宿主内部目录", () => {
+  const ctx = { get: () => ({ get: () => path.join(os.homedir(), ".dsh", "profiles", "desktop") }) };
+  assert.equal(sessionWorkspaceDir(ctx, { session: "s" }), undefined);
+})
+
+test('runTool 把 agent 传下去：续查路径也要用会话级目录', async () => {
+  // 变异测试发现过：把 resolveOutputDirFor 的会话分支整个拔掉，原有用例仍全绿 ——
+  // 说明只测了 sessionWorkspaceDir，没测接线。这里走续查分支（它先定目录、再调 resumeRun），
+  // 用 spy 断言 agent 确实被传到了目录解析。
+  const seen = []
+  const agent = { session: { id: 'sess-x' } }
+  const tool = runTool({
+    client: { baseUrl: 'http://127.0.0.1:1' },
+    workflowsDir: os.tmpdir(),
+    outputDir: path.join(os.tmpdir(), 'fallback-out'),
+    resolveOutputDirFor: (given) => {
+      seen.push(given)
+      return path.join(os.tmpdir(), 'session-out')
+    },
+    timeoutMs: 1000,
+    pollIntervalMs: 100,
+    overrides: new Map(),
+    index: { add: () => {}, list: () => [] },
+    assertWritable: () => {},
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+  })
+  // resumeRun 必然失败（client 是假的）；断言的是「失败之前目录解析已经拿到 agent」
+  await tool.execute({ promptId: "not-a-real-prompt" }, { agent }).catch(() => {})
+  assert.equal(seen.length, 1, "目录解析必须被调用一次")
+  assert.equal(seen[0], agent, "必须把整个 agent 传下去，不是 session id")
+})
+
+
+test("会话级目录并进授权根：否则产物落对了却被拦", () => {
+  // rootsOf 只认 registry + defaultDirectory。新开的工作区还没登记时，
+  // 产物解析到正确的工作区反而会被 forbidden_output 拒掉 —— 同一个 bug 的另一半。
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "roots-session-"))
+  const ws = path.join(base, "ws")
+  fs.mkdirSync(ws, { recursive: true })
+  try {
+    const target = path.join(ws, "comfyui-output")
+    fs.mkdirSync(target, { recursive: true })
+    // 只认 cwd 这一根时应当拒绝
+    const narrow = [{ path: path.join(base, "other"), label: "x", kind: "custom" }]
+    assert.equal(isAuthorized(target, narrow), false)
+    // 把会话级目录并进去后应当放行
+    assert.equal(isAuthorized(target, [...narrow, { path: ws, label: "session", kind: "workspace" }]), true)
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('assertWritable 的会话边界：只放 <会话>/comfyui-output 一棵', async () => {
+  // 这条是上一轮缺的回归基准：把会话根换回整个 sessionDir（整盘放行）、
+  // 或整段禁用会话分支，都必须让它变红。
+  const { acquire } = await import('../lib/index.js')
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "aw-session-"))
+  const ws = path.join(base, "ws")
+  fs.mkdirSync(ws, { recursive: true })
+  try {
+    const ctx = {
+      get: (name) =>
+        name === 'workingDirectory'
+          ? { defaultDirectory: path.join(os.homedir(), ".dsh", "profiles", "desktop"), get: () => ws }
+          : name === 'workspaceRegistry'
+            ? { list: () => [{ path: path.join(base, "unrelated") }] }
+            : undefined,
+      root: {},
+    }
+    const rt = acquire(ctx, {})
+    const agent = { session: { id: "s" } }
+    const out = rt.resolveOutputDirFor(agent)
+    assert.equal(out, path.join(ws, "comfyui-output"), "产物目录应当是 <会话>/comfyui-output")
+
+    // 产物目录本身与其中的文件都放行
+    rt.assertWritable(out, agent)
+    rt.assertWritable(path.join(out, "t2i_00006_.png"), agent)
+
+    // 同一工作区的其它目录、越界、以及别的盘目录都必须拒
+    assert.throws(() => rt.assertWritable(path.join(ws, "elsewhere"), agent), /授权范围/)
+    assert.throws(() => rt.assertWritable(path.join(out, "..", "evil"), agent), /授权范围/)
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('junction 工作区：会话根必须规范化，否则产物目录把自己拒掉', async (t) => {
+  // 这条守的是 assertWritable 里那行 canonical()：isAuthorized 内部会对目标 realpath，
+  // 会话根不规范化的话，工作区走 junction 的用户每次生成都会吃 forbidden_output。
+  // 变异（去掉 canonical）下这条会红，其余用例不会。
+  const { acquire } = await import('../lib/index.js')
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "aw-junction-"))
+  const real = path.join(base, "real-ws")
+  const link = path.join(base, "link-ws")
+  fs.mkdirSync(real, { recursive: true })
+  try {
+    try {
+      fs.symlinkSync(real, link, 'junction')
+    } catch {
+      t.skip('本机建不了 junction')
+      return
+    }
+    const out = path.join(link, "comfyui-output")
+    fs.mkdirSync(out, { recursive: true })
+    fs.writeFileSync(path.join(out, "t2i_00006_.png"), "")
+
+    const ctx = {
+      get: (name) =>
+        name === 'workingDirectory'
+          ? { defaultDirectory: path.join(os.homedir(), ".dsh", "profiles", "desktop"), get: () => link }
+          : name === 'workspaceRegistry'
+            ? { list: () => [{ path: path.join(base, "unrelated") }] }
+            : undefined,
+      root: {},
+    }
+    const rt = acquire(ctx, {})
+    const agent = { session: { id: "s" } }
+    const resolved = rt.resolveOutputDirFor(agent)
+
+    // 目录本身与其中的文件都要放行（不走 canonical 时这两条会挂）
+    rt.assertWritable(resolved, agent)
+    rt.assertWritable(path.join(resolved, "t2i_00006_.png"), agent)
+
+    // 但别处仍然要拒
+    assert.throws(() => rt.assertWritable(path.join(real, "elsewhere"), agent), /授权范围/)
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('相册的授权根要含会话产物目录', async () => {
+  // 只修写入侧会造出更糟的局面：产物落对了，但相册列不出来、/file 还 403。
+  // 这里断言 resolveOutputDirFor 登记过的目录能被相册的 extraRoots 拿到。
+  const { acquire } = await import('../lib/index.js')
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "gal-roots-"))
+  const ws = path.join(base, "ws")
+  fs.mkdirSync(ws, { recursive: true })
+  try {
+    const ctx = {
+      get: (name) =>
+        name === 'workingDirectory'
+          ? { defaultDirectory: path.join(os.homedir(), ".dsh", "profiles", "desktop"), get: () => ws }
+          : name === 'workspaceRegistry'
+            ? { list: () => [{ path: path.join(base, "unrelated") }] }
+            : undefined,
+      root: {},
+    }
+    const rt = acquire(ctx, {})
+    const out = rt.resolveOutputDirFor({ session: { id: "s" } })
+
+    assert.equal(rt.sessionOutputDirs.size, 1, "解析后应当登记会话产物目录")
+    const registered = [...rt.sessionOutputDirs][0]
+    assert.equal(registered, out, "登记的应当是规范化后的产物目录本身")
+    assert.ok(path.isAbsolute(registered), '登记的是绝对路径')
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('相册 roots 真的收到会话产物目录（接线不能断）', async () => {
+  // 复审删掉 entries/gallery.ts 的 extraRoots 整行接线后，109 条测试仍全绿 ——
+  // 说明上一轮修的「相册读不到」没有任何测试守着。这条走 createGalleryRoutes，
+  // 直接调它产出的 /roots handler。
+  const { acquire, createGalleryRoutes } = await import('../lib/index.js')
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "gal-wire-"))
+  const ws = path.join(base, "ws")
+  fs.mkdirSync(ws, { recursive: true })
+  try {
+    const ctx = {
+      get: (name) =>
+        name === 'workingDirectory'
+          ? { defaultDirectory: path.join(os.homedir(), ".dsh", "profiles", "desktop"), get: () => ws }
+          : name === 'workspaceRegistry'
+            ? { list: () => [{ path: path.join(base, "unrelated") }] }
+            : undefined,
+      root: {},
+    }
+    const rt = acquire(ctx, {})
+    const out = rt.resolveOutputDirFor({ session: { id: "s" } })
+
+    const routes = createGalleryRoutes({
+      ctx,
+      settings: { roots: [], assetRoots: [], uploadsDir: rt.uploadsDir },
+      index: rt.index,
+      uploadsDir: rt.uploadsDir,
+      defaultOutputDir: rt.outputDir,
+      extraRoots: () => [...rt.sessionOutputDirs],
+    })
+    const handler = routes['/roots']
+    assert.equal(typeof handler, "function", "/roots 应当是个路由函数")
+
+    let payload
+    const res = {
+      setHeader: () => {},
+      writeHead: () => {},
+      end: (body) => { payload = JSON.parse(body) },
+    }
+    handler(new URL("http://x/comfyui-workbench/api/gallery/roots"), res)
+    const paths = (payload?.roots ?? []).map(r => r.path.toLowerCase())
+    // 上面证明的是 createGalleryRoutes 支持 extraRoots；还要证明 entries/gallery.ts 真的接上了。
+    // 只测前者的话，把接线删掉测试依然全绿（复审实测过）。
+    // 盯的是产物而不是源码：tests 与运行时走的都是 lib/，只查 src 的话
+    // "改了 src 但忘了 build" 仍会全绿。正则也放宽到跨行，免得折行就误红。
+    const entrySource = fs.readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'entries', 'gallery.js'),
+      'utf8',
+    )
+    // 用 assert.ok + test()：assert.match 失败时会把整份 80KB 产物塞进 actual，
+    // 日志直接瘫痪。窗口放宽到 600，注释写长也不会误红。
+    assert.ok(
+      /extraRoots:\s*\(\)\s*=>[\s\S]{0,600}?sessionOutputDirs/.test(entrySource),
+      'lib/entries/gallery.js 必须把 extraRoots 接到 sessionOutputDirs 上（是不是忘了 build？）',
+    )
+
+    assert.ok(
+      paths.includes(out.toLowerCase()),
+      `相册的授权根必须含会话产物目录，实际：${JSON.stringify(payload?.roots?.map(r => r.path))}`,
+    )
   } finally {
     fs.rmSync(base, { recursive: true, force: true })
   }
