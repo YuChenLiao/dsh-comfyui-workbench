@@ -90,4 +90,15 @@ export const CSS: string = [
       '.cfa-prompt-box{margin:0;padding:9px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;user-select:text}',
       '@media (hover:none){.cfa-actions{opacity:1;transform:none}}',
       '@media (max-width:820px){.cfa-lb{flex-direction:column;padding:12px}.cfa-lb-side{width:auto;max-height:44vh}.cfa-lb-img{max-height:62vh}.cfa-lb-nav{width:34px;height:34px}}',
+      '.cfa-extra{position:relative;display:inline-flex}',
+      '.cfa-extra-trigger{letter-spacing:1px;line-height:1;padding:0 8px}',
+      // top:100% + 自身 padding 撑出间距：不能用 top:calc(100% + 6px)，那中间的 6px 是真空，
+      // 鼠标斜着移过去时 :hover 会断，面板在指针到达之前就没了。
+      '.cfa-extra-panel{display:none;position:absolute;top:100%;margin-top:0;right:0;z-index:20;min-width:150px;padding:12px 6px 6px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.35)}',
+      // 悬浮才展开：常驻会一直挤占工具条，这个开关不是每次都要点
+      '.cfa-extra:hover .cfa-extra-panel,.cfa-extra:focus-within .cfa-extra-panel{display:block}',
+      '.cfa-extra-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 9px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;text-align:left;cursor:pointer}',
+      '.cfa-extra-item:hover{background:var(--dsw-alias-bg-layer-2)}',
+      '.cfa-extra-item.on{color:var(--dsw-alias-brand-primary)}',
+      '.cfa-extra-count{margin-left:auto;font-size:11px;opacity:.65}',
     ].join('\n')

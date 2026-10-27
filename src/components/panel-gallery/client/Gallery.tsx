@@ -5,6 +5,7 @@ import { runAction } from '../../../client/actions.js'
 import { download } from '../../../client/api.js'
 import { useGalleryData } from './hooks/useGalleryData.js'
 import type { Translate } from '../../../client/i18n.js'
+import { isNsfw } from '../../../shared/gallery/nsfw.js'
 import { CSS } from './styles.js'
 import type { ActionKind, GalleryItem } from '../../../client/types.js'
 import { BulkBar } from './BulkBar.js'
@@ -33,6 +34,8 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [query, setQuery] = useState('')
   const [includeBare, setIncludeBare] = useState(false)
   const [mergeDuplicates, setMergeDuplicates] = useState(true)
+  /** 隐藏 NSFW 内容。默认关：藏不藏是用户的选择，不该替人决定。 */
+  const [hideNsfw, setHideNsfw] = useState(false)
   const [activePath, setActivePath] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
   const [pendingDelete, setPendingDelete] = useState<GalleryItem | null>(null)
@@ -43,17 +46,34 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const gallery = useGalleryData({ visible, root, query, includeBare, mergeDuplicates })
   const { items, itemsRef, total, truncated, loading, loadingMore, hasMore, notice, setNotice } = gallery
 
+  // NSFW 过滤只作用在渲染层：数据仍全量在内存里，切回去立刻可见，不用重新拉。
+  const nsfwFlags = items.map(item => isNsfw({
+    name: item.name,
+    prompt: item.prompt,
+    negativePrompt: item.negativePrompt,
+    checkpoint: item.checkpoint,
+  }))
+  const hiddenNsfwCount = nsfwFlags.filter(Boolean).length
+  const visibleItems = hideNsfw ? items.filter((_, i) => nsfwFlags[i] !== true) : items
+
   // 灯箱按路径寻址：删除或刷新后列表变了，也能重新定位到正确的那张。
-  const activeIndex = activePath === null ? -1 : items.findIndex(entry => entry.path === activePath)
-  const activeItem = activeIndex >= 0 ? (items[activeIndex] ?? null) : null
+  // **寻址与翻页都用 visibleItems**：用全量列表的话，隐藏 NSFW 之后按 → 会翻到看不见的图，
+  // 计数也会显示成「第 30 张 / 共 9 张」。
+  const activeIndex = activePath === null ? -1 : visibleItems.findIndex(entry => entry.path === activePath)
+  const activeItem = activeIndex >= 0 ? (visibleItems[activeIndex] ?? null) : null
 
   const stepActive = (delta: number): void => {
-    if (activeIndex < 0 || items.length === 0) return
+    if (activeIndex < 0 || visibleItems.length === 0) return
     // 首尾相接：最后一张按 → 回到第一张。
-    const next = (activeIndex + delta + items.length) % items.length
-    const target = items[next]
+    const next = (activeIndex + delta + visibleItems.length) % visibleItems.length
+    const target = visibleItems[next]
     if (target !== undefined) setActivePath(target.path)
   }
+
+  // 打开隐藏开关时，正在看的那张可能被判成 NSFW —— 别停在一个已经不可见的项上。
+  useEffect(() => {
+    if (hideNsfw && activePath !== null && activeItem === null) setActivePath(null)
+  }, [hideNsfw, activePath, activeItem])
 
   useEffect(() => {
     if (activePath === null) return undefined
@@ -152,7 +172,8 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
     setBulkConfirmOpen(false)
   }
 
-  const selectAllShown = (): void => setSelected(new Set(itemsRef.current.map(entry => entry.path)))
+  // 只选看得见的那些：隐藏状态下全选若带上不可见项，一次删除会把它们一并删掉。
+  const selectAllShown = (): void => setSelected(new Set(visibleItems.map(entry => entry.path)))
   const selectNone = (): void => setSelected(new Set())
 
   const bulkExport = async (): Promise<void> => {
@@ -250,7 +271,9 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
     if (openSidebar() === false) setNotice({ kind: 'err', text: t('noSidebar') })
   }
 
-  const emptyText = query.trim() !== '' ? t('emptyFiltered') : t('empty')
+  const emptyText = query.trim() !== ''
+    ? t('emptyFiltered')
+    : (hideNsfw && items.length > 0 ? t('emptyAllHidden') : t('empty'))
 
   return (
     <div className="cfa-root">
@@ -258,11 +281,16 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       <Toolbar
         t={t}
         total={total}
+        visibleCount={visibleItems.length}
+        loadedCount={items.length}
         roots={gallery.roots}
         root={root}
         query={query}
         includeBare={includeBare}
         mergeDuplicates={mergeDuplicates}
+        hideNsfw={hideNsfw}
+        hiddenNsfwCount={hiddenNsfwCount}
+        onToggleNsfw={() => setHideNsfw(value => !value)}
         selecting={selecting}
         embedded={embedded === true}
         onQuery={setQuery}
@@ -274,11 +302,11 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         onOpenSidebar={openInSidebar}
       />
       <div className="cfa-body" ref={gallery.scrollRef}>
-        {loading && items.length === 0 ? <div className="cfa-hint">{t('loading')}</div> : null}
-        {!loading && items.length === 0 ? <div className="cfa-empty">{emptyText}</div> : null}
-        {items.length > 0 ? (
+        {loading && visibleItems.length === 0 ? <div className="cfa-hint">{t('loading')}</div> : null}
+        {!loading && visibleItems.length === 0 ? <div className="cfa-empty">{emptyText}</div> : null}
+        {visibleItems.length > 0 ? (
           <div className="cfa-grid">
-            {items.map(item => (
+            {visibleItems.map(item => (
               <Card
                 key={item.path}
                 item={item}
@@ -319,7 +347,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         <Lightbox
           item={activeItem}
           index={activeIndex}
-          count={items.length}
+          count={visibleItems.length}
           t={t}
           onClose={() => setActivePath(null)}
           onAction={onAction}

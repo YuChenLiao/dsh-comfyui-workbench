@@ -99,6 +99,7 @@ export function applyAll(ctx: HostContext, config: unknown): void {
 
 // 测试与诊断用：这些能力要能被单独验证。
 export { stripAnsi, TerminalBuffer } from './shared/comfy/output-buffer.js'
+export { isNsfw, nsfwVerdictOf } from './shared/gallery/nsfw.js'
 export { ComfySupervisor } from './shared/comfy/supervisor.js'
 export { LogTail, readTail } from './shared/comfy/log-tail.js'
 export { createTerminalRoutes } from './components/panel-terminal/server/routes.js'
