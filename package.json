@@ -26,7 +26,8 @@
     "samples",
     "scripts/import-danbooru-zh.mjs",
     "scripts/sync-danbooru.mjs",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "README.en.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
