@@ -70,6 +70,8 @@ export function readTail(file: string, lines: number = TAIL_LINES): string {
 export class LogTail {
   private offset = 0
   private lastSize = -1
+  /** 上次看到的 inode。轮转后文件会被换成新的，只比大小会漏（新文件可能比旧 offset 大）。 */
+  private lastIno = -1
   private started = false
 
   constructor(private readonly file: string) {}
@@ -96,15 +98,25 @@ export class LogTail {
       this.started = false
       this.offset = 0
       this.lastSize = -1
+      this.lastIno = -1
       return ''
     }
 
-    // 变小 = 被轮转/截断，当作新文件
-    if (this.started && stat.size < this.lastSize) {
+    // 被轮转或截断时当作新文件。两个判据都要：
+    // ① 变小 —— 截断或写到了更小的新文件；
+    // ② inode 变了 —— 轮转后新文件可能比旧 offset 还大，只比大小会漏掉，
+    //    之后 `size <= offset` 一直成立，日志从此静默卡住。
+    //    （Windows 上某些文件系统 ino 恒为 0，那种情况退回只比大小。）
+    const rotated = this.started && (
+      stat.size < this.lastSize
+      || (this.lastIno > 0 && stat.ino > 0 && stat.ino !== this.lastIno)
+    )
+    if (rotated) {
       this.started = false
       this.offset = 0
     }
     this.lastSize = stat.size
+    if (stat.ino > 0) this.lastIno = stat.ino
 
     if (!this.started) {
       this.started = true

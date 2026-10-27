@@ -26,8 +26,9 @@ export interface SupervisorOptions {
   /**
    * 子进程的输出回调（终端面板用）。
    *
-   * 只有"插件自己拉起的"进程才有输出 —— 外部实例的 stdout 在别的终端里，
-   * 我们看不到。面板对这种情况会明说，而不是假装空白就是一切正常。
+   * 这里只接**插件自己拉起的**进程。外部实例的 stdout 在别的终端里，接不到 ——
+   * 那种情况由终端面板改读 ComfyUI 写的 `user/comfyui.log`（见 shared/gallery 同级的
+   * log-tail.ts）。两条路只走一条，因为这个回调一旦有数据就说明进程是我们起的。
    */
   onOutput?: ((stream: 'out' | 'err', text: string) => void) | undefined
   /** 安装探测器（测试可替换，默认走 detectInstallation）。 */

@@ -328,7 +328,7 @@ interface OutputSlot {
 
 导入命令 `dsh workbench import <path/to/workflow.json>`：解析 → 推断 → 生成 `workflows/<id>.json` + `<id>.schema.json`（带全部推断结果，人可直接改）→ 打印推断出的 IO 面供确认。**这就是"读取详细配置、产出简略版"的那一步**。
 
-### 3.9 工具面（4 个，刻意压到 4 个）
+### 3.9 工具面（截至 0.2.0 的 4 个；0.3.0 起共 6 个，见 §12）
 
 每个工具都带固定 schema 与指引成本，进每次请求。`dsh-tool-session-query` 的教训在这里适用（memory-ledger ADR-0004）：5 个工具的固定开销值得为此设计合并。
 
@@ -821,7 +821,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 
 ### 阶段 2：runner 与工具
 
-`lib/host/runner.js`（提交、轮询、`/interrupt` 收尾、产物发现）+ `lib/host/tools.js`（4 个工具）。
+`lib/host/runner.js`（提交、轮询、`/interrupt` 收尾、产物发现）+ 工具注册（0.3.0 起共 6 个：4 个 `comfyui_*` + 2 个 `danbooru_*`）。
 
 - 过关：B11（类型保真）、B12（缺变量与缺节点都在 `POST /prompt` 之前失败）、B13（超时后队列已清）、B14、B27（列表体积）
 
@@ -859,7 +859,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 
 ---
 
-## 12. 实现状态对照（0.1–0.2 交付；0.3.0 增量见 CHANGELOG）
+## 12. 实现状态对照（0.1–0.2 交付；0.3.0 与 0.4.0 的增量见 CHANGELOG）
 
 设计是靶子，不是承诺。下面逐项对照，未实现的直说，不粉饰。
 

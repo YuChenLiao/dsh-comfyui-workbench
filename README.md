@@ -2,11 +2,11 @@
 
 给 [DSH](https://github.com/deepseek-ai) 的 ComfyUI 工作台：**把本机的 ComfyUI 工作流交给模型调用**，并管理"哪些工作流对模型可用"。
 
-面向用户的界面只有两块：浏览产物（资产库）、管理提供给模型的工作流（工作流管理）。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
+面向用户的界面只有三块：资产库、工作流管理、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
-## 五个组件
+## 六个组件
 
 装载在 profile 的 `cordis.patch.yml` 里，每一条都是独立的 loader entry —— 在宿主「设置 → 插件」里能看到、能单独开关。
 
@@ -18,6 +18,7 @@
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_sync`：角色 / 画师标签库（含中文名）。不碰 ComfyUI 运行时，可单独关 |
+| `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务 |
 
 关掉某一条只影响它自己：例如关掉 `gallery`，资产库路由随之 404，工作流管理与工具照常（两个例外：批量导出工作流 ZIP 要读图与 sidecar，依赖相册；关掉 `core` 等于关掉整个插件——HTTP API 与浏览器端都会消失）。
 
@@ -31,7 +32,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-装完重启 DSH。`cordis.patch.yml` 里会插入六条 entry（包根 core + 五个组件），配置用 YAML 锚点共享，只写一次：
+装完重启 DSH。`cordis.patch.yml` 里会插入七条 entry（包根 core + 六个组件），配置用 YAML 锚点共享，只写一次：
 
 ```yaml
 - insert:
@@ -44,7 +45,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf
-    # :workflow / :generate / :edit 同理
+    # :workflow / :generate / :edit / :danbooru / :terminal 同理
 ```
 
 ## 配置
@@ -151,11 +152,24 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 本组件可以单独关掉（宿主插件页，或配置 `disabledComponents: ['tool.danbooru']`），不影响生图链路。
 
+## 隐藏 NSFW
+
+资产库工具条上，刷新按钮右侧有个省略号 —— 悬浮展开「隐藏 NSFW」。点了之后列表里判定为 NSFW 的资产会被藏起来，按钮旁显示藏了多少张。
+
+判定是**启发式词表**，不是分类器。扫的是文件名、正向提示词、底模名与工作流 id：
+
+- 强信号（`nsfw` / `explicit` / `hentai` / 性器官 / 中文「完全裸露」「完整裸露」「赤裸」「全裸」等）单命中即判
+- 中信号（`nude` / `breast` / `lingerie` / 「裸露」「乳房」等）要凑够**两个**才算 —— 动漫 tag 里 `breasts`+`nipples` 是泳装与解剖图的标配，单命中必然误伤
+
+**负向提示词不参与判定**。Danbooru 系底模（AnimagineXL / Pony）的官方推荐负向模板里就写着 `nsfw`，拿它判定会让一整套工作流的图全被藏起来，而那恰恰是在排除成人内容。
+
+过滤只在渲染层：数据仍在内存里，切回「显示」立刻可见，不用重新拉。隐藏状态下的「全选」只会选看得见的那些 —— 否则一次删除会把看不见的一起删掉。
+
 ## 终端面板
 
 第三个面板（继资产库、工作流管理之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
 
-- **只有插件自己拉起的进程才有输出**：外部启动的实例，stdout 在启动它的那个终端里，插件看不见。面板会明说，而不是留一片空白。
+- **外部启动的实例也能看**：插件拉起的进程直接接 stdout / stderr；外部实例（Desktop 自己起的那些）拿不到 stdout，改读它写的 `user/comfyui.log`。两条路只走一条 —— ComfyUI 的 logger 同时挂 Stream 与 File 两个 handler，两边都读是每行两份。
 - 服务没在跑时，面板上有「启动」按钮，直接拉起，不用先回对话生成一张图。
 - 1 秒轮询拉增量（带 cursor，不重复下载整屏）；自动跟随底部，但你往上翻时不会被拽回来。
 - 支持暂停、按关键字过滤、清屏。缓冲保留最近 2000 行，更早的会滚出并提示。
@@ -181,7 +195,7 @@ src/shared/                       公用逻辑：host / comfy / workflow / run /
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
-src/entries/                      五个组件 entry 的入口（core 即 src/index.ts）
+src/entries/                      六个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 

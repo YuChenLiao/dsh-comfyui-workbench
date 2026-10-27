@@ -1,6 +1,6 @@
 {
   "name": "dsh-comfyui-workbench",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "DSH 的 ComfyUI 工作台：把 ComfyUI 生成的图片与其它产物收进资产库（浏览、检索、删除、批量导出），并支持执行任意 API 格式工作流；工作流对用户只暴露输入与输出，详细节点配置留给模型按需查看与调参。",
   "type": "module",
   "main": "lib/index.js",
@@ -25,7 +25,8 @@
     "docs",
     "samples",
     "scripts/import-danbooru-zh.mjs",
-    "scripts/sync-danbooru.mjs"
+    "scripts/sync-danbooru.mjs",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

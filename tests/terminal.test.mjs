@@ -294,3 +294,33 @@ test('installDirOf 惰性探测且只探一次（外部实例从不进 start()�
   assert.equal(sup3.installDirOf(), undefined)
   assert.equal(miss, 1, '探测失败也只该试一次（否则每 2 秒扫一次盘）')
 })
+
+test('日志轮转：新文件比旧 offset 更大时也要能读到（inode 判据）', async () => {
+  // 只比大小时这里会静默卡住：轮转后新文件更长，`size <= offset` 一直成立，
+  // 之后每隔 2 秒 poll 都返回空，面板再也不更新且不报错。
+  const fs2 = await import("node:fs")
+  const os2 = await import("node:os")
+  const path2 = await import("node:path")
+  const { LogTail } = await import("../lib/index.js")
+
+  const dir = fs2.mkdtempSync(path2.join(os2.tmpdir(), "rot-"))
+  const file = path2.join(dir, "comfyui.log")
+  try {
+    fs2.writeFileSync(file, "old-1\nold-2\n")
+    const tail = new LogTail(file)
+    assert.ok(tail.poll().includes("old-1"))
+
+    // 轮转：删掉重建，内容比旧 offset 长
+    fs2.rmSync(file)
+    fs2.writeFileSync(file, "new-1\nnew-2\nnew-3\nnew-4\n")
+    const after = tail.poll()
+    assert.ok(after.includes("new-"), `轮转后要能读到新内容，实际：${JSON.stringify(after)}`)
+
+    // 纯 append 不能重复给
+    fs2.appendFileSync(file, "new-5\n")
+    const inc = tail.poll()
+    assert.equal(inc.trim(), "new-5")
+  } finally {
+    fs2.rmSync(dir, { recursive: true, force: true })
+  }
+})

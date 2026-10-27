@@ -162,7 +162,8 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
   const hint = status === undefined
     ? t('termConnecting')
     : state === 'external'
-      ? t('termNotManaged')
+      // 有内容才说"这里显示的是日志文件"；空面板还这么说就是在空口承诺。
+      ? (lines.length > 0 ? t('termNotManaged') : t('termNoLog'))
       : state === 'failed'
         ? (status.detail ?? t('termFailed'))
         : state === 'starting'
