@@ -99,6 +99,9 @@ export function applyAll(ctx: HostContext, config: unknown): void {
 
 // 测试与诊断用：这些能力要能被单独验证。
 export { stripAnsi, TerminalBuffer } from './shared/comfy/output-buffer.js'
+export { TagIndex, searchTagsLinear } from './components/tool-danbooru/server/tag-index.js'
+export { NodeIndex } from './shared/comfy/node-index.js'
+export { nodeSearchTool, resetNodeIndexCache } from './components/tool-generate/tools/node-search.js'
 export { isNsfw, nsfwVerdictOf } from './shared/gallery/nsfw.js'
 export { ComfySupervisor } from './shared/comfy/supervisor.js'
 export { LogTail, readTail } from './shared/comfy/log-tail.js'

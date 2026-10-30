@@ -301,12 +301,13 @@ test('终端面板：GET /terminal 不能被方法校验拦成 405', async () =>
   }
 })
 
-test('工具注册：6 个工具都带必要字段', async () => {
+test('工具注册：7 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
     assert.deepEqual(names, [
+      'comfyui_node_search',
       'comfyui_run',
       'comfyui_workflow_edit',
       'comfyui_workflow_inspect',

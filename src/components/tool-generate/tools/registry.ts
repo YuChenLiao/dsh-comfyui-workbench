@@ -1,3 +1,4 @@
+import { nodeSearchTool } from './node-search.js'
 import { runTool } from './run.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 import { workflowEditTool } from '../../tool-workflow-edit/tools/workflow-edit.js'
@@ -37,6 +38,12 @@ export const TOOL_GROUPS: readonly ToolGroupDef[] = [
     component: 'tool.generate',
     title: '查看工作流的输入输出面',
     build: deps => workflowInspectTool(deps),
+  },
+  {
+    name: 'node-search',
+    component: 'tool.generate',
+    title: '按各项信息搜索本机节点',
+    build: deps => nodeSearchTool(deps),
   },
   {
     name: 'workflow-run',
