@@ -20,8 +20,13 @@ export interface NodeSearchDeps {
   logger?: LoggerLike | undefined
 }
 
-/** 建索引是几 MB 的解析，进程内缓存一份；ComfyUI 重装节点后需要重启才刷新。 */
-let cached: { index: NodeIndex; at: number } | undefined
+/**
+ * 建索引是几 MB 的解析，进程内缓存一份。
+ *
+ * 缓存键带上 baseUrl —— 同一个进程可能连不同的 ComfyUI 实例（换端口、连远程），
+ * 不区分的话切换后最多 60 秒内会命中上一个实例的索引。
+ */
+let cached: { index: NodeIndex; at: number; baseUrl: string } | undefined
 
 /** 缓存多久。装完新节点不重启也能在 1 分钟后看到。 */
 const TTL_MS = 60_000
@@ -29,11 +34,13 @@ const TTL_MS = 60_000
 /** 取（或重建）索引。 */
 async function indexOf(deps: NodeSearchDeps): Promise<NodeIndex> {
   const now = Date.now()
-  if (cached !== undefined && now - cached.at < TTL_MS) return cached.index
+  if (cached !== undefined && cached.baseUrl === deps.client.baseUrl && now - cached.at < TTL_MS) {
+    return cached.index
+  }
   // skipEnsure: 不能因为"搜个节点"就把 ComfyUI 拉起来
   const raw = await deps.client.objectInfo(false, { timeoutMs: 20_000, skipEnsure: true })
   const index = new NodeIndex(raw as Record<string, unknown>)
-  cached = { index, at: now }
+  cached = { index, at: now, baseUrl: deps.client.baseUrl }
   return index
 }
 
@@ -126,6 +133,13 @@ export function nodeSearchTool(deps: NodeSearchDeps): ToolSpec {
         }
       }
 
+      // detail 模式下，被截断的节点要说一句 —— 否则调用方以为那就是全部输入
+      const truncatedNames = result.details === undefined
+        ? []
+        : Object.entries(result.details)
+          .filter(([, detail]) => detail.inputs.truncated === true)
+          .map(([name]) => name)
+
       return {
         ok: true,
         total: index.size,
@@ -133,6 +147,9 @@ export function nodeSearchTool(deps: NodeSearchDeps): ToolSpec {
         shown: result.shown,
         ...(result.details === undefined ? {} : { details: result.details }),
         nodes: result.nodes,
+        ...(truncatedNames.length === 0
+          ? {}
+          : { truncationHint: `这些节点的输入超过 40 个，只列了前 40 个：${truncatedNames.join('、')}` }),
         ...(result.total > result.shown ? { hint: `只显示前 ${result.shown} 条，共 ${result.total} 条匹配。缩小条件或提高 limit。` } : {}),
       }
     },

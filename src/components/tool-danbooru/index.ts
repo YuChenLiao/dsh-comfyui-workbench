@@ -5,6 +5,7 @@
  * 数据来自 Danbooru 的 tags + wiki 两个接口，同步是显式动作（几千次请求，不该被动触发）。
  */
 export { createTagCache, danbooruLookupTool, searchOnline, searchOnlineDetailed } from './tools/lookup.js'
+export { danbooruLookupBatchTool } from './tools/lookup-batch.js'
 export type { DanbooruDeps, TagCache } from './tools/lookup.js'
 export { danbooruSyncTool, runSync } from './tools/sync-tool.js'
 export type { SyncDefaults } from './tools/sync-tool.js'

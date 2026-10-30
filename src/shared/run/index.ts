@@ -23,3 +23,5 @@ export type {
   RunOptions,
   RunOutcome,
 } from './runner.js'
+export { applyOverrides, overrideNotes } from './overrides.js'
+export type { OverrideOutcome } from './overrides.js'

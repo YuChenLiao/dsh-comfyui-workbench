@@ -10,7 +10,7 @@
  *
  * 可以在宿主「设置 → 插件」里单独关掉，也能用 `disabledComponents: ['tool.danbooru']`。
  */
-import { DANBOORU_COMPONENT, DEFAULT_SYNC, createTagCache, danbooruLookupTool, danbooruSyncTool } from '../components/tool-danbooru/index.js'
+import { DANBOORU_COMPONENT, DEFAULT_SYNC, createTagCache, danbooruLookupBatchTool, danbooruLookupTool, danbooruSyncTool } from '../components/tool-danbooru/index.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext, LoggerLike } from '../shared/host/types.js'
@@ -41,7 +41,8 @@ export function apply(ctx: HostContext, config: unknown): void {
   const deps = { dataDir, logger, cache }
 
   let registered = 0
-  for (const spec of [danbooruLookupTool(deps), danbooruSyncTool(deps, DEFAULT_SYNC)]) {
+  for (const spec of [danbooruLookupBatchTool({ cache, logger }),
+    danbooruLookupTool(deps), danbooruSyncTool(deps, DEFAULT_SYNC)]) {
     try {
       const dispose = tools.register(spec)
       // 卸载时注销：这是 entry 自己的 effect，不经过共享 runtime。

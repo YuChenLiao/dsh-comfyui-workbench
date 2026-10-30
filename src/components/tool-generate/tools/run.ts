@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { resumeRun, submitWorkflow, waitForRun, watchRun } from '../../../shared/run/index.js'
+import { applyOverrides, overrideNotes, resumeRun, submitWorkflow, waitForRun, watchRun } from '../../../shared/run/index.js'
 import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
 import type { Artifact } from '../../../shared/run/index.js'
@@ -54,6 +54,14 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
   const workflowId = path.basename(filePath, path.extname(filePath))
   // 单文件模式：临时算一份 IO 面，保证变量校验与模板走同一套规则。
   return { workflowId, workflow, surface: buildSurface({ workflowId, workflow }) }
+}
+
+/** 批量提交复用同一套加载与校验规则（导出给 `run-batch` 用）。 */
+export function loadWorkflowForBatch(
+  deps: ToolDeps,
+  args: Record<string, unknown>,
+): LoadedWorkflow {
+  return loadWorkflow(deps, args)
 }
 
 /**
@@ -122,6 +130,8 @@ export function runTool(deps: ToolDeps): ToolSpec {
         if (bag.pending === true) {
           lines.push(String(bag.message ?? '已提交，还在出图。'))
           if (typeof bag.hint === 'string' && bag.hint !== '') lines.push(String(bag.hint))
+          // notes 也要出现在这里：宿主只把 render 文本交给模型，返回对象里的字段它看不到。
+          if (Array.isArray(bag.notes) && bag.notes.length > 0) lines.push(`备注：${bag.notes.join('；')}`)
           lines.push(`promptId：${String(bag.promptId)}`)
           blocks.push({ type: 'text', text: lines.join(String.fromCharCode(10)) })
           return blocks
@@ -165,35 +175,43 @@ export function runTool(deps: ToolDeps): ToolSpec {
       const timeoutMs = asInt(args.timeoutMs, deps.timeoutMs, 1_000, 3_600_000)
 
       // 一次性覆盖：来自 comfyui_workflow_edit（persist=false）。用完即清。
-      const pending = deps.overrides.get(loaded.workflowId)
-      const preNotes: string[] = []
-      if (pending !== undefined && pending.length > 0) {
-        for (const patch of pending) {
-          const node = loaded.workflow[patch.nodeId]
-          if (node !== undefined && node.inputs !== null && typeof node.inputs === 'object') node.inputs[patch.input] = patch.value
-        }
-        deps.overrides.delete(loaded.workflowId)
-        preNotes.push(`已应用 ${pending.length} 处一次性参数覆盖（未写入模板）。`)
-      }
-
+      //
+      // 必须走 applyOverrides 而不是直接改 workflow —— applyVariables 会按 slot.default
+      // 重写每个槽位绑定的路径，直改的值会被冲掉（无 default 的必填槽位更会直接抛
+      // variable_unbound）。详见 shared/run/overrides.ts 的说明。
+      // 先校验目录权限，再应用覆盖。反过来的话，本次被拒时覆盖已经被消耗掉了 ——
+      // 用户改完权限重跑，参数会静默回到模板值，而他以为自己改过。
       try {
         deps.assertWritable(outputDir, exec?.agent)
       } catch (error) {
         return { ok: false, code: 'forbidden_output', message: error instanceof Error ? error.message : String(error) }
       }
 
+      const pending = deps.overrides.get(loaded.workflowId)
+      const applied = applyOverrides(
+        loaded.workflow as Record<string, { class_type?: string; inputs?: Record<string, unknown> }>,
+        loaded.surface,
+        asRecord(args.vars),
+        pending,
+      )
+      const preNotes: string[] = [...overrideNotes(applied)]
+
       try {
         const submitted = await submitWorkflow({
           client: deps.client,
           workflow: loaded.workflow,
           slots: loaded.surface.inputs,
-          vars: asRecord(args.vars),
+          vars: applied.vars,
           outputDir,
           timeoutMs,
           pollIntervalMs: deps.pollIntervalMs,
           workflowId: loaded.workflowId,
           workflowHash: loaded.surface.workflowHash,
         })
+
+        // 提交成功之后才消耗覆盖：参数名写错（variable_unknown）、缺节点、ComfyUI 拒收
+        // 这些都不该让覆盖消失 —— 用户改完重跑，还得用它。
+        if (pending !== undefined && pending.length > 0) deps.overrides.delete(loaded.workflowId)
 
         // 默认异步：提交完就把控制权交回对话。出图要几分钟，
         // 让工具调用一直挂着会让用户以为连接断了。
@@ -220,7 +238,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
             hint: canNotify
               ? '出图完成后我会在这个对话里主动通知你（含产物路径）；也可以随时用 comfyui_run 传 promptId 手动查。'
               : '出图要几分钟。稍后用 comfyui_run 传 promptId 就能取结果；这次调用结束后任务不会中断。',
-            notes: submitted.notes,
+            notes: [...preNotes, ...submitted.notes],
           }
         }
 
@@ -235,7 +253,11 @@ export function runTool(deps: ToolDeps): ToolSpec {
           },
         })
 
-        if ('pending' in outcome) return formatOutcome(outcome, deps)
+        if ('pending' in outcome) {
+          // pending 分支走 formatOutcome，它不认识 preNotes —— 在这里补上，
+          // 否则 wait 超时时"已应用覆盖"这句会消失（异步与完成分支都有）。
+          return { ...formatOutcome(outcome, deps), ...(preNotes.length > 0 ? { notes: preNotes } : {}) }
+        }
 
         // 登记索引：索引是派生（真源是 sidecar），登记失败不该让本次运行算失败。
         const createdAt = new Date().toISOString()
@@ -271,7 +293,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
           durationMs: outcome.durationMs,
           artifacts: outcome.artifacts,
           effectiveVars: outcome.effective,
-          notes: outcome.notes,
+          notes,
         }
       } catch (error) {
         return failureOf(error)

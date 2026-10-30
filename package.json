@@ -33,7 +33,7 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node tests/arch.mjs && node tests/classes.mjs && node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs && node --test tests/gallery-nsfw.test.mjs tests/node-search.test.mjs tests/node-search-tool.test.mjs tests/tag-index.test.mjs tests/workflow.test.mjs tests/store.test.mjs tests/runner.test.mjs tests/workspace.test.mjs tests/components.test.mjs tests/api.test.mjs tests/notify.test.mjs tests/supervisor.test.mjs tests/danbooru.test.mjs tests/terminal.test.mjs",
+    "test": "node tests/arch.mjs && node tests/classes.mjs && node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs && node --test tests/gallery-nsfw.test.mjs tests/node-search.test.mjs tests/node-search-tool.test.mjs tests/tag-index.test.mjs tests/batch-tools.test.mjs tests/run-batch.test.mjs tests/overrides.test.mjs tests/overrides-lifecycle.test.mjs tests/overrides-visible.test.mjs tests/workflow.test.mjs tests/store.test.mjs tests/runner.test.mjs tests/workspace.test.mjs tests/components.test.mjs tests/api.test.mjs tests/notify.test.mjs tests/supervisor.test.mjs tests/danbooru.test.mjs tests/terminal.test.mjs",
     "check": "npm run typecheck && npm test",
     "import": "node scripts/import.mjs",
     "migrate": "node scripts/migrate-album.mjs",

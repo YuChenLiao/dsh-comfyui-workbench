@@ -117,3 +117,29 @@ test('limit 超上限被夹到 30', async () => {
   const result = await tool.execute({ customOnly: true, limit: 500 })
   assert.ok(result.shown <= 30)
 })
+
+test('输入条数超限时截断并给出总数（防 202 输入的节点吐出 22KB）', async () => {
+  // 真实数据里 LoRA Stacker 有 202 个输入，不截断单节点 22 KB；
+  // detail + limit:30 最坏能到 45 KB。枚举截断管不到这种，必须单独截输入条数。
+  const many = {}
+  for (let i = 0; i < 120; i += 1) many[`in_${i}`] = ['INT', { default: 0 }]
+  const info = {
+    HugeNode: {
+      input: { required: many },
+      output: ['IMAGE'],
+      display_name: 'Huge Node',
+      description: 'Node with 120 inputs.',
+      category: 'test',
+      python_module: 'nodes',
+      output_node: false,
+    },
+  }
+  resetNodeIndexCache()
+  const tool = nodeSearchTool({ client: fakeClient(info) })
+  const result = await tool.execute({ query: 'HugeNode', detail: true })
+  const detail = result.details.HugeNode
+  assert.equal(detail.inputs.required.length, 40, '输入最多列 40 个')
+  assert.equal(detail.inputs.truncated, true, '截断时要有标记')
+  assert.equal(detail.inputs.inputCount, 120, '要给出输入总数')
+  assert.ok(JSON.stringify(result).length < 6_000, `输出不该膨胀，实际 ${JSON.stringify(result).length} 字节`)
+})

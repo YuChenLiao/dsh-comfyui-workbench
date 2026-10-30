@@ -1,4 +1,5 @@
 import { nodeSearchTool } from './node-search.js'
+import { runBatchTool } from './run-batch.js'
 import { runTool } from './run.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 import { workflowEditTool } from '../../tool-workflow-edit/tools/workflow-edit.js'
@@ -38,6 +39,12 @@ export const TOOL_GROUPS: readonly ToolGroupDef[] = [
     component: 'tool.generate',
     title: '查看工作流的输入输出面',
     build: deps => workflowInspectTool(deps),
+  },
+  {
+    name: 'run-batch',
+    component: 'tool.generate',
+    title: '批量提交工作流任务',
+    build: deps => runBatchTool(deps),
   },
   {
     name: 'node-search',

@@ -36,6 +36,10 @@ export interface NodeDetail {
   inputs: {
     required: NodeInputDetail[]
     optional: NodeInputDetail[]
+    /** 输入被截断时为 true（超出部分未列出）。 */
+    truncated?: boolean
+    /** 该节点的输入总数（含未列出的）。 */
+    inputCount?: number
   }
   outputs: Array<{ name: string; type: string }>
 }
@@ -113,6 +117,15 @@ function typeOf(spec: unknown): string {
 
 /** 枚举输入里最多列几个候选（其余只报总数）。 */
 const OPTION_PREVIEW = 8
+
+/**
+ * detail 里最多列几个输入。
+ *
+ * 枚举截断解决的是"一个字段六万个候选"，但还有另一种爆炸：**输入条数**。
+ * 实测 `LoRA Stacker` 有 202 个输入，单节点 22 KB；再叠 limit:30 就是 45 KB。
+ * 截断后超出部分只报总数。
+ */
+const INPUT_PREVIEW = 40
 
 /** 取输入的枚举候选，并截断 —— 全量可能上万条。 */
 function optionPreviewOf(spec: unknown): { shown: string[]; total: number } | undefined {
@@ -304,17 +317,33 @@ export class NodeIndex {
 
     const details: Record<string, NodeDetail> = {}
     for (const { entry } of page) {
-      const describe = ([name, spec]: [string, unknown]) => {
+      const describe = ([name, spec]: [string, unknown]): NodeInputDetail => {
         const options = optionPreviewOf(spec)
-        return options === undefined ? { name, type: typeOf(spec) } : { name, type: typeOf(spec), options: options.shown, optionCount: options.total }
+        return options === undefined
+          ? { name, type: typeOf(spec) }
+          : { name, type: typeOf(spec), options: options.shown, optionCount: options.total }
       }
-      const required = Object.entries(entry.raw.input?.required ?? {}).map(describe)
-      const optional = Object.entries(entry.raw.input?.optional ?? {}).map(describe)
+      const allRequired = Object.entries(entry.raw.input?.required ?? {})
+      const allOptional = Object.entries(entry.raw.input?.optional ?? {})
+      const inputCount = allRequired.length + allOptional.length
+      // 先截 required，再截 optional —— required 更该被看到
+      const requiredRaw = allRequired.slice(0, INPUT_PREVIEW)
+      const optionalRaw = allOptional.slice(0, Math.max(0, INPUT_PREVIEW - requiredRaw.length))
+      const required = requiredRaw.map(describe)
+      const optional = optionalRaw.map(describe)
+      const truncated = inputCount > required.length + optional.length
       const outputs = entry.outputs.map((type, index) => {
         const named = Array.isArray(entry.raw.output_name) ? entry.raw.output_name[index] : undefined
         return { name: typeof named === 'string' ? named : type, type }
       })
-      details[entry.classType] = { inputs: { required, optional }, outputs }
+      details[entry.classType] = {
+        inputs: {
+          required,
+          optional,
+          ...(truncated ? { truncated: true, inputCount } : {}),
+        },
+        outputs,
+      }
     }
     return { total: hits.length, shown: nodes.length, nodes, details }
   }
