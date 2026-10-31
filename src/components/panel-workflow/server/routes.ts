@@ -20,6 +20,18 @@ export interface WorkflowRouteDeps {
   settings: Settings
   assertWritable: (dir: string) => void
   defaultOutputDir: string
+  /**
+   * 运行注册表。
+   *
+   * `/run` 是"提交即返回 pending"，必须有人在后台收产物与收敛状态 ——
+   * 这个字段没接线时 `deps.runs` 恒 undefined，`submit()` 不会被调用，
+   * registry 里根本没有这条记录，面板与 `comfyui_runs` 永远看不见。
+   */
+  runs: {
+    submit: (promptId: string, workflowId: string) => void
+    update: (promptId: string, patch: object) => void
+    get: (promptId: string) => { state?: string } | undefined
+  }
   /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
   getExporter: () => Route | undefined
 }
@@ -46,7 +58,7 @@ export interface WorkflowRoutes {
  * 关掉这个组件时，`/run`、`/workflows` 这些路径整体消失，相册不受影响。
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
-  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, getExporter } = deps
+  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, runs, getExporter } = deps
 
 
   return {
@@ -75,7 +87,7 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         }
         sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
       },
-      '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir }),
+      '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir, runs }),
       '/free': async (_url: URL, res: ServerResponse) => {
         try {
           await client.free()

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { ComfyClient } from '../../../shared/comfy/index.js'
 import type { Settings } from '../../../shared/host/config.js'
-import { resumeRun, submitWorkflow } from '../../../shared/run/index.js'
+import { resumeRun, submitWorkflow, sweepRun } from '../../../shared/run/index.js'
 import { readEntry } from '../../../shared/workflow/index.js'
 import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
@@ -32,6 +32,12 @@ export function createRunHandler(deps: {
   assertWritable: (dir: string) => void
   /** 默认产物目录（配置没写 outputDir 时用它）。 */
   defaultOutputDir: string
+  /** 运行注册表；给了就让后台 sweep 把状态写进去。 */
+  runs?: {
+    update: (promptId: string, patch: object) => void
+    get: (promptId: string) => { state?: string } | undefined
+    submit: (promptId: string, workflowId: string) => void
+  }
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: RunBody
@@ -125,6 +131,31 @@ export function createRunHandler(deps: {
         workflowId,
         workflowHash: entry.surface.workflowHash,
       })
+      // 先登记：sweep 要更新这条记录，update 对不存在的 promptId 是 no-op ——
+      // 不 submit 的话后台收了也写不进去。
+      try {
+        deps.runs?.submit(submitted.promptId, workflowId)
+      } catch {
+        // 登记失败不影响任务本身
+      }
+
+      // 提交后必须有人收尾。原来靠"前端按 promptId 轮询"，但前端从不轮
+      // （pollRun 全仓零调用方），服务端也没有 watcher —— 于是 ComfyUI 跑完，
+      // 产物留在它自己的 output 目录，插件不落盘、不写 sidecar、registry 停在
+      // pending。这里挂一个后台 sweep：它只写注册表、不投递消息，产物到手即收。
+      try {
+        sweepRun({
+          client: deps.client,
+          promptId: submitted.promptId,
+          workflowId,
+          outputDir: outputPath,
+          intervalMs: deps.settings.pollIntervalMs,
+          ...(deps.runs === undefined ? {} : { registry: deps.runs }),
+        })
+      } catch {
+        // 收尾失败不该让"已提交"变成失败：任务在 ComfyUI 那边照跑
+      }
+
       sendJson(res, 200, {
         ok: true,
         pending: true,

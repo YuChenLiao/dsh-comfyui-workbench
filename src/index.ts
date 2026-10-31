@@ -18,6 +18,9 @@ import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
 import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from './runtime.js'
 import { createConfigHandler } from './components/panel-workflow/server/config-api.js'
+export { handleWorkflowList } from './components/panel-workflow/server/workflows-api.js'
+export { createRunHandler } from './components/panel-workflow/server/run-api.js'
+export { createWorkflowRoutes } from './components/panel-workflow/server/routes.js'
 
 export const name = 'dsh-comfyui-workbench'
 

@@ -19,6 +19,10 @@ function toListItem(
     otherModels: surface.models.filter(model => model !== primary).map(model => model.name),
     inputKinds: [...new Set(surface.inputs.map(slot => slot.type))],
     inputCount: surface.inputs.length,
+    // 面板的"拿这张图去出图"要靠它知道往哪个键里传图。
+    // 注意：工具侧那份 toListItem **不产出** imageSlots，它只在 `inputs=image`
+    // 的过滤分支里临时挂上去；面板走的是这里，必须自带 —— 漏了就让面板永远列不出候选。
+    imageSlots: surface.inputs.filter(slot => slot.type === 'image').map(slot => slot.name),
     basicCount: surface.inputs.filter(slot => slot.group === 'basic').length,
     outputs: surface.outputs.map(slot => ({ kind: slot.kind, count: slot.count })),
     nodes: surface.meta.nodeCount,
@@ -46,16 +50,24 @@ function toListItem(
  */
 export async function handleWorkflowList(
   dir: string,
-  _url: URL,
+  url: URL,
   res: import('node:http').ServerResponse,
   available: ReadonlySet<string> | null,
 ): Promise<void> {
   const { entries, broken } = listEntries(dir)
+  // `?inputs=image` 只回需要图片输入的工作流 —— 面板用它列"能吃图的工作流"。
+  const wantInput = (url.searchParams.get('inputs') ?? '').trim().toLowerCase()
+  const filtered = wantInput === ''
+    ? entries
+    : entries.filter(entry => entry.surface.inputs.some(slot => slot.type.toLowerCase() === wantInput))
   sendJson(res, 200, {
     ok: true,
-    count: entries.length,
-    workflows: entries.map(entry => toListItem(entry.surface, available)),
+    count: filtered.length,
+    workflows: filtered.map(entry => toListItem(entry.surface, available)),
     ...(broken.length > 0 ? { broken } : {}),
+    ...(wantInput !== '' && filtered.length === 0
+      ? { hint: `本机没有需要 ${wantInput} 输入的工作流。` }
+      : {}),
   })
 }
 

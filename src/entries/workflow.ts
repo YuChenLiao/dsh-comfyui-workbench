@@ -64,6 +64,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
     settings: rt.settings,
     assertWritable: rt.assertWritable,
     defaultOutputDir: rt.outputDir,
+    runs: rt.runs,
     getExporter: () => rt.exportWorkflows,
   })
 
