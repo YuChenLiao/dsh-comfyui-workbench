@@ -14,7 +14,7 @@ export {
   submitWorkflow,
   waitForRun,
 } from './runner.js'
-export { stopAllWatchers, watchRun } from './notify.js'
+export { stopAllWatchers, sweepRun, watchRun } from './notify.js'
 export type { NotifyTarget } from './notify.js'
 export type {
   Artifact,

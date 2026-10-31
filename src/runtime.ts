@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { ComfyClient, ComfySupervisor } from './shared/comfy/index.js'
 import { TerminalBuffer } from './shared/comfy/output-buffer.js'
+import { RunRegistry } from './shared/run/registry.js'
 import { LogTail } from './shared/comfy/log-tail.js'
 import { isAuthorized } from './shared/authz/authorize.js'
 import { rootsOf } from './shared/authz/roots.js'
@@ -46,6 +47,8 @@ export interface Runtime {
   supervisor: ComfySupervisor
   /** ComfyUI 子进程的终端输出（面板读它）。 */
   terminal: TerminalBuffer
+  /** 运行注册表：提交后的状态（面板与 comfyui_runs 读它）。 */
+  runs: RunRegistry
   index: AssetIndex
   flowDir: string
   outputDir: string
@@ -205,6 +208,8 @@ export function acquire(ctx: HostContext, config: unknown): Runtime {
 /** 释放；计数归零才销毁。 */
 export function release(ctx: HostContext): void {
   const shared = sharedOf(ctx)
+  // 退出前把攒着的记录落盘：只有 1 秒防抖 + unref 的话，最后一批必丢
+  shared.current?.runs.flush()
   shared.refs -= 1
   if (shared.refs > 0 || shared.current === undefined) return
   shared.current.supervisor.dispose()
@@ -248,6 +253,8 @@ function create(ctx: HostContext, config: unknown): Runtime {
   // 终端面板的数据源：supervisor 往里写，面板路由从这里读。
   // 放在 runtime 上而不是组件里 —— 进程是 runtime 拉起的，组件可能还没加载。
   const terminal = new TerminalBuffer(2000)
+  // 注册表挂 runtime 上（不是模块级）：多 entry 各一份 bundle，模块级会分裂
+  const runs = new RunRegistry(outputDir)
 
   const supervisor = new ComfySupervisor({
     baseUrl: settings.baseUrl,
@@ -330,6 +337,7 @@ function create(ctx: HostContext, config: unknown): Runtime {
     client,
     supervisor,
     terminal,
+    runs,
     index,
     flowDir,
     outputDir,

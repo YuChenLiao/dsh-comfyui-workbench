@@ -117,6 +117,7 @@ test('端到端：comfyui_run 的覆盖真的到达提交的工作流（单次�
     timeoutMs: 5_000,
     pollIntervalMs: 50,
     overrides: new Map(),
+    runs: { submit(){}, update(){}, get(){}, list(){return []}, activeCount(){return 0}, flush(){} },
     index: { add: () => {}, list: () => [], remove: () => {}, dropItems: () => {} },
     assertWritable: () => {},
   }

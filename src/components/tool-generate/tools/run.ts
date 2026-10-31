@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { applyOverrides, overrideNotes, resumeRun, submitWorkflow, waitForRun, watchRun } from '../../../shared/run/index.js'
+import { applyOverrides, overrideNotes, resumeRun, submitWorkflow, sweepRun, waitForRun, watchRun } from '../../../shared/run/index.js'
 import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
 import type { Artifact } from '../../../shared/run/index.js'
@@ -54,6 +54,24 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
   const workflowId = path.basename(filePath, path.extname(filePath))
   // 单文件模式：临时算一份 IO 面，保证变量校验与模板走同一套规则。
   return { workflowId, workflow, surface: buildSurface({ workflowId, workflow }) }
+}
+
+/** 没有会话通道时用的收尾：只更新注册表，不投递消息。 */
+function sweepFallback(
+  deps: ToolDeps,
+  promptId: string,
+  workflowId: string,
+  outputDir: string,
+): void {
+  sweepRun({
+    client: deps.client,
+    promptId,
+    workflowId,
+    outputDir,
+    intervalMs: deps.pollIntervalMs,
+    registry: deps.runs,
+    ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+  })
 }
 
 /** 批量提交复用同一套加载与校验规则（导出给 `run-batch` 用）。 */
@@ -209,6 +227,9 @@ export function runTool(deps: ToolDeps): ToolSpec {
           workflowHash: loaded.surface.workflowHash,
         })
 
+        // 登记到运行表：提交之后那几分钟用户看不到任何东西，靠这张表补。
+        deps.runs.submit(submitted.promptId, loaded.workflowId)
+
         // 提交成功之后才消耗覆盖：参数名写错（variable_unknown）、缺节点、ComfyUI 拒收
         // 这些都不该让覆盖消失 —— 用户改完重跑，还得用它。
         if (pending !== undefined && pending.length > 0) deps.overrides.delete(loaded.workflowId)
@@ -220,12 +241,17 @@ export function runTool(deps: ToolDeps): ToolSpec {
           // 这个会话（与子代理回传同一条通道），用户不用再问一次。
           const agent = exec?.agent as NotifyTarget | undefined
           const canNotify = agent !== undefined && typeof agent.followup === 'function'
+          // 没有 agent 就没有 watcher —— 那样记录会永远停在 queued。
+          // 这种情况不挂等待者，但要在短延迟后自查一次，把终态收敛掉。
+          if (!canNotify) sweepFallback(deps, submitted.promptId, loaded.workflowId, outputDir)
           if (canNotify) {
             watchRun({
               client: deps.client,
               target: agent,
               promptId: submitted.promptId,
               outputDir,
+              intervalMs: deps.pollIntervalMs,
+              registry: deps.runs,
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })
           }
@@ -254,6 +280,10 @@ export function runTool(deps: ToolDeps): ToolSpec {
         })
 
         if ('pending' in outcome) {
+          // wait 超时：不标 failed（任务可能还在 ComfyUI 那边跑），标 unknown。
+          // 不收敛终态的话，这条记录会永远停在 running/queued，comfyui_runs
+          // 会一直答"还在跑"。
+          deps.runs.update(submitted.promptId, { state: 'unknown', queuePosition: undefined })
           // pending 分支走 formatOutcome，它不认识 preNotes —— 在这里补上，
           // 否则 wait 超时时"已应用覆盖"这句会消失（异步与完成分支都有）。
           return { ...formatOutcome(outcome, deps), ...(preNotes.length > 0 ? { notes: preNotes } : {}) }
@@ -282,6 +312,20 @@ export function runTool(deps: ToolDeps): ToolSpec {
             deps.logger?.warn?.('资产索引登记失败（产物已落盘）')
           }
         }
+
+        // wait 成功：这条必须收敛成终态，否则记录永远停在 queued。
+        // watcher 只在"异步 + 有 agent"时才挂，wait 路径完全绕过它。
+        deps.runs.update(submitted.promptId, {
+          state: 'done',
+          finishedAt: Date.now(),
+          queuePosition: undefined,
+          artifacts: outcome.artifacts.map(artifact => ({
+            path: artifact.path,
+            bytes: artifact.bytes,
+            ...(artifact.width === undefined ? {} : { width: artifact.width }),
+            ...(artifact.height === undefined ? {} : { height: artifact.height }),
+          })),
+        })
 
         const notes = [...preNotes, ...outcome.notes]
 

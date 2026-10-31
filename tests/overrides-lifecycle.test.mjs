@@ -52,6 +52,7 @@ function makeDeps(options = {}) {
     timeoutMs: 5_000,
     pollIntervalMs: 50,
     overrides: new Map(),
+    runs: { submit(){}, update(){}, get(){}, list(){return []}, activeCount(){return 0}, flush(){} },
     index: { add: () => {}, list: () => [], remove: () => {}, dropItems: () => {} },
     assertWritable() {
       if (options.denied === true) throw new Error('这个目录不可写')

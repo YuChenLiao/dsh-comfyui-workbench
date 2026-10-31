@@ -46,6 +46,38 @@ export interface Override {
   value: string | number | boolean
 }
 
+/**
+ * 运行表的最小面。
+ *
+ * 与 `shared/run/registry.ts` 的 `RunRegistry` 结构相同，但这里不 import 它 ——
+ * `shared/tools` 不允许依赖 `shared/run`（同级单向约束，见 tests/arch.mjs）。
+ * TS 的结构化类型让两者可以直接互传。
+ */
+export interface RunsLike {
+  submit: (promptId: string, workflowId: string, batchId?: string) => void
+  update: (promptId: string, patch: object) => void
+  get: (promptId: string) => RunRecordLike | undefined
+  list: (filter?: { state?: string; batchId?: string; limit?: number }) => RunRecordLike[]
+  activeCount: () => number
+  flush: () => void
+}
+
+/** 一条运行记录的读出形状（只声明工具层用到的字段）。 */
+export interface RunRecordLike {
+  promptId: string
+  workflowId: string
+  state: string
+  batchId?: string
+  submittedAt: number
+  startedAt?: number
+  finishedAt?: number
+  queuePosition?: number
+  progress?: { value: number; max: number; node?: string }
+  artifacts?: Array<{ path: string; bytes: number; width?: number; height?: number }>
+  error?: { code: string; message: string }
+  stale?: boolean
+}
+
 /** 工具执行需要的依赖。 */
 export interface ToolDeps {
   client: ComfyClient
@@ -55,6 +87,8 @@ export interface ToolDeps {
   resolveOutputDirFor?: (agent: unknown) => string
   timeoutMs: number
   pollIntervalMs: number
+  /** 运行注册表：提交后把状态写进去，供面板与 comfyui_runs 读。 */
+  runs: RunsLike
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */
   overrides: Map<string, Override[]>
   /** 资产索引（运行成功后登记）。 */

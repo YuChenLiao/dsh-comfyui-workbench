@@ -50,6 +50,7 @@ function makeDeps(options = {}) {
     timeoutMs: 5_000,
     pollIntervalMs: 50,
     overrides: new Map(),
+    runs: { submit(){}, update(){}, get(){}, list(){return []}, activeCount(){return 0}, flush(){} },
     index: { add: () => {}, list: () => [], remove: () => {}, dropItems: () => {} },
     assertWritable: () => {},
     _file: file,

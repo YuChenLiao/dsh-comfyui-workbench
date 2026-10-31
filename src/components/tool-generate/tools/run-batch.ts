@@ -12,6 +12,7 @@
 import path from 'node:path'
 
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
+import { sweepRun } from '../../../shared/run/index.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
 import { asInt, asString } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
@@ -122,6 +123,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       const agent = exec?.agent as NotifyTarget | undefined
       const canNotify = agent !== undefined && typeof agent.followup === 'function'
 
+      const batchId = `batch-${Date.now().toString(36)}`
       const items: RunResultItem[] = []
       const submittedIds: string[] = []
       // 串行等待要有个总预算：不设的话 20 条 × timeoutMs 最坏能挂几个小时。
@@ -184,6 +186,9 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
             workflowHash: loaded.surface.workflowHash,
           })
 
+          // 登记到运行表，带上批次 id —— 面板能把一批聚在一起看。
+          deps.runs.submit(submitted.promptId, loaded.workflowId, batchId)
+
           // 提交成功才消耗覆盖：参数写错 / 缺节点这类失败不该把用户刚改的值吃掉。
           if (pending !== undefined && pending.length > 0) deps.overrides.delete(loaded.workflowId)
 
@@ -199,7 +204,9 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
                 ? {}
                 : { notes: [...submitted.notes, ...batchNotes] }),
             })
+            // 有会话就挂 watcher（会通知）；没有就只收敛注册表，否则记录永久 queued
             if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir)
+            else sweepOne(deps, submitted.promptId, loaded.workflowId, outputDir)
           } else {
             // 同步等待。每条各自等到产物或超时；超时的条目改用后台通知兜底 ——
             // 不能"等不到就什么都不管"，那和默认异步比反而是退步。
@@ -227,7 +234,11 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
                   : { notes: [...submitted.notes, ...batchNotes] }),
                 ...(canNotify ? {} : { hint: '这条还没出图，且没有会话通道推送结果 —— 稍后用 comfyui_run 传 promptId 查。' }),
               })
+              // 超时不标 failed（可能还在跑），标 unknown —— 否则永远停在 running。
+              deps.runs.update(submitted.promptId, { state: 'unknown', queuePosition: undefined })
+              // 没有会话通道时也要继续盯：unknown 只是"我们不再等"，任务可能还在跑
               if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir)
+              else sweepOne(deps, submitted.promptId, loaded.workflowId, outputDir)
             } else {
               // 与单次运行一样登记资产索引：索引是派生，失败不该让本次算失败
               const createdAt = new Date().toISOString()
@@ -251,6 +262,18 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
                   deps.logger?.warn?.('资产索引登记失败（产物已落盘）')
                 }
               }
+              // wait 成功也要收敛终态（watcher 在 wait 路径上不挂）
+              deps.runs.update(submitted.promptId, {
+                state: 'done',
+                finishedAt: Date.now(),
+                queuePosition: undefined,
+                artifacts: outcome.artifacts.map(artifact => ({
+                  path: artifact.path,
+                  bytes: artifact.bytes,
+                  ...(artifact.width === undefined ? {} : { width: artifact.width }),
+                  ...(artifact.height === undefined ? {} : { height: artifact.height }),
+                })),
+              })
               items.push({
                 index,
                 ok: true,
@@ -321,6 +344,19 @@ export function planOrder(raw: readonly unknown[], shared: unknown): number[] {
   return sequence
 }
 
+/** 没有会话通道时的收尾：只更新注册表。 */
+function sweepOne(deps: ToolDeps, promptId: string, workflowId: string, outputDir: string): void {
+  sweepRun({
+    client: deps.client,
+    promptId,
+    workflowId,
+    outputDir,
+    intervalMs: deps.pollIntervalMs,
+    registry: deps.runs,
+    ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+  })
+}
+
 /** 挂一条后台等待者，出图后推回对话。 */
 function watchOne(deps: ToolDeps, agent: NotifyTarget, promptId: string, outputDir: string): void {
   watchRun({
@@ -328,6 +364,8 @@ function watchOne(deps: ToolDeps, agent: NotifyTarget, promptId: string, outputD
     target: agent,
     promptId,
     outputDir,
+    intervalMs: deps.pollIntervalMs,
+    registry: deps.runs,
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
   })
 }

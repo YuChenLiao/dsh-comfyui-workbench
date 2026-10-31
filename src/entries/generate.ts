@@ -44,6 +44,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     timeoutMs: rt.settings.timeoutMs,
     pollIntervalMs: rt.settings.pollIntervalMs,
     overrides: new Map(),
+    runs: rt.runs,
     index: rt.index,
     assertWritable: rt.assertWritable,
     logger: rt.logger,

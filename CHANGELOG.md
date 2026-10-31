@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 未发布
+
+### 新增
+
+- **`comfyui_runs`：查任务运行状态**（第 10 个工具）。补的是「提交之后那几分钟」的空白 —— 出图实测中位 115 秒、最长 336 秒，这段时间里模型不知道在跑、排队第几、卡住了还是死了，只有完成时的一条通知。
+
+  运行表挂在 runtime 上（不是模块级：多个 entry 各一份 bundle，模块级会分裂），落盘 `<会话>/comfyui_output/runs.json`，最多 200 条。**重启后原来 queued/running 的标成 `unknown` + `stale`** —— 那些任务在 ComfyUI 侧可能早完成了，但我们已经无从得知，留在 `running` 会让人一直等一个永不变化的状态。
+
+  排序用单调递增的 `seq` 而不是时间戳：批量提交的几条会挤在同一毫秒，"最近的在最前"靠时间戳会失效。
+
+### 修复
+
+- **`wait: true` 与「无 agent」的提交路径不收敛终态**：watcher 本来是唯一的状态更新来源，而它只在「异步 + 有会话」时挂。那两条路径的记录会永久停在 `queued`，`comfyui_runs` 对早就出完的图一直答"还在跑"，`activeCount` 虚高，僵尸记录还会挤占上限、把真正在跑的那条挤掉。补了 `sweepRun()`：自查 `checkRun` 收敛到 done / 超时 unknown / 异常 failed，不投递消息只更新注册表。
+- **`sweepRun` 缺守卫会误标**：history 比轮询慢时同一 promptId 被并发处理，序列可能变成 `done → failed`（图已落盘却记成失败）；一次瞬时的 `ECONNREFUSED` 也会永久判死。加了 `inflight`/`settled`，并把 catch 分级 —— `execution_failed` 立即判失败，网络类错误累计 6 次才判。
+- **`trim()` 会删掉正在跑的记录**：原来只按 seq 淘汰，200 条都在跑时新提交一条会删掉最老的 `running`，面板上那条正在跑的任务凭空消失。改成终态优先。
+- **`sweepRun` 的日志会崩宿主**：catch 里 `logger.warn` 没包 try，它自己抛错就逃逸成 unhandledRejection（Node 默认结束进程）。与 `deliver()` 同一个理由，补上。
+
+### 优化
+
+- **`run_batch` 按工作流分组后提交**：ComfyUI 的权重按"上次用的那份"常驻显存，同工作流连续跑只换 seed 不重载，但 `SDXL → Flux → SDXL` 来回切每次都要重载几十秒。改成提交前按工作流声明分组；`results` 仍按原始下标返回，调用方靠 `index` 对账不会错位。
+- **`/queue` 加 1 秒缓存**：批量 20 条任务各自轮询，不缓存的话同一秒会打出 20 次请求。
+
 ## 0.4.0
 
 ### 新增

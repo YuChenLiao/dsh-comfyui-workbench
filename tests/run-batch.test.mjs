@@ -80,6 +80,7 @@ function makeDeps(workflows = {}) {
     timeoutMs: 30_000,
     pollIntervalMs: 100,
     overrides: new Map(),
+    runs: { submit(){}, update(){}, get(){}, list(){return []}, activeCount(){return 0}, flush(){} },
     index: { add: () => {}, list: () => [], remove: () => {}, dropItems: () => {} },
     assertWritable: () => {},
     _dir: dir,

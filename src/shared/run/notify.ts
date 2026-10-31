@@ -91,9 +91,20 @@ export function watchRun(options: {
   /** 最长盯多久，超过就放弃（默认 30 分钟）。 */
   maxWaitMs?: number
   logger?: LoggerLike | undefined
+  /**
+   * 运行注册表。给了就把状态写进去，供面板与 comfyui_runs 读。
+   *
+   * 只声明这里真正用到的两个方法 —— `shared/run` 与 `shared/tools` 互不允许依赖
+   * （tests/arch.mjs 两个方向都查），所以不能 import 那边的类型。
+   */
+  registry?: {
+    update: (promptId: string, patch: object) => void
+    get: (promptId: string) => { startedAt?: number } | undefined
+  } | undefined
 }): () => void {
   const { client, target, promptId, outputDir } = options
-  const intervalMs = options.intervalMs ?? 5_000
+  // 与 sweepRun 对称：调用方传超小值时不该把 ComfyUI 打爆
+  const intervalMs = Math.max(50, options.intervalMs ?? 5_000)
   const maxWaitMs = options.maxWaitMs ?? 30 * 60 * 1000
   const startedAt = Date.now()
 
@@ -124,11 +135,38 @@ export function watchRun(options: {
       if (settled || inflight) return
       inflight = true
       try {
+        // 先问队列：这一步只写注册表，绝不进对话 —— 进度是秒级高频数据，
+        // 对话是回合制，每写一次就要排一轮。验收标准 14～16 钉的就是这条。
+        //
+        // **单独 try**：查队列是纯观测动作，它失败不该把这一 tick 的完成判定
+        // 一起拖进失败路径（那会误发失败通知，而任务可能已经出图了）。
+        if (options.registry !== undefined) {
+          try {
+            const queue = await client.queue()
+            const runningAt = queue.running.indexOf(promptId)
+            const pendingAt = queue.pending.indexOf(promptId)
+            if (runningAt >= 0) {
+              // queuePosition 0 表示"正在跑"；1 表示"下一个就轮到"。
+              options.registry.update(promptId, {
+                state: 'running',
+                startedAt: options.registry.get(promptId)?.startedAt ?? Date.now(),
+                queuePosition: 0,
+              })
+            } else if (pendingAt >= 0) {
+              options.registry.update(promptId, { state: 'queued', queuePosition: pendingAt + 1 })
+            }
+          } catch {
+            // 查不到就保持上一次的状态，不影响下面判完成
+          }
+        }
+
         const state = await checkRun(client, promptId)
         if (!state.done || state.entry === undefined) {
           if (Date.now() - startedAt > maxWaitMs) {
             stop()
             settled = true
+            // 不标 failed：任务可能还在 ComfyUI 那边跑，只是我们不盯了。
+            options.registry?.update(promptId, { state: 'unknown' })
             deliver(
               target,
               `工作流仍在跑（promptId ${promptId}），已经等了 ${Math.round((Date.now() - startedAt) / 60000)} 分钟，先不盯了。\n需要结果时让模型用 comfyui_run 传这个 promptId。`,
@@ -158,11 +196,29 @@ export function watchRun(options: {
           lines.push(`- ${artifact.path}${size} · ${Math.round(artifact.bytes / 1024)} KB`)
         }
         settled = true
+        options.registry?.update(promptId, {
+          state: 'done',
+          finishedAt: Date.now(),
+          queuePosition: undefined,
+          artifacts: outcome.artifacts.map(artifact => ({
+            path: artifact.path,
+            bytes: artifact.bytes,
+            ...(artifact.width === undefined ? {} : { width: artifact.width }),
+            ...(artifact.height === undefined ? {} : { height: artifact.height }),
+          })),
+        })
         deliver(target, lines.join('\n'), options.logger)
       } catch (error) {
         stop()
         if (settled) return
         const message = error instanceof Error ? error.message : String(error)
+        const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : 'execution_failed'
+        options.registry?.update(promptId, {
+          state: 'failed',
+          finishedAt: Date.now(),
+          queuePosition: undefined,
+          error: { code, message },
+        })
         // 日志本身抛错不能挡住通知：logger 是外部注入的，它失败不该让用户收不到消息。
         try {
           options.logger?.warn?.(`[notify] ${promptId} 等待失败：${message}`)
@@ -179,6 +235,159 @@ export function watchRun(options: {
   }, intervalMs)
 
   timer.unref?.()
+  watchers.set(promptId, { timer, startedAt })
+  return stop
+}
+
+/**
+ * 只更新注册表、不投递消息的收尾。
+ *
+ * 用于没有会话通道的提交路径（`wait: true`、或无 agent 的异步）—— 那些路径
+ * 不挂 watchRun，而 watcher 本来是唯一的终态来源。不补这一步，记录会永远停在
+ * queued：`comfyui_runs` 对早就出完的图永久答"还在跑"，activeCount 虚高，
+ * 僵尸记录还会挤占上限、把真正在跑的那条挤掉。
+ *
+ * **三条守卫**（与 watchRun 同源，缺了就会误标）：
+ * - `inflight`：history 比轮询间隔慢时，同一 promptId 会被并发 tick 处理两次，
+ *   序列可能变成 done → failed（图已落盘却记成失败）
+ * - `settled`：一旦收敛成终态就不再动
+ * - **瞬时错误不即判失败**：ComfyUI 重启/瞬断时首个 tick 抛 ECONNREFUSED 很常见，
+ *   立刻记 failed 会把还在跑的任务判死。网络类错误要连续若干次才判；真正来自
+ *   history 的 execution_failed 才是确定终态。
+ *
+ * timer 登记进 watchers，所以 stopAllWatchers()（插件卸载）能一起清掉 ——
+ * 否则热重载后会残留最多 maxWaitMs 的轮询。
+ *
+ * @param options - 客户端、运行 id、产物目录与节奏。
+ * @returns 停止函数。
+ */
+export function sweepRun(options: {
+  client: ComfyClient
+  promptId: string
+  outputDir: string
+  workflowId: string
+  intervalMs?: number
+  maxWaitMs?: number
+  logger?: LoggerLike | undefined
+  registry?: {
+    update: (promptId: string, patch: object) => void
+    get: (promptId: string) => { state?: string } | undefined
+  } | undefined
+}): () => void {
+  const { client, promptId, outputDir, workflowId } = options
+  const intervalMs = Math.max(50, options.intervalMs ?? 1_000)
+  const maxWaitMs = options.maxWaitMs ?? 30 * 60 * 1000
+  const startedAt = Date.now()
+  /** 连续的网络类失败次数；达到阈值才判 failed。 */
+  let transientFailures = 0
+  const TRANSIENT_LIMIT = 6
+
+  const stop = (): void => {
+    const current = watchers.get(promptId)
+    if (current !== undefined) {
+      clearInterval(current.timer)
+      watchers.delete(promptId)
+    }
+  }
+  stop()
+
+  let inflight = false
+  let settled = false
+
+  const finish = (patch: object): void => {
+    settled = true
+    stop()
+    options.registry?.update(promptId, patch)
+  }
+
+  const timer = setInterval(() => {
+    void (async () => {
+      if (settled || inflight) return
+      // 记录已经被裁掉（trim）就别再白轮询
+      if (options.registry !== undefined && options.registry.get(promptId) === undefined) {
+        settled = true
+        stop()
+        return
+      }
+      inflight = true
+      try {
+        const state = await checkRun(client, promptId)
+        if (state.done && state.entry !== undefined) {
+          const context = recallRun(promptId) ?? {
+            workflowId,
+            workflowHash: '',
+            outputDir,
+            effective: {},
+            writeMetadata: true,
+            submittedAt: startedAt,
+          }
+          const outcome = await collectArtifacts(client, promptId, state.entry, context)
+          // 收敛前再确认一次：并发 tick 可能已经写过终态了
+          if (settled) return
+          finish({
+            state: 'done',
+            finishedAt: Date.now(),
+            queuePosition: undefined,
+            artifacts: outcome.artifacts.map(artifact => ({
+              path: artifact.path,
+              bytes: artifact.bytes,
+              ...(artifact.width === undefined ? {} : { width: artifact.width }),
+              ...(artifact.height === undefined ? {} : { height: artifact.height }),
+            })),
+          })
+          return
+        }
+        transientFailures = 0
+        if (Date.now() - startedAt > maxWaitMs) {
+          finish({ state: 'unknown', queuePosition: undefined })
+        }
+      } catch (error) {
+        const code = typeof (error as { code?: unknown }).code === 'string'
+          ? (error as { code: string }).code
+          : 'execution_failed'
+        // history 明确报执行错误 → 确定终态，立即记
+        if (code === 'execution_failed') {
+          finish({
+            state: 'failed',
+            finishedAt: Date.now(),
+            queuePosition: undefined,
+            error: {
+              code,
+              message: error instanceof Error ? error.message : String(error),
+            },
+          })
+          return
+        }
+        // 网络类错误：ComfyUI 重启/瞬断时很常见，连续若干次才判死
+        transientFailures += 1
+        if (transientFailures >= TRANSIENT_LIMIT) {
+          finish({
+            state: 'failed',
+            finishedAt: Date.now(),
+            queuePosition: undefined,
+            error: {
+              code,
+              message: error instanceof Error ? error.message : String(error),
+            },
+          })
+        } else {
+          // 日志自己抛错不能把轮询带崩：这里是 catch 分支里最后一句话，
+          // 它一旦逃逸就是 unhandledRejection（Node 默认结束进程）。
+          try {
+            const detail = error instanceof Error ? error.message : String(error)
+            options.logger?.warn?.(`[sweep] ${promptId} 第 ${transientFailures} 次查询失败，继续等：${detail}`)
+          } catch {
+            // 记不下就算了，下一 tick 继续
+          }
+        }
+      } finally {
+        inflight = false
+      }
+    })()
+  }, intervalMs)
+
+  timer.unref?.()
+  // 与 watchRun 共用同一张表：stopAllWatchers() 才能一起清掉
   watchers.set(promptId, { timer, startedAt })
   return stop
 }

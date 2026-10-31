@@ -35,6 +35,8 @@ export class ComfyClient {
   private readonly requestTimeoutMs: number
   private readonly ensure: (() => Promise<boolean>) | undefined
   /** `/object_info` 缓存：响应可能好几 MB，同一进程不必反复拉。 */
+  /** `/queue` 的短缓存：同一 tick 里多条任务共用一次查询。 */
+  private queueCache: { at: number; value: { running: string[]; pending: string[] } } | undefined
   private infoCache: ObjectInfo | null = null
   /** 提交时带的 client_id（ComfyUI 用它区分来源）。 */
   private readonly clientId = crypto.randomUUID()
@@ -94,6 +96,62 @@ export class ComfyClient {
     const info = parsed !== null && typeof parsed === 'object' ? (parsed as ObjectInfo) : {}
     this.infoCache = info
     return info
+  }
+
+  /**
+   * 查队列：哪些在跑、哪些在排。
+   *
+   * ComfyUI 的 `/queue` 响应是 `{ queue_running: [...], queue_pending: [...] }`，
+   * 每项形如 `[number, prompt_id, {...}, extra, outputs]`。这个结构的字段在
+   * 0.3 前后调整过（曾经叫 `queue_running` / 也出现过 `running`），所以按
+   * "取到就用、取不到当空"写，不假定某一种精确形状 —— 与 `/object_info` 的处理一致。
+   *
+   * @returns 运行中与排队中的 promptId（顺序即队列顺序）。
+   */
+  async queue(): Promise<{ running: string[]; pending: string[] }> {
+    // 批量提交时 20 条任务各自轮询，如果不缓存，同一秒会打出 20 次 /queue。
+    // 这个数据本来就滞后于真实队列，1 秒的陈旧度不影响判定。
+    const now = Date.now()
+    if (this.queueCache !== undefined && now - this.queueCache.at < 1_000) return this.queueCache.value
+    const value = await this.fetchQueue()
+    this.queueCache = { at: now, value }
+    return value
+  }
+
+  /** 真正去拉一次队列。 */
+  private async fetchQueue(): Promise<{ running: string[]; pending: string[] }> {
+    let body: unknown
+    try {
+      // skipEnsure: 查队列不该把 ComfyUI 拉起来
+      const res = await this.request('/queue', { method: 'GET' }, this.requestTimeoutMs, true)
+      if (!res.ok) return { running: [], pending: [] }
+      body = await res.json()
+    } catch {
+      // 离线/超时都当"查不到"，调用方据此显示未知而不是崩
+      return { running: [], pending: [] }
+    }
+    if (body === null || typeof body !== 'object') return { running: [], pending: [] }
+    const bag = body as Record<string, unknown>
+    const pick = (keys: string[]): string[] => {
+      for (const key of keys) {
+        const value = bag[key]
+        if (!Array.isArray(value)) continue
+        const out: string[] = []
+        for (const item of value) {
+          // 标准形状是数组，第二项是 prompt_id；也有实现给对象
+          if (Array.isArray(item) && typeof item[1] === 'string') out.push(item[1])
+          else if (item !== null && typeof item === 'object' && typeof (item as { prompt_id?: unknown }).prompt_id === 'string') {
+            out.push((item as { prompt_id: string }).prompt_id)
+          }
+        }
+        return out
+      }
+      return []
+    }
+    return {
+      running: pick(['queue_running', 'running']),
+      pending: pick(['queue_pending', 'pending']),
+    }
   }
 
   /** 提交一份工作流，返回 prompt_id。 */
