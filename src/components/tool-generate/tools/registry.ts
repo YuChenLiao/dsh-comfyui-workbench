@@ -1,4 +1,5 @@
 import { nodeSearchTool } from './node-search.js'
+import { rerunTool } from './rerun.js'
 import { runsTool } from './runs.js'
 import { runBatchTool } from './run-batch.js'
 import { runTool } from './run.js'
@@ -40,6 +41,12 @@ export const TOOL_GROUPS: readonly ToolGroupDef[] = [
     component: 'tool.generate',
     title: '查看工作流的输入输出面',
     build: deps => workflowInspectTool(deps),
+  },
+  {
+    name: 'rerun',
+    component: 'tool.generate',
+    title: '从产物重跑 / 做变体',
+    build: deps => rerunTool(deps),
   },
   {
     name: 'runs',

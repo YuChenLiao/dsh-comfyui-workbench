@@ -17,6 +17,14 @@
 - **`trim()` 会删掉正在跑的记录**：原来只按 seq 淘汰，200 条都在跑时新提交一条会删掉最老的 `running`，面板上那条正在跑的任务凭空消失。改成终态优先。
 - **`sweepRun` 的日志会崩宿主**：catch 里 `logger.warn` 没包 try，它自己抛错就逃逸成 unhandledRejection（Node 默认结束进程）。与 `deliver()` 同一个理由，补上。
 
+- **`comfyui_rerun`：从产物重跑 / 做变体**（第 11 个工具）。出图后最常见的下一步是"再来一张"或"这张构图好但细节差，调一点重跑"，而 sidecar 里已经躺着复现材料（`workflowId` / `workflowHash` / `vars` / `seed`），原来只能手工抄参数。
+
+  三种 seed 策略：给数字就用它（`count>1` 依次 +1）、`'random'` 每张独立、不给就沿用原值递增。**sidecar 没记 seed 时出多张会各自随机** —— 否则三张是同一张的复制，"做变体"就失去意义。
+
+  **seed 槽位名不硬编码**：从 IO 面找 `seed` 或 `noise_seed`，找不到就完全不注入。硬写 `vars.seed` 会让 `applyVariables` 抛 `variable_unknown` —— 本仓库自己的 `infer` 就把 `noise_seed` 当一等命名，这条踩过。
+
+  工作流被改过（`workflowHash` 不同）时**提示但不阻止**：改内部参数不影响表面，`vars` 的键名可能仍兼容。
+
 ### 优化
 
 - **`run_batch` 按工作流分组后提交**：ComfyUI 的权重按"上次用的那份"常驻显存，同工作流连续跑只换 seed 不重载，但 `SDXL → Flux → SDXL` 来回切每次都要重载几十秒。改成提交前按工作流声明分组；`results` 仍按原始下标返回，调用方靠 `index` 对账不会错位。
