@@ -9,6 +9,8 @@
  * - **默认全部异步**：批量场景更不该阻塞。提交完立刻返回，出图各自推回对话。
  * - **部分失败不整体失败**：一条参数名写错不该让另外九条也发不出去。逐条报结果。
  */
+import path from 'node:path'
+
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
 import { asInt, asString } from '../../../shared/tools/types.js'
@@ -127,9 +129,20 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       const startedAt = Date.now()
       const totalBudgetMs = Math.min(timeoutMs * raw.length, BATCH_WAIT_BUDGET_MS)
 
+      // 按工作流分组后再提交。
+      //
+      // ComfyUI 的权重按"上次用的那份"常驻显存：同工作流连续跑只换 seed 不会重载，
+      // 但 `SDXL → Flux → SDXL` 这样来回切，每次都要重载几十秒。所以把同工作流的
+      // 条目排在一起，组间按首次出现排，组内保持调用方给的顺序。
+      //
+      // 分组键用**声明**（`{id}` / `{path}`）而不是真实 workflowId —— 后者要预读一遍
+      // 文件才能拿到，而同一份声明必然指向同一个工作流，够用了。
+      const sequence = planOrder(raw, args.workflow)
+
       // 串行提交：ComfyUI 的队列本身是串行执行的，并发 POST 只是把请求压进队列，
       // 但会让"哪一条对应哪个 promptId"更难对账（尤其有失败时）。
-      for (const [index, entry] of raw.entries()) {
+      for (const index of sequence) {
+        const entry = raw[index]
         const item = (entry ?? {}) as RunItem
         try {
           const outputDir = asString(item.outputPath).trim() !== '' ? asString(item.outputPath).trim() : sessionDir
@@ -262,6 +275,10 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
         }
       }
 
+      // 提交顺序被分组重排过，但 results 必须按调用方给的原始下标返回 ——
+      // 否则调用方对不上"第 3 条失败了"到底指哪一条。
+      items.sort((a, b) => a.index - b.index)
+
       const okCount = items.filter(item => item.ok).length
       return {
         ok: okCount > 0,
@@ -273,6 +290,35 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       }
     },
   }
+}
+
+/**
+ * 按工作流声明分组，算出实际提交顺序。
+ *
+ * @param raw - 调用方给的条目。
+ * @param shared - 外层共用的工作流声明。
+ * @returns 原始下标的一个排列：同组相邻，组间按首次出现。
+ */
+export function planOrder(raw: readonly unknown[], shared: unknown): number[] {
+  const buckets = new Map<string, number[]>()
+  const order: string[] = []
+  raw.forEach((entry, index) => {
+    const item = (entry ?? {}) as RunItem
+    const declared = mergeWorkflow(shared, item.workflow) as { id?: unknown; path?: unknown } | undefined
+    const id = typeof declared?.id === 'string' ? declared.id.trim() : ''
+    const file = typeof declared?.path === 'string' ? declared.path.trim() : ''
+    const key = id !== '' ? `id:${id}` : file !== '' ? `path:${path.resolve(file)}` : 'default'
+    let bucket = buckets.get(key)
+    if (bucket === undefined) {
+      bucket = []
+      buckets.set(key, bucket)
+      order.push(key)
+    }
+    bucket.push(index)
+  })
+  const sequence: number[] = []
+  for (const key of order) sequence.push(...(buckets.get(key) as number[]))
+  return sequence
 }
 
 /** 挂一条后台等待者，出图后推回对话。 */

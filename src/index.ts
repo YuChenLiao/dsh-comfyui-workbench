@@ -103,7 +103,7 @@ export { TagIndex, searchTagsLinear } from './components/tool-danbooru/server/ta
 export { applyOverrides, overrideNotes } from './shared/run/overrides.js'
 export { NodeIndex } from './shared/comfy/node-index.js'
 export { nodeSearchTool, resetNodeIndexCache } from './components/tool-generate/tools/node-search.js'
-export { runBatchTool } from './components/tool-generate/tools/run-batch.js'
+export { planOrder, runBatchTool } from './components/tool-generate/tools/run-batch.js'
 export { danbooruLookupBatchTool } from './components/tool-danbooru/tools/lookup-batch.js'
 export { isNsfw, nsfwVerdictOf } from './shared/gallery/nsfw.js'
 export { ComfySupervisor } from './shared/comfy/supervisor.js'

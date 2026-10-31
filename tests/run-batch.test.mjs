@@ -288,3 +288,21 @@ test('批量的提示在 render 文本里也可见（模型只看到这段）', 
   assert.match(text, /一次性覆盖/, `render 文本要能看见覆盖提示，实际：${text.slice(0, 300)}`)
   fs.rmSync(deps._dir, { recursive: true, force: true })
 })
+
+test('分组重排后 results 仍按原始下标返回', async () => {
+  const deps = makeDeps()
+  const fileA = writeWorkflow(deps._dir, 'a')
+  const fileB = writeWorkflow(deps._dir, 'b')
+  const tool = runBatchTool(deps)
+  const result = await tool.execute({
+    runs: [
+      { workflow: { path: fileA }, vars: { seed: 1 } },
+      { workflow: { path: fileB }, vars: { seed: 2 } },
+      { workflow: { path: fileA }, vars: { seed: 3 } },
+    ],
+  })
+  // 提交顺序被聚成 a,a,b，但 results 必须按 0,1,2 返回
+  assert.deepEqual(result.results.map(item => item.index), [0, 1, 2])
+  assert.deepEqual(result.results.map(item => item.workflowId), ['a', 'b', 'a'])
+  fs.rmSync(deps._dir, { recursive: true, force: true })
+})
