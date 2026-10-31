@@ -93,6 +93,20 @@ export function watchRun(options: {
   maxWaitMs?: number
   logger?: LoggerLike | undefined
   /**
+   * 结果交给谁。
+   *
+   * 默认直接 `followup` 到会话；批量提交时换成"交给批次收集器"，由它凑齐后
+   * 投递一条汇总 —— 否则 10 张图就是 10 次 `followup`、10 轮打断。
+   * **仍走 followup（唤醒）**，不是 inject：模型不知道出图效果就没法继续迭代。
+   */
+  onSettled?: (run: {
+    ok: boolean
+    text: string
+    artifacts?: string[]
+    /** 结构化产物信息；有它汇总里才有宽高与体积。 */
+    artifactDetails?: Array<{ path: string; width?: number; height?: number; bytes?: number }>
+  }) => void
+  /**
    * 运行注册表。给了就把状态写进去，供面板与 comfyui_runs 读。
    *
    * 只声明这里真正用到的两个方法 —— `shared/run` 与 `shared/tools` 互不允许依赖
@@ -128,6 +142,29 @@ export function watchRun(options: {
    * `settled` 保证只交付一次，`inflight` 防重入；后者必须在 finally 里复位，
    * 否则超时那条收尾通知会被自己挡掉。
    */
+  /**
+   * 投递一条结果。
+   *
+   * 有 `onSettled` 就交给它（批量汇总用），否则直接写会话。
+   */
+  type SettledPayload = NonNullable<Parameters<NonNullable<typeof options.onSettled>>[0]>
+  const emit = (payload: SettledPayload): void => {
+    if (options.onSettled !== undefined) {
+      try {
+        options.onSettled(payload)
+      } catch (error) {
+        // 收集器自己抛错不能把 watcher 带崩
+        try {
+          options.logger?.warn?.(`[notify] 结果交付失败：${error instanceof Error ? error.message : String(error)}`)
+        } catch {
+          // 算了
+        }
+      }
+      return
+    }
+    deliver(target, payload.text, options.logger)
+  }
+
   let inflight = false
   let settled = false
   /** 连续的可重试失败次数。只有确定终态（execution_failed / auth_failed）才立即判死。 */
@@ -184,11 +221,10 @@ export function watchRun(options: {
                 message: maxWaitMs >= 60_000 ? `等了 ${Math.round(maxWaitMs / 60_000)} 分钟仍未出图。` : `等了 ${Math.round(maxWaitMs / 1000)} 秒仍未出图。`,
               },
             })
-            deliver(
-              target,
-              `工作流仍在跑（promptId ${promptId}），已经等了 ${Math.round((Date.now() - startedAt) / 60000)} 分钟，先不盯了。\n需要结果时让模型用 comfyui_run 传这个 promptId。`,
-              options.logger,
-            )
+            emit({
+              ok: false,
+              text: `工作流仍在跑（promptId ${promptId}），已经等了 ${Math.round((Date.now() - startedAt) / 60000)} 分钟，先不盯了。\n需要结果时让模型用 comfyui_run 传这个 promptId。`,
+            })
           }
           return
         }
@@ -224,7 +260,19 @@ export function watchRun(options: {
             ...(artifact.height === undefined ? {} : { height: artifact.height }),
           })),
         })
-        deliver(target, lines.join('\n'), options.logger)
+        emit({
+          ok: true,
+          text: lines.join('\n'),
+          artifacts: outcome.artifacts.map(artifact => artifact.path),
+          // 明细也带上：默认异步路径的汇总原来只有纯路径，而 wait 路径有宽高体积 ——
+          // 同一批产物在两条路径上展示不一致。
+          artifactDetails: outcome.artifacts.map(artifact => ({
+            path: artifact.path,
+            ...(artifact.width === undefined ? {} : { width: artifact.width }),
+            ...(artifact.height === undefined ? {} : { height: artifact.height }),
+            ...(artifact.bytes === undefined ? {} : { bytes: artifact.bytes }),
+          })),
+        })
       } catch (error) {
         if (settled) return
         const message = error instanceof Error ? error.message : String(error)
@@ -263,7 +311,7 @@ export function watchRun(options: {
               ...(typeof (error as { kind?: unknown }).kind === 'string' ? { kind: (error as { kind: string }).kind } : {}),
             },
           })
-          deliver(target, giveUpMessage(error, promptId, TRANSIENT_LIMIT), options.logger)
+          emit({ ok: false, text: giveUpMessage(error, promptId, TRANSIENT_LIMIT) })
           return
         }
 
@@ -285,7 +333,7 @@ export function watchRun(options: {
           // 记不下就算了，下面照常投递
         }
         settled = true
-        deliver(target, `工作流执行失败（promptId ${promptId}）：${message}`, options.logger)
+        emit({ ok: false, text: `工作流执行失败（promptId ${promptId}）：${message}` })
       } finally {
         // 必须复位：否则下一 tick 会被 inflight 挡住，超时收尾那条就发不出去。
         inflight = false

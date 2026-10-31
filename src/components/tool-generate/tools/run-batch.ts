@@ -14,6 +14,7 @@ import path from 'node:path'
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
 import { sweepRun } from '../../../shared/run/index.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
+import { BatchCollector } from '../../../shared/run/batch-notify.js'
 import { codeOf, finalStateOf } from '../../../shared/run/policy.js'
 import { asInt, asString } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
@@ -126,6 +127,27 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
 
       const batchId = `batch-${Date.now().toString(36)}`
       const items: RunResultItem[] = []
+
+      // 一批只投递一条汇总：逐条 followup 会把"一件事"拆成十次打断。
+      // 但仍是 followup（唤醒）而不是 inject —— 模型得知道出图效果才能继续迭代。
+      const collector = canNotify
+        ? new BatchCollector({
+          total: raw.length,
+          deliver: text => {
+            try {
+              agent.followup({
+                id: batchId,
+                role: 'user',
+                content: [{ type: 'text', text }],
+                source: { kind: 'plugin:dsh-comfyui-workbench' },
+              })
+            } catch (error) {
+              deps.logger?.warn?.(`[batch] 汇总未送达：${error instanceof Error ? error.message : String(error)}`)
+            }
+          },
+          ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+        })
+        : undefined
       const submittedIds: string[] = []
       // 串行等待要有个总预算：不设的话 20 条 × timeoutMs 最坏能挂几个小时。
       // 预算按"条数 × 单条上限"取，但封顶 30 分钟（对齐 watchRun 的 maxWaitMs）。
@@ -210,7 +232,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
                 : { notes: [...submitted.notes, ...batchNotes] }),
             })
             // 有会话就挂 watcher（会通知）；没有就只收敛注册表，否则记录永久 queued
-            if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir)
+            if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir, collector, index)
             else sweepOne(deps, submitted.promptId, loaded.workflowId, outputDir)
           } else {
             // 同步等待。每条各自等到产物或超时；超时的条目改用后台通知兜底 ——
@@ -242,7 +264,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
               // 超时不标 failed（可能还在跑），标 unknown —— 否则永远停在 running。
               deps.runs.update(submitted.promptId, { state: 'unknown', queuePosition: undefined })
               // 没有会话通道时也要继续盯：unknown 只是"我们不再等"，任务可能还在跑
-              if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir)
+              if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir, collector, index)
               else sweepOne(deps, submitted.promptId, loaded.workflowId, outputDir)
             } else {
               // 与单次运行一样登记资产索引：索引是派生，失败不该让本次算失败
@@ -279,6 +301,21 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
                   ...(artifact.height === undefined ? {} : { height: artifact.height }),
                 })),
               })
+              // 同步等到的这条也要喂给收集器 —— 否则全成功的批次永远差 N 条，
+              // 一路等到 30 分钟超时才投递。
+              collector?.settle({
+                promptId: submitted.promptId,
+                index,
+                ok: true,
+                text: `工作流 ${loaded.workflowId} 出图完成。`,
+                artifacts: outcome.artifacts.map(artifact => artifact.path),
+                artifactDetails: outcome.artifacts.map(artifact => ({
+                  path: artifact.path,
+                  ...(artifact.width === undefined ? {} : { width: artifact.width }),
+                  ...(artifact.height === undefined ? {} : { height: artifact.height }),
+                  ...(artifact.bytes === undefined ? {} : { bytes: artifact.bytes }),
+                })),
+              })
               items.push({
                 index,
                 ok: true,
@@ -296,6 +333,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
           const code = codeOf(error) === '' ? 'run_failed' : codeOf(error)
           const message = error instanceof Error ? error.message : String(error)
           items.push({ index, ok: false, code, error: message })
+          collector?.settle({ promptId: activePromptId ?? `failed-${index}`, index, ok: false, text: message })
 
           // 批次路径同样要收敛终态。原来只 push 一条 item，注册表那条记录会永远停在
           // queued —— activeCount 虚高、comfyui_runs 一直答"还在跑"。这正是单条工具
@@ -372,7 +410,14 @@ function sweepOne(deps: ToolDeps, promptId: string, workflowId: string, outputDi
 }
 
 /** 挂一条后台等待者，出图后推回对话。 */
-function watchOne(deps: ToolDeps, agent: NotifyTarget, promptId: string, outputDir: string): void {
+function watchOne(
+  deps: ToolDeps,
+  agent: NotifyTarget,
+  promptId: string,
+  outputDir: string,
+  collector?: BatchCollector,
+  index?: number,
+): void {
   watchRun({
     client: deps.client,
     target: agent,
@@ -380,6 +425,19 @@ function watchOne(deps: ToolDeps, agent: NotifyTarget, promptId: string, outputD
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    // 交给批次收集器 -> 凑齐后一条汇总；没有收集器就退回逐条投递
+    ...(collector === undefined
+      ? {}
+      : {
+        onSettled: run => collector.settle({
+          promptId,
+          ...(index === undefined ? {} : { index }),
+          ok: run.ok,
+          text: run.text,
+          ...(run.artifacts === undefined ? {} : { artifacts: run.artifacts }),
+          ...(run.artifactDetails === undefined ? {} : { artifactDetails: run.artifactDetails }),
+        }),
+      }),
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
   })
 }

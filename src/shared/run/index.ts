@@ -15,6 +15,8 @@ export {
   waitForRun,
 } from './runner.js'
 export { stopAllWatchers, sweepRun, watchRun } from './notify.js'
+export { BatchCollector } from './batch-notify.js'
+export type { SettledRun } from './batch-notify.js'
 export type { NotifyTarget } from './notify.js'
 export type {
   Artifact,
