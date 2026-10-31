@@ -14,6 +14,7 @@ import path from 'node:path'
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
 import { sweepRun } from '../../../shared/run/index.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
+import { codeOf, finalStateOf } from '../../../shared/run/policy.js'
 import { asInt, asString } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
@@ -144,6 +145,9 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       // 串行提交：ComfyUI 的队列本身是串行执行的，并发 POST 只是把请求压进队列，
       // 但会让"哪一条对应哪个 promptId"更难对账（尤其有失败时）。
       for (const index of sequence) {
+        // 记这一条当前的 promptId：catch 里要靠它收敛终态。
+        // 不能从 error 上取 —— RunError 只有 code/message。
+        let activePromptId: string | undefined
         const entry = raw[index]
         const item = (entry ?? {}) as RunItem
         try {
@@ -187,6 +191,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
           })
 
           // 登记到运行表，带上批次 id —— 面板能把一批聚在一起看。
+          activePromptId = submitted.promptId
           deps.runs.submit(submitted.promptId, loaded.workflowId, batchId)
 
           // 提交成功才消耗覆盖：参数写错 / 缺节点这类失败不该把用户刚改的值吃掉。
@@ -288,13 +293,22 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
           }
         } catch (error) {
           // 单条失败不中断：把错误记在这一条上，继续下一条
-          const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : 'run_failed'
-          items.push({
-            index,
-            ok: false,
-            code,
-            error: error instanceof Error ? error.message : String(error),
-          })
+          const code = codeOf(error) === '' ? 'run_failed' : codeOf(error)
+          const message = error instanceof Error ? error.message : String(error)
+          items.push({ index, ok: false, code, error: message })
+
+          // 批次路径同样要收敛终态。原来只 push 一条 item，注册表那条记录会永远停在
+          // queued —— activeCount 虚高、comfyui_runs 一直答"还在跑"。这正是单条工具
+          // 修掉的那类缺陷，在批次入口原样存在（同一处已漏过一次）。
+          if (activePromptId !== undefined) {
+            const definite = finalStateOf(error) === 'failed'
+            deps.runs.update(activePromptId, {
+              state: definite ? 'failed' : 'unknown',
+              finishedAt: Date.now(),
+              queuePosition: undefined,
+              error: { code, message },
+            })
+          }
         }
       }
 

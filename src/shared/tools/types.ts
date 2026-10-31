@@ -74,7 +74,7 @@ export interface RunRecordLike {
   queuePosition?: number
   progress?: { value: number; max: number; node?: string }
   artifacts?: Array<{ path: string; bytes: number; width?: number; height?: number }>
-  error?: { code: string; message: string }
+  error?: { code: string; message: string; kind?: string }
   stale?: boolean
 }
 

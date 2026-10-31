@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { applyOverrides, overrideNotes, resumeRun, submitWorkflow, sweepRun, waitForRun, watchRun } from '../../../shared/run/index.js'
+import { applyOverrides, codeOrDefault, finalStateOf, overrideNotes, resumeRun, submitWorkflow, sweepRun, waitForRun, watchRun } from '../../../shared/run/index.js'
 import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
 import type { Artifact } from '../../../shared/run/index.js'
@@ -179,8 +179,34 @@ export function runTool(deps: ToolDeps): ToolSpec {
           // 启动期那个（多工作区下不相关的）目录里。
           const resumeOutputDir = deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir
           const outcome = await resumeRun(deps.client, resumeId, { outputDir: resumeOutputDir })
+          // 续查成功也要收敛注册表 —— 否则"wait 遇 5xx 写 unknown、用户照提示续查、
+          // 真拿到产物，记录还是 unknown"这种自相矛盾就永远在。这正是 P1 要消灭的东西。
+          if ('pending' in outcome) {
+            deps.runs.update(resumeId, { state: 'unknown', queuePosition: undefined })
+          } else {
+            deps.runs.update(resumeId, {
+              state: 'done',
+              finishedAt: Date.now(),
+              queuePosition: undefined,
+              artifacts: outcome.artifacts.map(artifact => ({
+                path: artifact.path,
+                bytes: artifact.bytes,
+                ...(artifact.width === undefined ? {} : { width: artifact.width }),
+                ...(artifact.height === undefined ? {} : { height: artifact.height }),
+              })),
+            })
+          }
           return formatOutcome(outcome, deps)
         } catch (error) {
+          // 续查失败同样按二维判据收敛：确定的写 failed，网络类写 unknown
+          const code = codeOrDefault(error, 'wait_failed')
+          const definite = finalStateOf(error) === 'failed'
+          deps.runs.update(resumeId, {
+            state: definite ? 'failed' : 'unknown',
+            finishedAt: definite ? Date.now() : undefined,
+            queuePosition: undefined,
+            error: { code, message: error instanceof Error ? error.message : String(error) },
+          })
           return failureOf(error)
         }
       }
@@ -268,22 +294,69 @@ export function runTool(deps: ToolDeps): ToolSpec {
           }
         }
 
-        const outcome = await waitForRun(deps.client, submitted.promptId, {
-          timeoutMs: asInt(args.waitMs, deps.timeoutMs, 1_000, 1_800_000),
-          pollIntervalMs: deps.pollIntervalMs,
-          fallback: {
-            outputDir,
-            workflowId: loaded.workflowId,
-            workflowHash: loaded.surface.workflowHash,
-            effective: submitted.effective,
-          },
-        })
+        let outcome: Awaited<ReturnType<typeof waitForRun>>
+        try {
+          outcome = await waitForRun(deps.client, submitted.promptId, {
+            timeoutMs: asInt(args.waitMs, deps.timeoutMs, 1_000, 1_800_000),
+            pollIntervalMs: deps.pollIntervalMs,
+            fallback: {
+              outputDir,
+              workflowId: loaded.workflowId,
+              workflowHash: loaded.surface.workflowHash,
+              effective: submitted.effective,
+            },
+          })
+        } catch (error) {
+          // 可重试的（5xx / 网络）不该让这次运行变成"失败"，更不该把记录留在 queued：
+          // ComfyUI 重启窗口里很常见，任务可能还在跑。标 unknown 并给出续查方式。
+          // `waitForRun` 抛出来的已经是"攒满 6 次"的**放弃结论**，这里不该再降级。
+          // 判据要用 finalStateOf 而不是 isRetryable：`no_output` 是"可重试但终态确定失败"
+          // （见 policy.ts 的二维说明）—— 按 isRetryable 判会把它错写成 pending，
+          // 让用户去续查一个永远查不到的结果，而且 wait 路径不挂 watcher，
+          // 记录会永久停在 unknown（error.code 却是 no_output，自相矛盾）。
+          const code = codeOrDefault(error, 'wait_failed')
+          const definite = finalStateOf(error) === 'failed'
+          const kind = (error as { kind?: unknown }).kind
+          deps.runs.update(submitted.promptId, {
+            state: definite ? 'failed' : 'unknown',
+            finishedAt: definite ? Date.now() : undefined,
+            queuePosition: undefined,
+            error: {
+              code,
+              message: error instanceof Error ? error.message : String(error),
+              ...(typeof kind === 'string' ? { kind } : {}),
+            },
+          })
+          if (!definite) {
+            // 超时/网络类的 pending 也要写 finishedAt —— 否则 runs.ts 的 elapsedMs
+            // 用 (finishedAt ?? now) 会一直涨，面板上"耗时"永远在跳。
+            deps.runs.update(submitted.promptId, { finishedAt: Date.now() })
+            return {
+              ok: true,
+              pending: true,
+              promptId: submitted.promptId,
+              message: `提交成功，但查询状态时出错（${code}）：${error instanceof Error ? error.message : String(error)}`,
+              hint: '任务可能还在 ComfyUI 那边跑。稍后用 comfyui_run 传这个 promptId 续查。',
+              notes: preNotes,
+            }
+          }
+          throw error
+        }
 
         if ('pending' in outcome) {
           // wait 超时：不标 failed（任务可能还在 ComfyUI 那边跑），标 unknown。
           // 不收敛终态的话，这条记录会永远停在 running/queued，comfyui_runs
-          // 会一直答"还在跑"。
-          deps.runs.update(submitted.promptId, { state: 'unknown', queuePosition: undefined })
+          // 会一直答"还在跑"。finishedAt 与 error 也要写，不然面板上耗时永涨、
+          // 且没有任何线索可排查。
+          deps.runs.update(submitted.promptId, {
+            state: 'unknown',
+            finishedAt: Date.now(),
+            queuePosition: undefined,
+            error: {
+              code: 'wait_timeout',
+              message: `等了 ${Math.round(outcome.waitedMs / 1000)} 秒仍未出图。`,
+            },
+          })
           // pending 分支走 formatOutcome，它不认识 preNotes —— 在这里补上，
           // 否则 wait 超时时"已应用覆盖"这句会消失（异步与完成分支都有）。
           return { ...formatOutcome(outcome, deps), ...(preNotes.length > 0 ? { notes: preNotes } : {}) }

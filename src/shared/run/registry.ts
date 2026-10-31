@@ -61,7 +61,7 @@ export interface RunRecord {
   queuePosition?: number
   progress?: RunProgress
   artifacts?: RunArtifactRef[]
-  error?: { code: string; message: string }
+  error?: { code: string; message: string; kind?: string }
   /** 进程重启后从盘上读回的、当时还在跑的那些 —— 状态已不可知。 */
   stale?: boolean
 }

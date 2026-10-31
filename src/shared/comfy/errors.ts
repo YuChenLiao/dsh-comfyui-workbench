@@ -4,6 +4,9 @@
  * 为什么专门定义：DSH 会把抛出的 `message` 直接给模型看，模型据此决定下一步。
  * 所以每条错误都要有「分类 + 一句人话 + 可执行的下一步」。
  */
+import { adviceFor, classifyFailure } from './failure-kind.js'
+import type { FailureKind } from './failure-kind.js'
+
 export type RunErrorCode =
   | 'comfy_unreachable'
   | 'auth_failed'
@@ -24,6 +27,13 @@ export class RunError extends Error {
   readonly code: RunErrorCode
   readonly hint: string | undefined
   readonly detail: unknown
+  /**
+   * 执行失败的细分类型（只有 `execution_failed` 会带）。
+   *
+   * 单独一个字段而不改 `code`：调用方可能按 `code` 分支，
+   * 而 `kind` 是用来区分"该降分辨率"还是"该去装模型"的。
+   */
+  kind?: FailureKind
 
   constructor(code: RunErrorCode, message: string, hint?: string, detail?: unknown) {
     super(message)
@@ -98,22 +108,39 @@ function formatNodeErrors(nodeErrors: unknown): string {
   return parts.join('；')
 }
 
-export function executionFailed(entry: unknown, promptId: string): RunError {
-  const detail = failureDetail(entry)
-  return new RunError(
+export function executionFailed(
+  entry: unknown,
+  promptId: string,
+  size?: { width?: number; height?: number },
+): RunError {
+  const failure = failureDetail(entry)
+  const ctx = { text: failure.text, nodeId: failure.nodeId, nodeType: failure.nodeType }
+  const kind = classifyFailure(ctx)
+  const advice = adviceFor(kind, ctx, size ?? {})
+  const error = new RunError(
     'execution_failed',
-    `ComfyUI 执行失败（prompt ${promptId}）${detail === '' ? '' : `：${detail}`}`,
-    '通常是模型/节点参数不匹配或显存不足。降分辨率或换底模后重试。',
+    `ComfyUI 执行失败（prompt ${promptId}）${failure.text === '' ? '' : `：${failure.text}`}`,
+    // 建议按类给，不再是同一句"通常是参数不匹配或显存不足"
+    advice,
     entry,
   )
+  // 分类单独带出去：code 保持 execution_failed（调用方可能按 code 分支），
+  // kind 让上层能区分该降分辨率还是该去装模型。
+  error.kind = kind
+  return error
 }
 
-/** 从 history 的 status.messages 里挖出第一条 execution_error。 */
-function failureDetail(entry: unknown): string {
-  if (entry === null || typeof entry !== 'object') return ''
+/**
+ * 从 history 的 status.messages 里挖出第一条 execution_error。
+ *
+ * 返回结构体而不只是字符串：分类需要 `nodeId` / `nodeType`，
+ * 只拼成一句话就丢了。
+ */
+function failureDetail(entry: unknown): { text: string; nodeId?: string; nodeType?: string } {
+  if (entry === null || typeof entry !== 'object') return { text: '' }
   const status = (entry as { status?: unknown }).status
   const messages = status !== null && typeof status === 'object' ? (status as { messages?: unknown }).messages : undefined
-  if (!Array.isArray(messages)) return ''
+  if (!Array.isArray(messages)) return { text: '' }
   for (const message of messages) {
     if (!Array.isArray(message) || message.length < 2) continue
     if (message[0] !== 'execution_error') continue
@@ -125,10 +152,16 @@ function failureDetail(entry: unknown): string {
       const type = typeof bag.node_type === 'string' ? bag.node_type : ''
       const head = [node, type].filter(part => part !== '').join(' ')
       const detail = `${head}${head === '' ? '' : '：'}${text}`
-      if (detail.trim() !== '') return detail.trim()
+      if (detail.trim() !== '') {
+        return {
+          text: detail.trim(),
+          ...(typeof bag.node_id === 'string' || typeof bag.node_id === 'number' ? { nodeId: String(bag.node_id) } : {}),
+          ...(type === '' ? {} : { nodeType: type }),
+        }
+      }
     }
   }
-  return ''
+  return { text: '' }
 }
 
 export function noOutput(hintTerminal: boolean): RunError {

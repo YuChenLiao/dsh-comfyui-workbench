@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 
 import type { ComfyClient } from '../comfy/index.js'
 import type { LoggerLike } from '../host/types.js'
+import { codeOf, finalStateOf, giveUpMessage, isFatalRunError, TRANSIENT_LIMIT } from './policy.js'
 import { checkRun, collectArtifacts, recallRun } from './runner.js'
 
 /**
@@ -129,6 +130,8 @@ export function watchRun(options: {
    */
   let inflight = false
   let settled = false
+  /** 连续的可重试失败次数。只有确定终态（execution_failed / auth_failed）才立即判死。 */
+  let transientFailures = 0
 
   const timer = setInterval(() => {
     void (async () => {
@@ -162,11 +165,25 @@ export function watchRun(options: {
 
         const state = await checkRun(client, promptId)
         if (!state.done || state.entry === undefined) {
+          // 查到了（只是还没跑完）说明链路是通的 → 把"连续失败"计数清零。
+          // 不复位的话，500 与"成功未完成"交替会被记成 6 次连续失败，
+          // 而文案写着"连续 6 次"—— 代码与文案对不上。
+          transientFailures = 0
           if (Date.now() - startedAt > maxWaitMs) {
             stop()
             settled = true
             // 不标 failed：任务可能还在 ComfyUI 那边跑，只是我们不盯了。
-            options.registry?.update(promptId, { state: 'unknown' })
+            // 但 error / finishedAt / queuePosition 都要写 —— 否则面板上是一条
+            // "队列第 0 位 + unknown"、且没有任何线索可排查的记录。
+            options.registry?.update(promptId, {
+              state: 'unknown',
+              finishedAt: Date.now(),
+              queuePosition: undefined,
+              error: {
+                code: 'wait_timeout',
+                message: maxWaitMs >= 60_000 ? `等了 ${Math.round(maxWaitMs / 60_000)} 分钟仍未出图。` : `等了 ${Math.round(maxWaitMs / 1000)} 秒仍未出图。`,
+              },
+            })
             deliver(
               target,
               `工作流仍在跑（promptId ${promptId}），已经等了 ${Math.round((Date.now() - startedAt) / 60000)} 分钟，先不盯了。\n需要结果时让模型用 comfyui_run 传这个 promptId。`,
@@ -209,15 +226,57 @@ export function watchRun(options: {
         })
         deliver(target, lines.join('\n'), options.logger)
       } catch (error) {
-        stop()
         if (settled) return
         const message = error instanceof Error ? error.message : String(error)
-        const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : 'execution_failed'
+        // 兜底不能是 execution_failed —— 无 code 的错误会记成"执行失败"而 state=unknown，
+        // 按 code 分支的消费方会误判。用中性的 wait_failed。
+        const code = codeOf(error) === '' ? 'wait_failed' : codeOf(error)
+
+        // 可重试的错误别一次判死：ComfyUI 重启窗口里 /history 报 5xx 是常态，
+        // 一次就判死会让用户拿到假失败结论，而且 collectArtifacts 从此不执行 ——
+        // 图其实出了也不落盘，产物直接丢。
+        if (!isFatalRunError(error)) {
+          transientFailures += 1
+          if (transientFailures < TRANSIENT_LIMIT) {
+            try {
+              options.logger?.warn?.(`[notify] ${promptId} 第 ${transientFailures} 次查询失败，继续等：${message}`)
+            } catch {
+              // 日志自己抛错不该打断轮询
+            }
+            return
+          }
+          // 到上限。状态与文案都按**错误类型**决定，不能一律说"查不到 /history" ——
+          // `no_output` 明明是"查到了、也完成了、就是没有产物"，说成查不到是撒谎。
+          stop()
+          settled = true
+          options.registry?.update(promptId, {
+            state: finalStateOf(error),
+            // finishedAt 必须写：runs.ts 的 elapsedMs 用 (finishedAt ?? now)，
+            // 缺了它一条 failed 记录的"耗时"会一直涨。
+            finishedAt: Date.now(),
+            queuePosition: undefined,
+            // error 也要落：面板与 comfyui_runs 读的是记录，不是会话通知。
+            // 只发通知不写记录 = 留一条无法排查的 unknown。
+            error: {
+              code: codeOf(error) === '' ? 'wait_failed' : codeOf(error),
+              message,
+              ...(typeof (error as { kind?: unknown }).kind === 'string' ? { kind: (error as { kind: string }).kind } : {}),
+            },
+          })
+          deliver(target, giveUpMessage(error, promptId, TRANSIENT_LIMIT), options.logger)
+          return
+        }
+
+        // 确定终态：真的执行失败或认证失败
+        transientFailures = 0
+        stop()
+        // kind 带上：面板与 comfyui_runs 据此能说"该降分辨率"还是"该去装模型"
+        const kind = typeof (error as { kind?: unknown }).kind === 'string' ? (error as { kind: string }).kind : undefined
         options.registry?.update(promptId, {
           state: 'failed',
           finishedAt: Date.now(),
           queuePosition: undefined,
-          error: { code, message },
+          error: { code, message, ...(kind === undefined ? {} : { kind }) },
         })
         // 日志本身抛错不能挡住通知：logger 是外部注入的，它失败不该让用户收不到消息。
         try {
@@ -238,6 +297,7 @@ export function watchRun(options: {
   watchers.set(promptId, { timer, startedAt })
   return stop
 }
+
 
 /**
  * 只更新注册表、不投递消息的收尾。
@@ -280,7 +340,6 @@ export function sweepRun(options: {
   const startedAt = Date.now()
   /** 连续的网络类失败次数；达到阈值才判 failed。 */
   let transientFailures = 0
-  const TRANSIENT_LIMIT = 6
 
   const stop = (): void => {
     const current = watchers.get(promptId)
@@ -339,14 +398,23 @@ export function sweepRun(options: {
         }
         transientFailures = 0
         if (Date.now() - startedAt > maxWaitMs) {
-          finish({ state: 'unknown', queuePosition: undefined })
+          // 与 watch 的 maxWaitMs 分支对称：error / finishedAt 都要落，
+          // 否则面板上是一条"unknown + 队列第 0 位"、没有任何线索的记录。
+          finish({
+            state: 'unknown',
+            finishedAt: Date.now(),
+            queuePosition: undefined,
+            error: {
+              code: 'wait_timeout',
+              message: maxWaitMs >= 60_000 ? `等了 ${Math.round(maxWaitMs / 60_000)} 分钟仍未出图。` : `等了 ${Math.round(maxWaitMs / 1000)} 秒仍未出图。`,
+            },
+          })
         }
       } catch (error) {
-        const code = typeof (error as { code?: unknown }).code === 'string'
-          ? (error as { code: string }).code
-          : 'execution_failed'
-        // history 明确报执行错误 → 确定终态，立即记
-        if (code === 'execution_failed') {
+        // 兜底不能是 execution_failed —— 无 code 的错误会记成"执行失败"而 state=unknown
+        const code = codeOf(error) === '' ? 'wait_failed' : codeOf(error)
+        // 确定终态（ComfyUI 明确告知失败，或认证失败）立即记
+        if (isFatalRunError(error)) {
           finish({
             state: 'failed',
             finishedAt: Date.now(),
@@ -354,20 +422,25 @@ export function sweepRun(options: {
             error: {
               code,
               message: error instanceof Error ? error.message : String(error),
+              ...(typeof (error as { kind?: unknown }).kind === 'string' ? { kind: (error as { kind: string }).kind } : {}),
             },
           })
           return
         }
-        // 网络类错误：ComfyUI 重启/瞬断时很常见，连续若干次才判死
+        // 网络类错误：ComfyUI 重启/瞬断时很常见，连续若干次才放弃
         transientFailures += 1
         if (transientFailures >= TRANSIENT_LIMIT) {
+          // 写 unknown 而不是 failed：我们只是查不到，没有证据说任务失败了。
+          // sweep 没有会话通道，这条记录就是模型唯一能看到的东西 ——
+          // 写成 failed 会让它重跑白等，而图可能已经在盘上了。
           finish({
-            state: 'failed',
+            state: finalStateOf(error),
             finishedAt: Date.now(),
             queuePosition: undefined,
             error: {
               code,
               message: error instanceof Error ? error.message : String(error),
+              ...(typeof (error as { kind?: unknown }).kind === 'string' ? { kind: (error as { kind: string }).kind } : {}),
             },
           })
         } else {

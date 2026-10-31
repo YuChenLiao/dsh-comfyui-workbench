@@ -185,7 +185,21 @@ export class ComfyClient {
   /** 查一次 history：没完成时返回 undefined。 */
   async history(promptId: string): Promise<HistoryEntry | undefined> {
     const res = await this.request(`/history/${encodeURIComponent(promptId)}`, { method: 'GET' }, 30_000)
-    if (!res.ok) return undefined
+    // 404 表示"这条记录还没有"（任务没跑完时 history 本来就是空的）—— 返回 undefined 让它继续等。
+    // 但 5xx / 401 / 403 不是"没完成"，而是查询本身出了问题。原来一律 return undefined，
+    // 于是 poller 会永远认为任务在跑：记录停在 queued，activeCount 虚高，而 ComfyUI 那边
+    // 可能早挂了。抛一个**可重试**的错误，让上层按瞬时失败累计，别静默卡死。
+    if (res.status === 404) return undefined
+    if (res.status === 401 || res.status === 403) throw authFailed(this.baseUrl, res.status)
+    if (!res.ok) {
+      // 不复用 comfyUnreachable：它的文案是"连不上"，而这里服务明明回了 500 ——
+      // 让人去"确认 ComfyUI 在跑"是错的，它活着，是后端或中间层出了问题。
+      throw new RunError(
+        'comfy_unreachable',
+        `ComfyUI 查询失败：/history 返回 ${res.status}`,
+        '服务可能正在重启或后端异常。稍后重试；持续失败请看 ComfyUI 控制台日志。',
+      )
+    }
     const parsed: unknown = await res.json()
     if (parsed === null || typeof parsed !== 'object') return undefined
     const entry = (parsed as Record<string, unknown>)[promptId]

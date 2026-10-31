@@ -25,6 +25,25 @@
 
   工作流被改过（`workflowHash` 不同）时**提示但不阻止**：改内部参数不影响表面，`vars` 的键名可能仍兼容。
 
+### 改进
+
+- **执行失败分五类，建议按类给**。原来无论什么错都是同一句"通常是模型/节点参数不匹配或显存不足"。而真实失败就那么几类，解法完全不同：OOM 要降分辨率、缺模型要去装或换、输入图坏了要查文件、参数越界要改值。模型拿笼统句子只能猜，猜错就是又一轮报错。
+
+  分类器是纯函数（`oom` / `missing_model` / `missing_node` / `bad_input` / `bad_param` / `unknown`），认不出就退化成原来那句。`code` 仍是 `execution_failed`（调用方可能按它分支），新增 `kind` 字段。
+
+- **判据的二维性**：`isRetryable`（还等不等）与 `finalStateOf`（终态写什么）是**两件事**，不能合成一个布尔。典型分叉是 `no_output`（执行完成了但没拿到产物文件）：它还值得继续等 —— ComfyUI 写 outputs 与 SaveImage 落盘之间有竞态窗；但真的放弃时终态必须是 `failed`，"完成了但没产物"是个确定结论，写 unknown 会让人一直等。
+
+  这个坑踩了两次：第一次是手写判据把 `no_output` 当"可重试的网络问题"，三条路径一起说"连续 6 次查不到 /history"（事实完全相反）；第二次是把判据换成 `isRetryable`，二维又压回一维，wait 路径照样把它降级成 pending，让用户去续查一个永远查不到的结果。
+
+- **瞬时失败不再一次判死**：`/history` 报 5xx 在 ComfyUI 重启窗口里是常态，而 `watchRun` 原来一个 tick 就判死并发"执行失败"通知 —— 更糟的是判死后 `collectArtifacts` 永不执行，**图其实出了也不落盘**。现在只有 `execution_failed` / `auth_failed` 立即判死，网络类连续 6 次才标 unknown，文案改成"查不到 /history，用 promptId 续查"而不是"执行失败"。同一份 `client.history()` 的两个消费者（watchRun / sweepRun）现在用同一套判据。
+
+- **`/history` 的 5xx 不再被当成"还没完成"**：原来 `if (!res.ok) return undefined`，于是 poller 永远认为任务在跑 —— 记录停在 queued、`activeCount` 虚高，而 ComfyUI 可能早挂了。现在 404 仍表示"记录还没有"，401/403 抛认证错误，其它非 2xx 抛可重试错误（文案说清是"查询失败"而不是"连不上"）。
+
+  几个实测抓出来的坑：
+  - **`Value not in list` 不能一律当缺模型**。`'add-detail-xl.safetensorsx' not in ['add-detail-xl.safetensors']` 是值写错了，候选里本来就有对的。现在归 `bad_param` 并点名"你写的是 X，候选里是 Y"。
+  - **抓文件名要抓被拒绝的那个**。按扩展名找第一个匹配会落到候选列表里那个正确的名字，等于把"你拼错了"说成"你缺这个文件"。
+  - 补了中文模式（自定义节点会抛中文）与 OOM / 缺节点的其它说法（`Errno 12 Cannot allocate memory`、`OOM when allocating tensor`、`The following node types were not found`、`Node 'X' not found`）。
+
 ### 优化
 
 - **`run_batch` 按工作流分组后提交**：ComfyUI 的权重按"上次用的那份"常驻显存，同工作流连续跑只换 seed 不重载，但 `SDXL → Flux → SDXL` 来回切每次都要重载几十秒。改成提交前按工作流声明分组；`results` 仍按原始下标返回，调用方靠 `index` 对账不会错位。

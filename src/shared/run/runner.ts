@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { ensureDir } from '../host/paths.js'
 import { readPngTextChunks } from '../media/png-text.js'
+import { isFatalRunError, isRetryable, TRANSIENT_LIMIT } from './policy.js'
 import type { ComfyClient, HistoryEntry } from '../comfy/index.js'
 import {
   asRunError,
@@ -253,7 +254,18 @@ export async function submitWorkflow(
 export async function checkRun(client: ComfyClient, promptId: string): Promise<{ done: boolean; entry?: HistoryEntry }> {
   const entry = await client.history(promptId)
   if (entry === undefined) return { done: false }
-  if (entry.status?.status_str === 'error') throw executionFailed(entry, promptId)
+  if (entry.status?.status_str === 'error') {
+    // 把当时那次运行的宽高带上：OOM 的建议要说"从 1312×1840 降到 704×1024"，
+    // 只给"长边降到 1024 以内"等于让人自己算。尺寸在 recallRun 的 effective 里。
+    const effective = recallRun(promptId)?.effective
+    const width = typeof effective?.width === 'number' ? effective.width : undefined
+    const height = typeof effective?.height === 'number' ? effective.height : undefined
+    throw executionFailed(
+      entry,
+      promptId,
+      width === undefined || height === undefined ? undefined : { width, height },
+    )
+  }
   const hasOutputs = entry.outputs !== undefined && Object.keys(entry.outputs).length > 0
   return { done: entry.status?.completed === true || hasOutputs, entry }
 }
@@ -378,9 +390,45 @@ export async function waitForRun(
   const startedAt = Date.now()
   options.onStage?.('waiting')
   const deadline = startedAt + options.timeoutMs
+  /**
+   * 连续的可重试失败次数。
+   *
+   * 与 watchRun / sweepRun 共用同一套容忍度：ComfyUI 重启窗口里 `/history` 报 5xx
+   * 很常见，一次就放弃会让 `wait: true` 在 46ms 内返回 pending，而任务其实还在跑。
+   * 确定终态（execution_failed / auth_failed）仍然立即抛。
+   */
+  let transientFailures = 0
+  /**
+   * 收集产物失败的次数，与 {@link transientFailures} **分开计**。
+   *
+   * 共用一个计数器会死循环：`checkRun` 成功后会把计数清零，而 `collectArtifacts`
+   * 的 `no_output` 在清零之后才抛 —— 每轮都从 0 开始数，永远到不了上限。
+   */
+  let collectFailures = 0
 
   for (;;) {
-    const state = await checkRun(client, promptId)
+    let state
+    try {
+      state = await checkRun(client, promptId)
+      transientFailures = 0
+    } catch (error) {
+      if (isFatalRunError(error)) throw error
+      transientFailures += 1
+      if (transientFailures >= TRANSIENT_LIMIT) throw error
+      // 还没到上限：当作"这次没查到"，继续等
+      if (Date.now() > deadline) {
+        return {
+          ok: true,
+          pending: true,
+          promptId,
+          waitedMs: Date.now() - startedAt,
+          hint: `连续 ${transientFailures} 次查询失败（${error instanceof Error ? error.message : String(error)}）。任务可能还在跑，用 comfyui_run 传这个 promptId 续查。`,
+        }
+      }
+      await sleep(options.pollIntervalMs)
+      continue
+    }
+
     if (state.done && state.entry !== undefined) {
       options.onStage?.('fetching')
       const context = recallRun(promptId) ?? {
@@ -391,7 +439,18 @@ export async function waitForRun(
         writeMetadata: true,
         submittedAt: startedAt,
       }
-      return await collectArtifacts(client, promptId, state.entry, context)
+      try {
+        return await collectArtifacts(client, promptId, state.entry, context)
+      } catch (error) {
+        // `no_output`（完成了但产物还没落盘）也走"再等等"—— ComfyUI 写 outputs
+        // 与 SaveImage 落盘之间有个竞态窗，首次读不到很常见。真正的确定终态
+        //（execution_failed / auth_failed）仍立即抛。
+        if (!isRetryable(error)) throw error
+        collectFailures += 1
+        if (collectFailures >= TRANSIENT_LIMIT) throw error
+        await sleep(options.pollIntervalMs)
+        continue
+      }
     }
     if (Date.now() > deadline) {
       return {

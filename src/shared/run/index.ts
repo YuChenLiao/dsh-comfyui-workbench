@@ -25,3 +25,4 @@ export type {
 } from './runner.js'
 export { applyOverrides, overrideNotes } from './overrides.js'
 export type { OverrideOutcome } from './overrides.js'
+export { codeOf, codeOrDefault, finalStateOf, giveUpMessage, isFatalRunError, isRetryable, TRANSIENT_FINAL_STATE, TRANSIENT_LIMIT } from './policy.js'
