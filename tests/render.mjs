@@ -63,7 +63,7 @@ const item = {
 const cardHtml = renderToStaticMarkup(React.createElement(Card, { item, t, onOpen() {}, onAction() {} }))
 assert.match(cardHtml, /class="cfa-card"/)
 assert.match(cardHtml, /\/comfyui-workbench\/api\/file\?path=D%3A%5Cdsh%5Cgallery-samples%5Ccomfyui-20261021-162731-7eo6\.png/)
-for (const key of ['copyImage', 'copyPrompt', 'exportWorkflow', 'addToChat', 'remove']) {
+for (const key of ['copyImage', 'copyPrompt', 'exportWorkflow', 'addToChat', 'useAsInput', 'remove']) {
   assert.match(cardHtml, new RegExp(`aria-label="${key}"`), `悬浮按钮缺少 ${key}`)
 }
 assert.match(cardHtml, /640×640/)

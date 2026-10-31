@@ -52,6 +52,8 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
           <button type="button" className="cfa-btn" title={t('copyPrompt')} aria-label={t('copyPrompt')} onClick={act('copyPrompt')}><Icon name="text" size={15} /></button>
           <button type="button" className="cfa-btn" title={t('exportWorkflow')} aria-label={t('exportWorkflow')} onClick={act('exportWorkflow')}><Icon name="download" size={15} /></button>
           <button type="button" className="cfa-btn" title={t('addToChat')} aria-label={t('addToChat')} onClick={act('addToChat')}><Icon name="chat" size={15} /></button>
+          {/* 拿这张图去出图：列出吃图的工作流，选中即提交 */}
+          <button type="button" className="cfa-btn" title={t('useAsInput')} aria-label={t('useAsInput')} onClick={act('useAsInput')}><Icon name="image" size={15} /></button>
           <button type="button" className="cfa-btn cfa-danger" title={t('remove')} aria-label={t('remove')} onClick={act('remove')}><Icon name="trash" size={15} /></button>
         </div>
       )}

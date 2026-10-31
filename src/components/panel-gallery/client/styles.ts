@@ -90,6 +90,15 @@ export const CSS: string = [
       '.cfa-prompt-box{margin:0;padding:9px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;user-select:text}',
       '@media (hover:none){.cfa-actions{opacity:1;transform:none}}',
       '@media (max-width:820px){.cfa-lb{flex-direction:column;padding:12px}.cfa-lb-side{width:auto;max-height:44vh}.cfa-lb-img{max-height:62vh}.cfa-lb-nav{width:34px;height:34px}}',
+      // 选图出图的候选浮层
+      '.cfa-picker{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}',
+      '.cfa-picker-box{min-width:280px;max-width:min(420px,86vw);max-height:70vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.4);overflow:hidden}',
+      '.cfa-picker-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px}',
+      '.cfa-picker-list{display:flex;flex-direction:column;overflow:auto;padding:6px}',
+      '.cfa-picker-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;text-align:left;cursor:pointer}',
+      '.cfa-picker-item:hover{background:var(--dsw-alias-bg-layer-2)}',
+      '.cfa-picker-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.cfa-picker-slot{font-size:11px;opacity:.6}',
       '.cfa-extra{position:relative;display:inline-flex}',
       '.cfa-extra-trigger{letter-spacing:1px;line-height:1;padding:0 8px}',
       // top:100% + 自身 padding 撑出间距：不能用 top:calc(100% + 6px)，那中间的 6px 是真空，
