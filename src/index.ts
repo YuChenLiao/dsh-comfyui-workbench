@@ -108,6 +108,8 @@ export { adviceFor, classifyFailure, modelNameIn } from './shared/comfy/failure-
 export { executionFailed } from './shared/comfy/errors.js'
 export type { FailureKind } from './shared/comfy/failure-kind.js'
 export { NodeIndex } from './shared/comfy/node-index.js'
+export { watchProgress } from './shared/comfy/progress.js'
+export type { ProgressTick } from './shared/comfy/progress.js'
 export { nodeSearchTool, resetNodeIndexCache } from './components/tool-generate/tools/node-search.js'
 export { planOrder, runBatchTool } from './components/tool-generate/tools/run-batch.js'
 export { runsTool } from './components/tool-generate/tools/runs.js'

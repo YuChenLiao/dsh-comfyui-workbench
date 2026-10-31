@@ -58,6 +58,16 @@
 
   另外两处契约也只对了一半：`POST /run` 只认扁平的 `workflowId`（发 `{workflow:{id}}` 直接 400），而 `/run` 失败时返回 **200 + `ok:false`**（只看 `res.ok` 会把失败弹成"已提交"）。
 
+- **精确进度（可选，默认关）**：`sweepRun` 新增 `progressStream`，从 ComfyUI 的 `/ws` 读 `progress` 事件，写进运行记录的 `progress: {value, max}`。轮询只能答"在跑吗、排队第几"，答不了"画到 37% 了"。
+
+  **默认关闭，且未经真机验证**：本机 ComfyUI 离线（8188 无监听），这条路径只在注入假 WebSocket 下验过正向与降级。连不上时静默降级，出图不受影响。
+
+  **目前没有任何生产调用方传它** —— `Settings` 里没有开关，`/run`、`run_batch`、`rerun` 都没接。只有测试或直接调用模块能开。
+
+  已知局限：断线不重连（百分比会冻结在最后一次，看起来像卡住）；`max` 按采样节点重置会回跳；没有采样器的工作流（纯 upscale / VAE）全程无百分比；Node 20 没有全局 `WebSocket`，那时会静默不生效；有 basic auth / API key 的实例连不上；一条运行一条长连接，batch 20 就是 20 条。
+
+  另外两处实现细节后来才补：`watchRun` 曾声明过 `progressStream` 却一次都没用（假契约，已删）；`stopAllWatchers` 原先只清 timer 不清进度连接，热重载后会残留 socket。
+
 ### 优化
 
 - **批量提交只投递一条汇总通知**：`run_batch` 原来逐条挂 watcher，10 张图 = 10 次 `followup` = **10 轮对话打断** —— 一件本来可以一次说完的事被拆成十次汇报。

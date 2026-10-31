@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 
+import { watchProgress } from '../comfy/progress.js'
 import type { ComfyClient } from '../comfy/index.js'
 import type { LoggerLike } from '../host/types.js'
 import { codeOf, finalStateOf, giveUpMessage, isFatalRunError, TRANSIENT_LIMIT } from './policy.js'
@@ -377,6 +378,13 @@ export function sweepRun(options: {
   intervalMs?: number
   maxWaitMs?: number
   logger?: LoggerLike | undefined
+  /**
+   * 是否用 ComfyUI 的 WebSocket 读精确进度。
+   *
+   * 默认关（这条路径本机离线未真机验证）。开了也只影响记录里有没有 progress，
+   * 出图本身仍靠轮询 —— 连不上时静默降级。
+   */
+  progressStream?: boolean
   registry?: {
     update: (promptId: string, patch: object) => void
     get: (promptId: string) => { state?: string } | undefined
@@ -389,14 +397,42 @@ export function sweepRun(options: {
   /** 连续的网络类失败次数；达到阈值才判 failed。 */
   let transientFailures = 0
 
+  /**
+   * 进度订阅的取消函数。
+   *
+   * 先占位、**清场之后**才真正订阅 —— 下面的 `stop()` 会调它，
+   * 如果先订阅再 stop，连接刚建好就被自己关掉（`closed` 一置，后续事件全被吞），
+   * 表现为"功能 100% 不生效"而测试照样绿。
+   */
+  let stopProgress: () => void = () => {}
+
   const stop = (): void => {
+    // 进度订阅也要断，否则连接会跟着 watcher 活到进程结束
+    try {
+      stopProgress()
+    } catch {
+      // 已经断了
+    }
     const current = watchers.get(promptId)
     if (current !== undefined) {
       clearInterval(current.timer)
       watchers.delete(promptId)
     }
   }
+  // 清掉同 promptId 的旧 watcher（原有的清场动作）
   stop()
+
+  // 清场之后才订阅：拿不到进度不影响出图，只是记录里没有百分比
+  if (options.progressStream === true) {
+    stopProgress = watchProgress(client.baseUrl, promptId, tick => {
+      try {
+        options.registry?.update(promptId, { progress: { value: tick.value, max: tick.max } })
+      } catch {
+        // 写不进去就算了
+      }
+    }, { ...(options.logger === undefined ? {} : { logger: options.logger }) })
+    progressStops.add(stopProgress)
+  }
 
   let inflight = false
   let settled = false
@@ -404,7 +440,9 @@ export function sweepRun(options: {
   const finish = (patch: object): void => {
     settled = true
     stop()
-    options.registry?.update(promptId, patch)
+    // progress 要清：done 记录还带着 {value:3,max:10} 会让人以为还没跑完
+    options.registry?.update(promptId, { ...patch, progress: undefined })
+    progressStops.delete(stopProgress)
   }
 
   const timer = setInterval(() => {
@@ -514,7 +552,19 @@ export function sweepRun(options: {
 }
 
 /** 停掉全部等待者（插件卸载时调用）。 */
+/** 所有活着的进度订阅；插件卸载时要一起断。 */
+const progressStops = new Set<() => void>()
+
 export function stopAllWatchers(): void {
   for (const [, watcher] of watchers) clearInterval(watcher.timer)
   watchers.clear()
+  // 进度连接也要断：插件卸载/热重载时不清的话，socket 会残留到进程结束
+  for (const stopProgress of progressStops) {
+    try {
+      stopProgress()
+    } catch {
+      // 已经断了
+    }
+  }
+  progressStops.clear()
 }
