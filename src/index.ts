@@ -110,6 +110,7 @@ export { planOrder, runBatchTool } from './components/tool-generate/tools/run-ba
 export { runsTool } from './components/tool-generate/tools/runs.js'
 export { rerunTool } from './components/tool-generate/tools/rerun.js'
 export { loadWorkflowForBatch } from './components/tool-generate/tools/run.js'
+export { workflowListTool } from './components/tool-generate/tools/workflow-list.js'
 export { ComfyClient } from './shared/comfy/client.js'
 export { RunRegistry } from './shared/run/registry.js'
 export { sweepRun, watchRun } from './shared/run/notify.js'

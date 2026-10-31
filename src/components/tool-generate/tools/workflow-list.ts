@@ -44,12 +44,18 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
       additionalProperties: false,
       properties: {
         q: { type: 'string', description: '按标题 / 备注 / 模型名过滤（不区分大小写）' },
+        inputs: {
+          type: 'string',
+          enum: ['image', 'mask'],
+          description: "只看需要这类输入的工作流（找'能吃图的工作流'就用 image）。结果里会标 needsImage 与对应槽位名。",
+        },
         includeDisabled: { type: 'boolean', description: '连被管理员停用的工作流一起列出（默认只看可用的）' },
       },
     },
     output: jsonOutput(),
     async execute(args) {
       const query = asString(args.q).trim().toLowerCase()
+      const wantInput = asString(args.inputs).trim().toLowerCase()
       const { entries, broken } = listEntries(deps.workflowsDir)
 
       // 本机有哪些模型：拿不到 object_info（ComfyUI 离线）就跳过这项检查，
@@ -80,6 +86,15 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
           }
         })
         .filter(item => {
+          // 按输入类型筛：找"能吃图的工作流"时用这个，比让模型自己翻 inputKinds 强
+          if (wantInput !== '') {
+            const slots = Array.isArray(item.inputs) ? (item.inputs as Array<{ name?: unknown; type?: unknown }>) : []
+            const matched = slots.filter(slot => String(slot.type ?? '').toLowerCase() === wantInput)
+            if (matched.length === 0) return false
+            // 把"该往哪个键里传图"直接告诉模型，省掉一次 inspect
+            item.imageSlots = matched.map(slot => String(slot.name ?? ''))
+            item.needsImage = wantInput === 'image'
+          }
           if (query === '') return true
           const haystack = `${String(item.title)} ${String(item.description)} ${String((item.models as { primary?: unknown }).primary)}`.toLowerCase()
           return haystack.includes(query)
@@ -92,7 +107,12 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
         ...(broken.length > 0 ? { broken, brokenHint: '这些文件不是可用的 API 格式工作流，已跳过。' } : {}),
         ...(hidden > 0 ? { hiddenCount: hidden, hiddenHint: `另有 ${hidden} 个工作流被停用（面板里可重新启用）。` } : {}),
         ...(items.length === 0 && broken.length === 0
-          ? { hint: '没有可用的工作流。用面板启用一个，或导入一份 API 格式工作流（ComfyUI 里 Export (API)）。' }
+          ? {
+            // 按输入类型筛空时要专门说 —— 通用那句会让人以为"一个工作流都没有"
+            hint: wantInput === ''
+              ? '没有可用的工作流。用面板启用一个，或导入一份 API 格式工作流（ComfyUI 里 Export (API)）。'
+              : `本机没有需要 ${wantInput} 输入的工作流。去掉 inputs 参数可以看全部。`,
+          }
           : {}),
       }
     },

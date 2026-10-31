@@ -44,6 +44,14 @@
   - **抓文件名要抓被拒绝的那个**。按扩展名找第一个匹配会落到候选列表里那个正确的名字，等于把"你拼错了"说成"你缺这个文件"。
   - 补了中文模式（自定义节点会抛中文）与 OOM / 缺节点的其它说法（`Errno 12 Cannot allocate memory`、`OOM when allocating tensor`、`The following node types were not found`、`Node 'X' not found`）。
 
+### 新增
+
+- **`comfyui_workflow_list` 可以按输入类型筛**：`inputs: 'image'` 只返回需要图片输入的工作流，并在结果里给出 `imageSlots`（该往哪个键里传图）与 `needsImage`。模型想"拿这张图去出图"时不必自己翻每个工作流的 `inputKinds` 再猜槽位名。
+
+  配合 `comfyui_run` 的 `vars` 就通了：筛出工作流 → 把图路径传给对应槽位（`LoadImage` 只认 ComfyUI `input/` 目录里的文件名，插件会自动搬运本地图）。
+
+  面板侧的"从资产库选图"入口尚未做 —— 那只是人类入口，模型这条链已经通了。
+
 ### 优化
 
 - **批量提交只投递一条汇总通知**：`run_batch` 原来逐条挂 watcher，10 张图 = 10 次 `followup` = **10 轮对话打断** —— 一件本来可以一次说完的事被拆成十次汇报。
