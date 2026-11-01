@@ -75,6 +75,54 @@ function deliver(target: NotifyTarget, text: string, logger?: LoggerLike | undef
 }
 
 /**
+ * 注册表里这段代码用到的两个方法。
+ *
+ * `shared/run` 与 `shared/tools` 互不允许依赖（`tests/arch.mjs` 双向检查），
+ * 所以不 import `RunRegistry` 的类型，只声明用到的形状。
+ */
+interface QueueRegistry {
+  update: (promptId: string, patch: object) => void
+  get: (promptId: string) => { state?: string; startedAt?: number } | undefined
+}
+
+/**
+ * 从 `/queue` 同步「正在跑 / 排队第几」。
+ *
+ * `watchRun` 与 `sweepRun` 共用。原来只有 `watchRun` 有这段，于是面板提交
+ * （走 `sweepRun`，没有会话通道）的记录永远停在 `queued`、`queuePosition`
+ * 一直是 undefined —— 真机实测一次 11 秒的运行从头到尾没出现过 `running`，
+ * 面板上看不出"正在跑"与"排队中"的区别，而 `comfyui_runs` 的描述写着
+ * "queued 是排队中的（带 queuePosition）"。同一条 `/run` 提交，两个消费者
+ * 看到的状态不一样。
+ *
+ * 纯观测动作：查不到就保持上一次的状态，绝不影响下面判完成。
+ */
+async function syncQueueState(
+  client: ComfyClient,
+  promptId: string,
+  registry: QueueRegistry | undefined,
+): Promise<void> {
+  if (registry === undefined) return
+  try {
+    const queue = await client.queue()
+    const runningAt = queue.running.indexOf(promptId)
+    const pendingAt = queue.pending.indexOf(promptId)
+    if (runningAt >= 0) {
+      // queuePosition 0 表示"正在跑"；1 表示"下一个就轮到"。
+      registry.update(promptId, {
+        state: 'running',
+        startedAt: registry.get(promptId)?.startedAt ?? Date.now(),
+        queuePosition: 0,
+      })
+    } else if (pendingAt >= 0) {
+      registry.update(promptId, { state: 'queued', queuePosition: pendingAt + 1 })
+    }
+  } catch {
+    // 查不到就保持上一次的状态，不影响下面判完成
+  }
+}
+
+/**
  * 后台盯着一次运行，完成时把结果作为插件通知塞回发起它的会话。
  *
  * 这是"对话能不能自己收到结果"的答案：不等用户再问，也不消耗子代理额度 ——
@@ -113,10 +161,7 @@ export function watchRun(options: {
    * 只声明这里真正用到的两个方法 —— `shared/run` 与 `shared/tools` 互不允许依赖
    * （tests/arch.mjs 两个方向都查），所以不能 import 那边的类型。
    */
-  registry?: {
-    update: (promptId: string, patch: object) => void
-    get: (promptId: string) => { startedAt?: number } | undefined
-  } | undefined
+  registry?: QueueRegistry | undefined
 }): () => void {
   const { client, target, promptId, outputDir } = options
   // 与 sweepRun 对称：调用方传超小值时不该把 ComfyUI 打爆
@@ -178,28 +223,8 @@ export function watchRun(options: {
       try {
         // 先问队列：这一步只写注册表，绝不进对话 —— 进度是秒级高频数据，
         // 对话是回合制，每写一次就要排一轮。验收标准 14～16 钉的就是这条。
-        //
-        // **单独 try**：查队列是纯观测动作，它失败不该把这一 tick 的完成判定
-        // 一起拖进失败路径（那会误发失败通知，而任务可能已经出图了）。
-        if (options.registry !== undefined) {
-          try {
-            const queue = await client.queue()
-            const runningAt = queue.running.indexOf(promptId)
-            const pendingAt = queue.pending.indexOf(promptId)
-            if (runningAt >= 0) {
-              // queuePosition 0 表示"正在跑"；1 表示"下一个就轮到"。
-              options.registry.update(promptId, {
-                state: 'running',
-                startedAt: options.registry.get(promptId)?.startedAt ?? Date.now(),
-                queuePosition: 0,
-              })
-            } else if (pendingAt >= 0) {
-              options.registry.update(promptId, { state: 'queued', queuePosition: pendingAt + 1 })
-            }
-          } catch {
-            // 查不到就保持上一次的状态，不影响下面判完成
-          }
-        }
+        // 与 `sweepRun` 共用 `syncQueueState`（它失败只影响状态显示，不影响判完成）。
+        await syncQueueState(client, promptId, options.registry)
 
         const state = await checkRun(client, promptId)
         if (!state.done || state.entry === undefined) {
@@ -385,10 +410,7 @@ export function sweepRun(options: {
    * 出图本身仍靠轮询 —— 连不上时静默降级。
    */
   progressStream?: boolean
-  registry?: {
-    update: (promptId: string, patch: object) => void
-    get: (promptId: string) => { state?: string } | undefined
-  } | undefined
+  registry?: QueueRegistry | undefined
 }): () => void {
   const { client, promptId, outputDir, workflowId } = options
   const intervalMs = Math.max(50, options.intervalMs ?? 1_000)
@@ -456,6 +478,10 @@ export function sweepRun(options: {
       }
       inflight = true
       try {
+        // 与 watchRun 对称：面板提交走这条路、没有会话通道，没人查队列的话记录
+        // 会一直停在 queued —— 面板上看不出"正在跑"，`queuePosition` 也一直是空。
+        // 真机实测过：一次 11 秒的运行从头到尾只有 queued → done。
+        await syncQueueState(client, promptId, options.registry)
         const state = await checkRun(client, promptId)
         if (state.done && state.entry !== undefined) {
           const context = recallRun(promptId) ?? {

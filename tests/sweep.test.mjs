@@ -176,6 +176,51 @@ test('history 比轮询慢时不重入（不会出现 done 之后又 failed）',
   fs.rmSync(deps._dir, { recursive: true, force: true })
 })
 
+test('sweepRun 也查 /queue：写 running 与 queuePosition（原来只有 watchRun 有）', async () => {
+  // 真机实测：面板 /run 走的就是 sweepRun（没有会话通道），一次 11 秒的运行从头到尾
+  // 只有 queued → done，`queuePosition` 一直是 undefined —— 面板上看不出"正在跑"和
+  // "排队中"的区别，而 comfyui_runs 的描述写着"queued 带 queuePosition"。
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sweepq-'))
+  const registry = new RunRegistry(dir)
+  registry.submit('p1', 'wf')
+  let queueView = { running: [], pending: ['other', 'p1'] }
+  const client = {
+    baseUrl: 'http://127.0.0.1:8188',
+    async queue() { return queueView },
+    async history() { return undefined }, // 永不完成，让 tick 只做状态同步
+    async view() { return Buffer.alloc(0) },
+  }
+  const stop = sweepRun({
+    client,
+    promptId: 'p1',
+    workflowId: 'wf',
+    outputDir: dir,
+    intervalMs: 40,
+    registry,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+  })
+  try {
+    assert.equal(
+      await waitFor(() => registry.get('p1')?.queuePosition === 2),
+      true,
+      `排队位次要写进去（pending 下标 1 → 第 2 位），实际 ${JSON.stringify(registry.get('p1'))}`,
+    )
+    assert.equal(registry.get('p1')?.state, 'queued')
+
+    queueView = { running: ['p1'], pending: [] }
+    assert.equal(
+      await waitFor(() => registry.get('p1')?.state === 'running'),
+      true,
+      `跑起来要变 running，实际 ${JSON.stringify(registry.get('p1'))}`,
+    )
+    assert.equal(registry.get('p1')?.queuePosition, 0, '正在跑时位次是 0')
+    assert.ok(typeof registry.get('p1')?.startedAt === 'number', 'startedAt 要写')
+  } finally {
+    stop()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('记录被裁掉后 sweep 自行停止（不白轮询到 30 分钟）', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep3-'))
   const registry = new RunRegistry(dir)
