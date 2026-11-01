@@ -84,11 +84,12 @@
         indexMode: auto
         # better-sidebar 页签：auto | on | off。
         betterSidebarTab: auto
-        # 用 /ws 读精确进度（默认关）。开了之后面板提交（/run、/rerun）的记录会带
+        # 用 /ws 读精确进度。开了之后面板提交（/run、/rerun）的记录会带
         # progress:{value,max}；订阅复用提交时的 client_id，所以要求 /ws 可达
         # （反代/鉴权层挡住就算降级，出图不受影响）。工具提交的没有进度。
+        # 这里只是**默认值** —— 「工作流管理」面板上可以直接开关，不用改这个文件也不用重启。
         # 也可用环境变量 COMFYUI_PROGRESS_WS=1 打开。
-        progressStream: false
+        progressStream: true
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf

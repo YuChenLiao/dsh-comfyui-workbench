@@ -61,7 +61,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开 |
 | `timeoutMs` | 单次 HTTP 请求超时。`/run`、`/rerun` 的 `timeoutMs` 另外用来**放宽**后台盯守时长（下限 30 分钟，传更小的值会被抬高，实际预算写在返回的 `notes` 里） |
 | `pollIntervalMs` | 执行状态轮询间隔 |
-| `progressStream` | 用 `/ws` 读精确进度（默认 `false`，也可用 `COMFYUI_PROGRESS_WS=1` 打开）。开了之后面板提交的记录会带 `progress: {value, max}`；只影响 `/run`、`/rerun`，工具侧没有 |
+| `progressStream` | 用 `/ws` 读精确进度（默认 `false`）。**可以在「工作流管理」面板上直接开关**，不用改这个文件 —— 这里的值只是"默认值"，面板上的开关写的是插件数据目录的 `settings.json`，改完下一次提交就生效。也可用 `COMFYUI_PROGRESS_WS=1`。开了之后面板提交的记录会带 `progress: {value, max}`；只影响 `/run`、`/rerun`，工具侧没有 |
 | `roots` | 额外纳入资产库的目录（默认已含当前工作区、`dsh-comfyui-image` 的 `outputDir`、产物目录） |
 | `assetRoots` | 额外的**可写**根。`assertWritable` 取的是全部授权根的合集（`roots` / 工作区 / cwd / 产物目录 / uploads / assetRoots），只有落在合集之外才拒绝写入 |
 

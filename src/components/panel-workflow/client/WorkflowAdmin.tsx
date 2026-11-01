@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { fetchWorkflowList, updateWorkflow } from '../../../client/api.js'
+import { fetchConfig, fetchWorkflowList, setProgressStream, updateWorkflow } from '../../../client/api.js'
+import type { TogglesView } from '../../../client/api.js'
 import type { WorkflowListItem } from '../../../client/types.js'
 import type { Translate } from '../../../client/i18n.js'
 import { Icon } from '../../../client/icons.js'
@@ -26,12 +27,20 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
   const [saving, setSaving] = useState<Saving>({})
   const [notice, setNotice] = useState<string>('')
   const [error, setError] = useState<string>('')
+  /** 面板开关：`null` 表示还没拿到（或这个部署不给改）。 */
+  const [toggles, setToggles] = useState<TogglesView | null>(null)
+  const [toggleSaving, setToggleSaving] = useState(false)
 
   const load = (): void => {
     setLoading(true)
-    fetchWorkflowList()
-      .then(data => {
+    Promise.all([
+      fetchWorkflowList(),
+      // 拿不到开关不影响列表：老宿主 / 关掉面板时这里会失败
+      fetchConfig().catch(() => null),
+    ])
+      .then(([data, config]) => {
         setItems(data.workflows)
+        setToggles(config?.toggles ?? null)
         setError('')
       })
       .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
@@ -64,6 +73,26 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
     }
   }
 
+  /**
+   * 切「精确进度」。
+   *
+   * 写的是插件数据目录的 `settings.json`，不是 profile 配置 —— 所以不用重启，
+   * 下一次从面板提交的运行就带 `progress`。
+   */
+  const toggleProgress = async (next: boolean): Promise<void> => {
+    setToggleSaving(true)
+    try {
+      const updated = await setProgressStream(next)
+      setToggles(updated)
+      setNotice(t('adminSaved'))
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setToggleSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="cwb-root">
@@ -93,6 +122,34 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
 
       {error !== '' ? <div className="cwa-error">{error}</div> : null}
       {notice !== '' ? <div className="cwa-notice">{notice}</div> : null}
+
+      {toggles === null ? null : (() => {
+        // `t()` 不做插值，所以占位符在这里一次性替换掉（两处复用同一个结果，
+        // 否则 title 里会漏出原始的 `{value}/{max}`）
+        const hint = t('progressToggleHint').replace('{value}', 'n').replace('{max}', 'N')
+        return (
+          <article className={`cwa-row${toggles.progressStream ? '' : ' off'}`}>
+            <div className="cwa-row-head">
+              <label className="cwa-switch" title={hint}>
+                <input
+                  type="checkbox"
+                  checked={toggles.progressStream}
+                  disabled={toggleSaving}
+                  onChange={event => { void toggleProgress(event.target.checked) }}
+                />
+                <span className="cwa-track" aria-hidden="true"><span className="cwa-knob" /></span>
+              </label>
+              <div className="cwa-meta">
+                <div className="cwa-name">{t('progressToggle')}</div>
+                <div className="cwa-facts">
+                  <span>{hint}</span>
+                  {toggles.progressStreamSource === 'config' ? <span className="cwa-badge">{t('progressToggleFromConfig')}</span> : null}
+                </div>
+              </div>
+            </div>
+          </article>
+        )
+      })()}
 
       {items.length === 0 ? (
         <div className="cwf-empty">

@@ -16,6 +16,7 @@ import { apply as applyGenerate } from './entries/generate.js'
 import { apply as applyTerminal } from './entries/terminal.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
+import { readToggles, writeToggles } from './shared/host/toggles.js'
 import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from './runtime.js'
 import { createConfigHandler } from './components/panel-workflow/server/config-api.js'
 export { handleWorkflowList } from './components/panel-workflow/server/workflows-api.js'
@@ -59,6 +60,9 @@ function mountConfig(ctx: HostContext, rt: ReturnType<typeof acquire>): void {
           components: componentStateOf(rt),
           tools: rt.tools,
         }),
+        // 面板开关：写在插件数据目录的 settings.json，改完下一次提交就生效，
+        // 不用碰 profile 里的 cordis.patch.yml（那要重启）。
+        toggles: { read: readToggles, write: writeToggles },
       }),
     },
   }
@@ -132,6 +136,8 @@ export { createTerminalRoutes } from './components/panel-terminal/server/routes.
 export { runTool } from './components/tool-generate/tools/run.js'
 export { createGalleryRoutes } from './components/panel-gallery/server/routes.js'
 export { probeWorkspace, resolveOutputDir, sessionWorkspaceDir, workspaceDirOf } from './shared/host/workspace.js'
+export { effectiveProgressStream, readToggles, resetToggleCache, togglesPath, writeToggles } from './shared/host/toggles.js'
+export type { TogglePatch, Toggles } from './shared/host/toggles.js'
 export { isAuthorized } from './shared/authz/authorize.js'
 export { foldPathCase } from './shared/host/paths.js'
 export {

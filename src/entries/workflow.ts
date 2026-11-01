@@ -10,6 +10,7 @@ import path from 'node:path'
 import { createWorkflowRoutes } from '../components/panel-workflow/server/routes.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
+import { readToggles } from '../shared/host/toggles.js'
 import { acquire, ensureHttp, mountRoutes, release } from '../runtime.js'
 
 /** 组件被配置关闭时的统一提示。 */
@@ -67,6 +68,8 @@ function applyInner(ctx: HostContext, config: unknown): void {
     runs: rt.runs,
     // 后台 sweep 与 /ws 进度订阅的降级都靠它留痕；漏了就只有"静默没有百分比"。
     logger: rt.logger,
+    // 面板开关（progressStream）：每次提交时读，改完下一次就生效，不用重启。
+    toggles: { read: readToggles },
     getExporter: () => rt.exportWorkflows,
   })
 

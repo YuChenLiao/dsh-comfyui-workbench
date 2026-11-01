@@ -336,6 +336,64 @@ test('面板「以原参数重跑」：POST /rerun 不能被方法校验拦成 4
   }
 })
 
+test('面板开关：POST /config 切 progressStream，且 GET 能读回（不用重启）', async () => {
+  // 这条必须走真实的 createDispatch —— /config 是 selfManaged 路径，
+  // 白名单里没有它的话 POST 会恒 405（`/rerun` 就栽在这），而 GET 又必须能用。
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    const before = await (await fetch(`${app.origin}/comfyui-workbench/api/config`)).json()
+    assert.equal(typeof before.config.toggles?.progressStream, 'boolean', '要报告开关当前值')
+    assert.equal(before.config.toggles.progressStreamSource, 'config', '还没在面板上改过，来源是配置')
+
+    const on = await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progressStream: true }),
+    })
+    assert.notEqual(on.status, 405, 'POST /config 被方法校验拦了')
+    const onBody = await on.json()
+    assert.equal(onBody.ok, true)
+    assert.equal(onBody.toggles.progressStream, true)
+    assert.equal(onBody.toggles.progressStreamSource, 'toggle')
+
+    // GET 立刻能读到（写的时候缓存已失效）
+    const after = await (await fetch(`${app.origin}/comfyui-workbench/api/config`)).json()
+    assert.equal(after.config.toggles.progressStream, true)
+    assert.equal(after.config.toggles.progressStreamSource, 'toggle')
+
+    // null = 清掉覆盖，回退到配置默认值
+    const cleared = await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progressStream: null }),
+    })
+    const clearedBody = await cleared.json()
+    assert.equal(clearedBody.ok, true)
+    assert.equal(clearedBody.toggles.progressStreamSource, 'config', '清掉覆盖后来源该回到配置')
+
+    // 非布尔值要明确拒绝，而不是静默当成 false
+    const bad = await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progressStream: 'yes' }),
+    })
+    assert.equal((await bad.json()).error, 'bad-body')
+
+    // PUT/DELETE 不能落进"当 GET 处理"（那会返回 200 + ok:true，客户端以为保存成功）
+    for (const method of ['PUT', 'DELETE']) {
+      const res = await fetch(`${app.origin}/comfyui-workbench/api/config`, { method })
+      assert.equal(res.status, 405, `${method} /config 该 405，实际 ${res.status}`)
+    }
+  } finally {
+    await app.close()
+  }
+})
+
 test('工具注册：11 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })

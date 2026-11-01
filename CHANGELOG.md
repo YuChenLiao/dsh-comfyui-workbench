@@ -4,6 +4,12 @@
 
 ### 新增
 
+- **面板上能直接开关「精确进度」**：`progressStream` 原来只能改 profile 的 `cordis.patch.yml` 或设环境变量，改完还得重启 DSH。现在「工作流管理」面板里有一个开关，写的是插件数据目录的 `settings.json`（`~/.dsh-comfyui-workbench/settings.json`），**下一次提交就生效**。
+
+  优先级是「面板开关 > 配置 / 环境变量 > 内置默认」：配置文件仍然是"默认值"，用户点了开关就以开关为准；POST 传 `null` 能清掉覆盖、退回配置。`/config` 的响应里带 `toggles.progressStreamSource`（`toggle` / `config`），面板据此标一句"当前值来自配置文件"。
+
+  两个实现要点：`/config` 加进了 dispatch 的 `selfManaged` —— 它是「GET 读配置 / POST 写开关」的同一路径，塞进 `WRITABLE` 会把 GET 也一起拦成 405（`/terminal` 与 `/rerun` 都踩过这个坑），同时 handler 自己挡掉 PUT/DELETE，别让它们落到"当 GET 处理"上返回 200；开关**故意不缓存** —— `toggles.ts` 会被两条 entry 各内联一份（`/config` 在 `lib/index.js`、`/run` 在 `lib/entries/workflow.js`），模块级缓存跨 bundle 不共享，面板写入只会失效自己那份，于是「面板显示已开、下一次运行却没有进度」。文件只有几十字节，`/run` 本来就在读工作流文件，直接读盘最省心。这一点是本仓第三次撞「模块级状态跨 bundle 分裂」，`RunRegistry` 与 `collecting` 都栽过。
+
 - **`comfyui_runs`：查任务运行状态**（第 10 个工具）。补的是「提交之后那几分钟」的空白 —— 出图实测中位 115 秒、最长 336 秒，这段时间里模型不知道在跑、排队第几、卡住了还是死了，只有完成时的一条通知。
 
   运行表挂在 runtime 上（不是模块级：多个 entry 各一份 bundle，模块级会分裂），落盘 `<会话>/comfyui_output/runs.json`，最多 200 条。**重启后原来 queued/running 的标成 `unknown` + `stale`** —— 那些任务在 ComfyUI 侧可能早完成了，但我们已经无从得知，留在 `running` 会让人一直等一个永不变化的状态。

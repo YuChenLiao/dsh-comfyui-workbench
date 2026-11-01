@@ -29,6 +29,12 @@ export async function apiJson(route: string, params?: Record<string, string>): P
   return bag ?? {}
 }
 
+/** 面板开关的当前状态。`source` 说明这个值是面板改的还是配置来的。 */
+export interface TogglesView {
+  progressStream: boolean
+  progressStreamSource: 'toggle' | 'config'
+}
+
 /** 宿主配置（界面上要显示的默认路径等）。 */
 export interface HostConfig {
   baseUrl: string
@@ -41,6 +47,35 @@ export interface HostConfig {
   /** 各组件是否启用。 */
   components?: Record<string, boolean>
   tools?: { registered: string[]; failed: Array<{ name: string; message: string }>; skipped: string[] }
+  /** 面板开关（`progressStream` 等）。 */
+  toggles?: TogglesView
+}
+
+/**
+ * 切一个面板开关。
+ *
+ * 写的是插件数据目录的 `settings.json`（不是 profile 的 `cordis.patch.yml`），
+ * 所以改完**下一次提交就生效**、不用重启。传 `null` 表示清掉覆盖、回退到配置默认值。
+ *
+ * @param progressStream - 目标状态，或 `null` 清掉覆盖。
+ */
+export async function setProgressStream(progressStream: boolean | null): Promise<TogglesView> {
+  const res = await fetch(`${API}/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ progressStream }),
+  })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object' ? (data as { ok?: unknown; message?: unknown; toggles?: unknown }) : null
+  if (bag?.ok !== true) throw new Error(typeof bag?.message === 'string' ? bag.message : `保存失败：HTTP ${res.status}`)
+  const toggles = bag.toggles !== null && typeof bag.toggles === 'object' ? (bag.toggles as TogglesView) : null
+  if (toggles === null) throw new Error('宿主没有返回开关状态。')
+  return toggles
 }
 
 /** 改工作流设置（是否可用 / 备注 / 标题），返回服务端确认后的值。 */

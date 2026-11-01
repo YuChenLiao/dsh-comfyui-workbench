@@ -64,9 +64,10 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       // 同一路径有不同方法语义的，由组件自己判断（通用方法校验不管它）：
       // /workflows —— GET 列表 / POST 批量导出
       // /terminal  —— GET 拉增量 / POST 清屏或启动
+      // /config    —— GET 读配置 / POST 切面板开关（progressStream 等）
       // 注意不能把这类路径塞进 WRITABLE：那个集合的语义是"整条路径只接受 POST/DELETE"，
       // 塞进去会把 GET 也一起拦成 405（终端面板因此整整瞎掉一轮）。
-      const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/') || sub === '/terminal'
+      const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/') || sub === '/terminal' || sub === '/config'
       const writable = WRITABLE.has(sub)
       const methodOk = POST_ONLY.has(sub)
         ? req.method === 'POST'

@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { ComfyClient } from '../../../shared/comfy/index.js'
 import type { Settings } from '../../../shared/host/config.js'
+import { effectiveProgressStream } from '../../../shared/host/toggles.js'
+import type { Toggles } from '../../../shared/host/toggles.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
 import { resumeRun, submitWorkflow, sweepBudgetOf, sweepRun } from '../../../shared/run/index.js'
 import { readEntry } from '../../../shared/workflow/index.js'
@@ -17,6 +19,8 @@ interface SubmitDeps {
   settings: Settings
   /** 可选日志：后台 sweep 的降级与连续失败都靠它留痕。 */
   logger?: LoggerLike | undefined
+  /** 面板开关（覆盖配置默认值）；每次提交时读，所以改完下一次就生效。 */
+  toggles?: { read: () => Toggles } | undefined
   runs?: {
     submit: (promptId: string, workflowId: string) => void
     update: (promptId: string, patch: object) => void
@@ -78,8 +82,8 @@ async function submitAndTrack(
     intervalMs: deps.settings.pollIntervalMs,
     // 调用方的 `timeoutMs` 只放宽盯守时长，不收紧 —— 见 `sweepBudgetOf` 的说明。
     maxWaitMs: sweepBudgetOf(options.timeoutMs),
-    // 进度默认关；开了才订阅 /ws（复用提交时的 client_id，否则收不到）。
-    progressStream: deps.settings.progressStream === true,
+    // 进度默认关；面板开关覆盖配置默认值（改完下一次提交就生效）。
+    progressStream: effectiveProgressStream(deps.settings, deps.toggles?.read() ?? {}),
     // 不传 logger 的话，订阅降级（Node 20 无全局 WebSocket）与连续失败都零日志 ——
     // 用户设了 `COMFYUI_PROGRESS_WS=1` 却永远 0 事件时无从发现。
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
@@ -137,6 +141,8 @@ export function createRunHandler(deps: {
   }
   /** 后台 sweep 的日志（进度降级、连续失败都靠它留痕）。 */
   logger?: LoggerLike | undefined
+  /** 面板开关（覆盖配置默认值 'progressStream'）。 */
+  toggles?: { read: () => Toggles } | undefined
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: RunBody
@@ -275,6 +281,8 @@ export function createRerunHandler(deps: {
   runs?: SubmitDeps['runs']
   /** 后台 sweep 的日志。 */
   logger?: LoggerLike | undefined
+  /** 面板开关（覆盖配置默认值 'progressStream'）。 */
+  toggles?: SubmitDeps['toggles']
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: { path?: unknown; asInput?: unknown; timeoutMs?: unknown }

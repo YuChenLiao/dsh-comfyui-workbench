@@ -1,6 +1,7 @@
 import type { ServerResponse } from 'node:http'
 
 import type { Settings } from '../../../shared/host/config.js'
+import type { Toggles } from '../../../shared/host/toggles.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
 import type { ComfyClient, ComfySupervisor } from '../../../shared/comfy/index.js'
 import { availableModels } from '../../../shared/comfy/index.js'
@@ -35,6 +36,8 @@ export interface WorkflowRouteDeps {
   }
   /** 后台 sweep 与进度订阅的日志（不给的话降级与连续失败都留不下痕）。 */
   logger?: LoggerLike | undefined
+  /** 面板开关（覆盖配置默认值 'progressStream'）。 */
+  toggles?: { read: () => Toggles } | undefined
   /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
   getExporter: () => Route | undefined
 }
@@ -61,7 +64,7 @@ export interface WorkflowRoutes {
  * 关掉这个组件时，`/run`、`/workflows` 这些路径整体消失，相册不受影响。
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
-  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, runs, logger, getExporter } = deps
+  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, runs, logger, toggles, getExporter } = deps
 
 
   return {
@@ -90,9 +93,17 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         }
         sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
       },
-      '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir, runs, ...(logger === undefined ? {} : { logger }) }),
+      '/run': createRunHandler({
+        client, workflowDir, settings, assertWritable, defaultOutputDir, runs,
+        ...(logger === undefined ? {} : { logger }),
+        ...(toggles === undefined ? {} : { toggles }),
+      }),
       // 以产物当时的参数重跑（可选把图当输入）：面板上"再用这张图跑一遍"
-      '/rerun': createRerunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir, runs, ...(logger === undefined ? {} : { logger }) }),
+      '/rerun': createRerunHandler({
+        client, workflowDir, settings, assertWritable, defaultOutputDir, runs,
+        ...(logger === undefined ? {} : { logger }),
+        ...(toggles === undefined ? {} : { toggles }),
+      }),
       '/free': async (_url: URL, res: ServerResponse) => {
         try {
           await client.free()
