@@ -26,6 +26,14 @@
 
   **仍然缺的一环**：`POST /prompt` 的 200 响应里本来就带 `node_errors`（`server.py:1234`，部分链失败时也会返回），而 `client.ts` 只取 `prompt_id` 把它扔了。收下它就能在提交当场说出"节点 6 的 sampler_name 不在候选里"，不必等几秒后从"没有产物"倒推。
 
+- **`sweepRun` 从不查 `/queue`，面板提交的记录没有 `running` 态与 `queuePosition`**：`watchRun`（工具提交、有会话通道）每 tick 先查队列写状态，`sweepRun`（面板 `/run`，以及无会话通道时的 `comfyui_run` / `comfyui_run_batch` / `comfyui_rerun`）完全没有这一段 —— 真机实测一次 11 秒的运行从头到尾只有 `queued → done`。面板上看不出「正在跑」和「排队中」的区别，而 `comfyui_runs` 的描述写着「queued 是排队中的（带 queuePosition）」，对面板提交的记录不成立。
+
+  修法是把那段抽成 `syncQueueState(client, promptId, registry)` 给两个轮询者共用；两处 `registry` 的内联类型合并成 `QueueRegistry`（不 import `RunRegistry` —— `shared/run` 与 `shared/tools` 互不允许依赖，`tests/arch.mjs` 双向检查）。
+
+  真机复验：`queued` → **`running`（`queuePosition=0`、`startedAt` 有值）** → `done`。
+
+  两个已知边界（未修，都不改变终态）：`client.ts` 的 `queue()` 没有 single-flight，缓存是在 `await fetch` **之后**才赋值，批量 20 条同时进入首个 tick 时最多 20 路并发穿透（上界；实际因逐条 `await submitWorkflow` 后才挂 sweep，挂载时刻天然错开。稳态仍是 1 次/秒 —— 缓存是 client 实例级）；`syncQueueState` 放在 `checkRun` 之前，而 `queue` 的请求超时默认 120 秒（`COMFYUI_TIMEOUT_MS` 可配，最大 1 小时），ComfyUI 卡死时完成发现可能被推迟该次超时的时长。
+
 - **`comfyui_rerun`：从产物重跑 / 做变体**（第 11 个工具）。出图后最常见的下一步是"再来一张"或"这张构图好但细节差，调一点重跑"，而 sidecar 里已经躺着复现材料（`workflowId` / `workflowHash` / `vars` / `seed`），原来只能手工抄参数。
 
   三种 seed 策略：给数字就用它（`count>1` 依次 +1）、`'random'` 每张独立、不给就沿用原值递增。**sidecar 没记 seed 时出多张会各自随机** —— 否则三张是同一张的复制，"做变体"就失去意义。
