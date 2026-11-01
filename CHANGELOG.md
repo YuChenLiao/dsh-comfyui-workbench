@@ -16,6 +16,15 @@
 - **`sweepRun` 缺守卫会误标**：history 比轮询慢时同一 promptId 被并发处理，序列可能变成 `done → failed`（图已落盘却记成失败）；一次瞬时的 `ECONNREFUSED` 也会永久判死。加了 `inflight`/`settled`，并把 catch 分级 —— `execution_failed` 立即判失败，网络类错误累计 6 次才判。
 - **`trim()` 会删掉正在跑的记录**：原来只按 seq 淘汰，200 条都在跑时新提交一条会删掉最老的 `running`，面板上那条正在跑的任务凭空消失。改成终态优先。
 - **`sweepRun` 的日志会崩宿主**：catch 里 `logger.warn` 没包 try，它自己抛错就逃逸成 unhandledRejection（Node 默认结束进程）。与 `deliver()` 同一个理由，补上。
+- **`no_output` 的文案把 validate 失败说成"末端缺输出节点"**：真机上给一个工作流传 `sampler_name: 'no_such_sampler_xyz'`，ComfyUI 的 validate 只拒掉那一条输出链、别的链照常跑完 —— `/history` 里仍是 `status_str: success` + `completed: true`，`outputs` 有内容（文本节点）但没有一个 `filename`。插件据此落 `no_output`，文案却让人"检查末端是否有 SaveImage / PreviewImage 节点"；而那个工作流有 SaveImage，真实原因是参数名拼错，`failure-kind.ts` 里 `bad_param` 的判据（含 `value not in list`）在这条路径上根本不可达。
+
+  对照 ComfyUI 源码（`execution.py:1187-1194`、`:1232-1300`、`server.py:1234-1238`）重写成两种**成立**的成因：① 后端没回传任何带 `filename` 的产物引用（末端只连纯文本/纯数据节点最常见，自定义节点不回报 filename 也落这里）；② 原本写文件的那条链被 validate 拒、**且**剩下能跑完的链都不写文件（只有那条链被拒、别的链仍在写文件时产物照样有，走不到这里）。同时写明不能再说"缺输出节点"：一个 `OUTPUT_NODE` 都没有的模板在提交阶段就被 `prompt_no_outputs` 拒，全部链被拒则回 400 `prompt_outputs_failed_validation` —— 两条都走 `submit_rejected`，到不了 `no_output`。
+
+  同源的另一处 `submitRejected`：原来一律说"检查被点名的节点参数"，而 `prompt_no_outputs` 的 body 里 `node_errors` 是**空对象**（`execution.py:1188-1194` 的 error 不带节点信息，`server.py:1238` 原样回传），那句话点不到任何东西。现在按 `body.error.type` 分三支：`prompt_no_outputs` 指向"没有输出节点"、`prompt_outputs_failed_validation` 指向"所有链参数都被判非法"，其余保持原文案（反代把 `error` 压成字符串时安全退回）。
+
+  顺带删掉 `noOutput()` 的 `hintTerminal` 参数：全仓唯一调用点硬编码 `true`，false 那条措辞永远不会显示给任何人。`infer.ts` 的 notes（改成留退路的写法：插件按类名推断，自定义输出节点可能被漏判）、`failure-kind.ts` 关于 `bad_param` 的注释、`docs/design.md` 的三处同族措辞（错误表 `no_output` 与 `submit_rejected`、§7 边界表、B14 验收项）一并订正。
+
+  **仍然缺的一环**：`POST /prompt` 的 200 响应里本来就带 `node_errors`（`server.py:1234`，部分链失败时也会返回），而 `client.ts` 只取 `prompt_id` 把它扔了。收下它就能在提交当场说出"节点 6 的 sampler_name 不在候选里"，不必等几秒后从"没有产物"倒推。
 
 - **`comfyui_rerun`：从产物重跑 / 做变体**（第 11 个工具）。出图后最常见的下一步是"再来一张"或"这张构图好但细节差，调一点重跑"，而 sidecar 里已经躺着复现材料（`workflowId` / `workflowHash` / `vars` / `seed`），原来只能手工抄参数。
 

@@ -292,7 +292,7 @@ export async function collectArtifacts(
   const fallback = all.filter(ref => ref.kind === 'save')
   const refs = durable.length > 0 ? durable : (fallback.length > 0 ? fallback : all)
   const skipped = all.length - refs.length
-  if (refs.length === 0) throw noOutput(true)
+  if (refs.length === 0) throw noOutput()
 
   ensureDir(context.outputDir)
   const artifacts: Artifact[] = []

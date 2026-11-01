@@ -67,6 +67,16 @@ test('giveUpMessage 按错误类型分开说，不能撒谎', () => {
   assert.match(noOutput, /执行完成了|没有拿到任何产物/, '要说清是"完成但无产物"')
   assert.ok(!/查不到/.test(noOutput), `no_output 不是"查不到"，实际：${noOutput}`)
   assert.match(noOutput, /SaveImage|PreviewImage/, '要指向具体的排查方向')
+  // 真机实测 + ComfyUI 源码核实（execution.py:1183-1194、1265-1300）：
+  // - validate 失败只影响那一条输出链，别的链照跑，所以整体仍算成功 → 走 no_output
+  // - 全部链被拒 → prompt_outputs_failed_validation → 提交阶段 400，走 submit_rejected
+  // - 一个 OUTPUT_NODE 都没有 → prompt_no_outputs → 同样在提交阶段被拒
+  // 因此"末端缺少 SaveImage / PreviewImage"这个因果**到不了 no_output**，不能这么写。
+  assert.match(noOutput, /validate|Value not in list/, `要指出参数非法这条原因，实际：${noOutput}`)
+  assert.ok(
+    !/末端(缺少|没有)\s*SaveImage/.test(noOutput),
+    `不能把成因写成"末端缺输出节点"（那种模板在提交阶段就被拒），实际：${noOutput}`,
+  )
 
   const network = giveUpMessage(err('comfy_unreachable', '/history 返回 500'), 'p2', 6)
   assert.match(network, /查不到|comfyui_run/)
@@ -105,6 +115,9 @@ test('waitForRun 遇 no_output：第 6 次才抛（保留竞态窗），抛的�
     }),
     (error) => {
       assert.equal(error.code, 'no_output', `该抛 no_output，实际 ${error.code}`)
+      // hint 是工具层直接交给用户看的那句话：两种原因都要在
+      assert.match(String(error.hint ?? ''), /SaveImage|PreviewImage/, 'hint 要指向存盘节点')
+      assert.match(String(error.hint ?? ''), /validate|Value not in list/, 'hint 也要指出参数非法这条原因')
       return true
     },
   )

@@ -110,7 +110,16 @@ export function giveUpMessage(error: unknown, promptId: string, failures: number
   const detail = error instanceof Error ? error.message : String(error)
 
   if (code === 'no_output') {
-    return `工作流执行完成了，但没有拿到任何产物文件（promptId ${promptId}）。检查末端是否有 SaveImage / PreviewImage 节点，或该节点是否被 bypass。`
+    // 成因只有两种（对照 ComfyUI execution.py:1187-1194、1232-1300 与 server.py:1234-1238 核实）：
+    // ① 后端没回传任何带 `filename` 的产物引用（末端只连纯文本/纯数据节点最常见，
+    //    自定义节点不回报 filename 也落这里）；② 原本写文件的那条链被 validate 拒、
+    //    剩下能跑完的链都不写文件。
+    // ② 不能简化成"某条链被拒"：只有那条链被拒、别的链仍在写文件时产物照样有，走不到这里；
+    //    全部链被拒时 ComfyUI 回 400 `prompt_outputs_failed_validation`，也走不到这里。
+    // 所以不能说"末端缺少 SaveImage / PreviewImage"：一个 OUTPUT_NODE 都没有的模板
+    // 在提交阶段就被 `prompt_no_outputs` 拒了。真机就是这么被误导的 —— 把一个拼错的
+    // sampler_name 说成了缺输出节点。
+    return `工作流执行完成了，但没有拿到任何产物文件（promptId ${promptId}）。两种成因：① 后端没有回传任何带 filename 的产物引用（常见是末端只连了纯文本/纯数据节点，而不是 SaveImage / PreviewImage 这类写文件的节点；自定义节点把文件写到 ComfyUI 目录外也会这样）；② 原本要写文件的那条输出链参数被判为非法（validate 失败只让那条链被忽略），剩下能跑完的链都不写文件，所以整体仍算"成功" —— 在终端面板搜 "Failed to validate prompt" 就能确认是哪一种（外部启动的 ComfyUI 读不到日志时，去它自己的控制台搜）。`
   }
   if (code === 'output_unreadable') {
     return `执行完成了，但产物文件读不出来（promptId ${promptId}）：${detail}。检查输出目录的权限与磁盘空间。`

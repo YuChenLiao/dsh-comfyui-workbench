@@ -357,6 +357,86 @@ test('提交被拒：透出 node_errors', async () => {
   }
 })
 
+test('提交被拒：prompt_no_outputs 的 hint 指向"没有输出节点"，不是"被点名的节点"', async () => {
+  const wf = workflow()
+  const slots = await slotsOf(wf)
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    // ComfyUI 对"一个 OUTPUT_NODE 都没有"的模板回 400，且 node_errors 是空对象
+    // （execution.py:1187-1194 的 error 不带节点信息，server.py:1238 原样回传）
+    onPrompt: (res, json) => json(400, {
+      error: { type: 'prompt_no_outputs', message: 'Prompt has no outputs', details: '' },
+      node_errors: {},
+    }),
+  })
+
+  try {
+    await assert.rejects(
+      runWorkflow({
+        client: new ComfyClient({ baseUrl: comfy.baseUrl }),
+        workflow: wf,
+        slots,
+        vars: { prompt: 'a cat' },
+        outputDir: tmpOut(),
+        timeoutMs: 2_000,
+        pollIntervalMs: 10,
+        workflowId: 't',
+        workflowHash: 'h1',
+      }),
+      (error) => {
+        assert.equal(error.code, 'submit_rejected')
+        // node_errors 是空的 —— 说"检查被点名的节点"点不到任何东西
+        assert.ok(!/被点名的节点/.test(String(error.hint ?? '')), `不该说被点名的节点：${error.hint}`)
+        assert.match(String(error.hint ?? ''), /输出节点/, '要说清是没有输出节点')
+        return true
+      },
+    )
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('提交被拒：prompt_outputs_failed_validation 指向"所有链参数非法"', async () => {
+  const wf = workflow()
+  const slots = await slotsOf(wf)
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    onPrompt: (res, json) => json(400, {
+      error: {
+        type: 'prompt_outputs_failed_validation',
+        message: 'Prompt outputs failed validation',
+        details: "Value not in list: sampler_name: 'nope' not in (list of length 65)",
+      },
+      node_errors: { 3: { errors: [{ message: 'Value not in list', details: 'sampler_name' }], class_type: 'KSampler' } },
+    }),
+  })
+
+  try {
+    await assert.rejects(
+      runWorkflow({
+        client: new ComfyClient({ baseUrl: comfy.baseUrl }),
+        workflow: wf,
+        slots,
+        vars: { prompt: 'a cat' },
+        outputDir: tmpOut(),
+        timeoutMs: 2_000,
+        pollIntervalMs: 10,
+        workflowId: 't',
+        workflowHash: 'h1',
+      }),
+      (error) => {
+        assert.equal(error.code, 'submit_rejected')
+        // 这条路径 node_errors 非空，节点要被点名
+        assert.match(error.message, /节点 3/, `要点名节点，实际：${error.message}`)
+        assert.match(String(error.hint ?? ''), /所有输出链/, `该说清是"所有链"都不合法：${error.hint}`)
+        return true
+      },
+    )
+  } finally {
+    await comfy.close()
+  }
+})
+
 test('无产物：报 no_output（B14）', async () => {
   const wf = workflow()
   const slots = await slotsOf(wf)

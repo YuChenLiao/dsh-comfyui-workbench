@@ -179,9 +179,9 @@ interface RunResult {
 | `workflow_invalid` | 模板非 JSON 对象、非法 class_type | 指出节点 id | 否 |
 | `variable_unbound` | `strictVars` 下缺必填变量 | 列出全部缺失名 | 否 |
 | `node_missing` | `/object_info` 未命中 `requiredNodes` | 列出缺失 class_type | 否 |
-| `submit_rejected` | `POST /prompt` 400，body 含 `node_errors` | 原样附 node_id 与消息 | 否 |
+| `submit_rejected` | `POST /prompt` 400，body 含 `node_errors` | 原样附 node_id 与消息；`prompt_no_outputs` 时 `node_errors` 为**空对象**，改按 `error.type` 指向"没有输出节点" | 否 |
 | `execution_failed` | `/history` 的 `status.messages` 含 `execution_error` | 附异常节点与堆栈首行 | 否 |
-| `no_output` | 执行成功但 `outputs` 无文件引用 | 提示末端缺输出节点 | 否 |
+| `no_output` | 执行成功但 `outputs` 无文件引用：末端只产出了非文件数据，或原本写文件的那条链被 validate 忽略、**且**剩下能跑完的链都不写文件 | 指出这两种成因（**不能说成"缺输出节点"**：一个 OUTPUT_NODE 都没有的模板在提交阶段就被 `prompt_no_outputs` 拒了；全部链被拒则回 400 `prompt_outputs_failed_validation`） | 否 |
 | `output_unreadable` | `/view` 失败或 0 字节 | 附完整 query | 是 |
 | `timeout` | 超 `timeoutMs` | **必须已发 `POST /interrupt`**，附 promptId | 是 |
 | `cancelled` | 用户取消 | — | 是 |
@@ -699,7 +699,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 
 | # | 边界 | 影响 | 处置 |
 | --- | --- | --- | --- |
-| 1 | ComfyUI 节点集差异（SaveImage / PreviewImage / VHS / 自定义） | 产物发现 | 遍历 `/history` 的 `outputs` 全部键，不按节点名匹配；未知扩展名归 `file`；发现不到抛 `no_output` 并点名末端节点 |
+| 1 | ComfyUI 节点集差异（SaveImage / PreviewImage / VHS / 自定义） | 产物发现 | 遍历 `/history` 的 `outputs` 全部键，不按节点名匹配；未知扩展名归 `file`；发现不到带 `filename` 的引用就抛 `no_output`，按"末端产出不是文件 / 原本写文件的链被 validate 忽略"两种成因说明（**不点名"缺末端节点"**，那类模板在提交阶段就被 `prompt_no_outputs` 拒） |
 | 2 | 认证方式（无 / Basic / Bearer / 反代 cookie / 白名单） | 请求头 | 只提供 `headers` 透传，不内置任何默认；401/403 抛 `auth_failed` 指向该键 |
 | 3 | `registerTab` 的向后兼容承诺 | tab 注册 | 只依赖 7 个稳定字段（相册 0.1.6 在 better-sidebar 0.28.0 上实测可用） |
 | 4 | `/history` 轮询 vs `/ws` | 进度呈现 | v0.2 用轮询；切 `/ws` 只换 runner 内部实现，`RunResult` 不变 |
@@ -739,7 +739,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 | B11 | 类型保真 | 模板 `"steps": "{{steps}}"`，传 20 | 提交 JSON 里是数字 20；单测覆盖 |
 | B12 | 变量缺失 / 节点预检 | 分别删必填绑定、塞不存在的 class_type | `variable_unbound` / `node_missing`，且**未发出** `POST /prompt`（请求日志核对） |
 | B13 | 超时收尾 | `timeoutMs: 1500` 跑长工作流 | 返回 `timeout`，ComfyUI `/queue` 里该 prompt 已消失 |
-| B14 | 无产物 | 模板末端无输出节点 | `no_output`，hint 提及末端节点 |
+| B14 | 无产物 | 末端只连纯文本输出节点（`outputs` 有内容但无 `filename`） | `no_output`，hint 说明两种成因。**模板一个输出节点都没有**是另一件事：ComfyUI 在提交阶段就以 `prompt_no_outputs` 拒掉，落 `submit_rejected` |
 | B15 | sidecar 互通 | 用 `dsh-comfyui-image` 产出的图走本插件 | 列表显示提示词/种子；两者共用同一 `outputDir` 时新图立刻可见 |
 | B16 | 索引可重建 | 删 `index.db` 重启 | 从 sidecar 重建，`/assets` 结果与删除前一致 |
 | B17 | better-sidebar 缺席 | 禁用后重启 | 无未捕获异常；原生面板入口可用 |

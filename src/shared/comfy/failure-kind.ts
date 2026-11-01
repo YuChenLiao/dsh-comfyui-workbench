@@ -66,6 +66,11 @@ const RULES: Array<{ kind: FailureKind; test: (ctx: FailureContext) => boolean }
   },
   {
     kind: 'bad_param',
+    // 判据里的 `value not in list` 在实际链路上很少走到，别把它当成"参数写错"的万能解释：
+    // 这个串由 `execution.py:1085` 的 `validate_inputs` 产生，而本分类器只吃
+    // `execution_error`（来自 `/history` 的 `status.messages`）。validate 阶段的值非法
+    // **不会**写成 execution_error —— ComfyUI 只拒掉那条输出链，其余链照跑，整体仍是
+    // `status_str: 'success'`。那条路径的出口是 `no_output`，不是这里。
     test: ({ text }) =>
       /value not in list|out of range|must be (a |an )?(int|float|bool|number|string)|expected .* got|invalid (value|argument|parameter)/i.test(text)
       || /参数.*(不合法|越界|不在|无效)/.test(text),

@@ -172,7 +172,12 @@ function inferOutputs(nodes: Array<[string, ApiNode]>, notes: string[]): OutputS
   }
 
   if (outputs.length === 0) {
-    notes.push('没有识别出末端输出节点：模板可能缺少 SaveImage / PreviewImage，运行后可能拿不到产物。')
+    // 这里只能说出"插件按类名没认出末端输出节点"，**不能**断言 ComfyUI 也不认：
+    // 上面那个过滤是类名启发式（:170），自定义的输出节点若名字里含 sampler / vae 之类
+    // 又没带 save / preview，就会被漏判。所以措辞留退路，只把"真没有输出节点"的
+    // 后果说清 —— 那种模板在提交阶段就被 prompt_no_outputs 拒掉（execution.py:1187-1194），
+    // 不会"跑完没产物"，去查执行日志是白查。
+    notes.push('没有识别出末端输出节点（按类名判断）：模板可能缺少 SaveImage / PreviewImage 这类输出节点。若确实一个输出节点都没有，提交时会被 ComfyUI 以 "Prompt has no outputs" 拒掉；用的是自定义输出节点的话可以忽略这条。')
   }
   return outputs
 }

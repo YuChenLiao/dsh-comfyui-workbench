@@ -82,13 +82,28 @@ export function nodeMissing(missing: string[]): RunError {
   )
 }
 
+/**
+ * `POST /prompt` 被拒（400）。
+ *
+ * 按 ComfyUI 的 `error.type` 分化，别一律说"检查被点名的节点参数"：
+ * `prompt_no_outputs` 的 body 里 `node_errors` 是**空对象**（execution.py:1187-1194
+ * 的 error 不带节点信息，server.py:1238 原样回传），一句"看被点名的节点"点不到任何东西。
+ */
 export function submitRejected(body: unknown): RunError {
-  const detail = body !== null && typeof body === 'object' ? (body as { node_errors?: unknown }).node_errors : undefined
-  const first = formatNodeErrors(detail)
+  const bag = body !== null && typeof body === 'object'
+    ? (body as { node_errors?: unknown; error?: { type?: unknown } })
+    : {}
+  const type = typeof bag.error?.type === 'string' ? bag.error.type : ''
+  const first = formatNodeErrors(bag.node_errors)
+  const hint = type === 'prompt_no_outputs'
+    ? '这份工作流没有输出节点（ComfyUI 的 prompt_no_outputs），跑完不会产生任何产物。接一个 SaveImage / PreviewImage 之类的输出节点再提交。'
+    : type === 'prompt_outputs_failed_validation'
+      ? '所有输出链的参数都被判为非法。按被点名的节点逐个改，或先用 comfyui_workflow_inspect 对一遍槽位。'
+      : '检查被点名的节点参数（类型、取值范围），或先用 inspect 看该节点的输入。'
   return new RunError(
     'submit_rejected',
     `ComfyUI 拒绝了这次提交${first === '' ? '' : `：${first}`}`,
-    '检查被点名的节点参数（类型、取值范围），或先用 inspect 看该节点的输入。',
+    hint,
     body,
   )
 }
@@ -164,13 +179,30 @@ function failureDetail(entry: unknown): { text: string; nodeId?: string; nodeTyp
   return { text: '' }
 }
 
-export function noOutput(hintTerminal: boolean): RunError {
+/**
+ * 执行完成但没有产物。
+ *
+ * 成因只有两种，都是「执行成功、但没有写出文件」。对照本机 ComfyUI 源码核实过
+ * （`execution.py:1187-1194`、`:1232-1300`、`server.py:1234-1238`）：
+ * ① 后端没回传任何带 `filename` 的产物引用（末端只连纯文本/纯数据节点最常见；
+ *    自定义节点把文件写到 ComfyUI 目录外、不回传 filename 也落这里）；
+ * ② 原本要写文件的那条输出链参数被 validate 拒掉，而剩下能跑完的链都不写文件。
+ *
+ * ② 不能简化成"某条链被 validate 拒了"：只有那条链被拒、别的链仍在写文件时，
+ * 产物照样有，根本不会走到这里。全部链都被拒时 ComfyUI 直接回 400
+ * `prompt_outputs_failed_validation`，走 `submit_rejected`，也到不了这里。
+ *
+ * 所以文案**不能**写"末端缺少 SaveImage / PreviewImage 节点"：一个 OUTPUT_NODE
+ * 都没有的模板在提交阶段就被 `prompt_no_outputs` 拒了，同样到不了这里。
+ *
+ * 原来这里有个 `hintTerminal` 参数给两种措辞，但全仓唯一调用点是
+ * `runner.ts` 硬编码的 `true` —— false 分支永远不会显示给任何人，已删。
+ */
+export function noOutput(): RunError {
   return new RunError(
     'no_output',
     '执行完成了，但没有拿到任何产物文件。',
-    hintTerminal
-      ? '工作流末端缺少 SaveImage / PreviewImage 节点，产物不会被保存。补一个输出节点再试。'
-      : '检查输出节点是否被 ComfyUI 跳过（缓存或条件分支）。',
+    '两种成因：① 后端没有回传任何带 filename 的产物引用 —— 常见是末端只连了纯文本/纯数据节点，而不是 SaveImage / PreviewImage 这类写文件的节点（自定义节点把文件写到 ComfyUI 目录外、不回传 filename 也会这样）；② 原本要写文件的那条输出链参数被判为非法（validate 失败只让那条链被忽略），剩下能跑完的链都不写文件，所以整体仍算"成功" —— 在终端面板搜 "Failed to validate prompt" 可确认是哪一种（外部启动的 ComfyUI 读不到日志时，去它自己的控制台搜）。',
   )
 }
 
