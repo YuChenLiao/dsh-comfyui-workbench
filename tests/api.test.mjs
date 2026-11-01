@@ -301,6 +301,41 @@ test('终端面板：GET /terminal 不能被方法校验拦成 405', async () =>
   }
 })
 
+test('面板「以原参数重跑」：POST /rerun 不能被方法校验拦成 405', async () => {
+  // 上一版 rerun-api.test.mjs 从 routes.exact['/rerun'] 进，绕过了 createDispatch
+  // 的方法白名单 —— 于是 POST /rerun 在真机上恒 405「这个接口是只读的」，面板上
+  // "作为输入出图"那个按钮 100% 点不动，而那一整个测试文件全绿。
+  // 这条必须走真 http server + 真 dispatch，与终端清屏那条同一个理由。
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out],
+    outputDir: dirs.out,
+    workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads,
+    indexFile: dirs.index,
+    autoStart: false,
+    autoDetect: false,
+  })
+  try {
+    const res = await fetch(`${app.origin}/comfyui-workbench/api/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    const body = await res.json()
+    assert.notEqual(res.status, 405, `POST /rerun 被方法校验拦了：${String(body.message ?? '')}`)
+    assert.equal(res.status, 400, '缺 path 应当是 400')
+    assert.equal(body.ok, false)
+    assert.equal(body.error, 'bad-body', '应当是 400 + bad-body，说明真的进了 handler')
+
+    // 这条路径没有 GET 语义，只读方法仍该被拒
+    const get = await fetch(`${app.origin}/comfyui-workbench/api/rerun`)
+    assert.equal(get.status, 405, 'GET /rerun 应当 405')
+  } finally {
+    await app.close()
+  }
+})
+
 test('工具注册：11 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
