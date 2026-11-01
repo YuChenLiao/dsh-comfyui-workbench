@@ -3,7 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { ComfyClient } from '../../../shared/comfy/index.js'
 import type { Settings } from '../../../shared/host/config.js'
-import { resumeRun, submitWorkflow, sweepRun } from '../../../shared/run/index.js'
+import type { LoggerLike } from '../../../shared/host/types.js'
+import { resumeRun, submitWorkflow, sweepBudgetOf, sweepRun } from '../../../shared/run/index.js'
 import { readEntry } from '../../../shared/workflow/index.js'
 import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
@@ -14,6 +15,8 @@ type SubmitWorkflowInput = Parameters<typeof submitWorkflow>[0]
 interface SubmitDeps {
   client: ComfyClient
   settings: Settings
+  /** 可选日志：后台 sweep 的降级与连续失败都靠它留痕。 */
+  logger?: LoggerLike | undefined
   runs?: {
     submit: (promptId: string, workflowId: string) => void
     update: (promptId: string, patch: object) => void
@@ -63,22 +66,40 @@ async function submitAndTrack(
     // 登记失败不影响任务本身
   }
   // 后台收尾：只写注册表、不投递消息，产物到手即收。
+  //
+  // 参数先落成一个对象，**note 读的就是这里传给 `sweepRun` 的同一个值** ——
+  // 这样「接线被删掉」不是只有阅读才能发现：摘掉 `maxWaitMs`，note 会变成 0 分钟，
+  // route 级测试立刻变红。直接内联字面量的话，note 与接线可以各自漂移。
+  const sweepOptions = {
+    client: deps.client,
+    promptId: submitted.promptId,
+    workflowId: options.workflowId,
+    outputDir: options.outputDir,
+    intervalMs: deps.settings.pollIntervalMs,
+    // 调用方的 `timeoutMs` 只放宽盯守时长，不收紧 —— 见 `sweepBudgetOf` 的说明。
+    maxWaitMs: sweepBudgetOf(options.timeoutMs),
+    // 进度默认关；开了才订阅 /ws（复用提交时的 client_id，否则收不到）。
+    progressStream: deps.settings.progressStream === true,
+    // 不传 logger 的话，订阅降级（Node 20 无全局 WebSocket）与连续失败都零日志 ——
+    // 用户设了 `COMFYUI_PROGRESS_WS=1` 却永远 0 事件时无从发现。
+    ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+    ...(deps.runs === undefined ? {} : { registry: deps.runs }),
+  }
   try {
-    sweepRun({
-      client: deps.client,
-      promptId: submitted.promptId,
-      workflowId: options.workflowId,
-      outputDir: options.outputDir,
-      intervalMs: deps.settings.pollIntervalMs,
-      ...(deps.runs === undefined ? {} : { registry: deps.runs }),
-    })
+    sweepRun(sweepOptions)
   } catch {
     // 收尾失败不该让"已提交"变成失败：任务在 ComfyUI 那边照跑
   }
+  const effectiveBudgetMs = sweepOptions.maxWaitMs ?? 0
   return {
     promptId: submitted.promptId,
     effective: submitted.effective as Record<string, unknown>,
-    notes: submitted.notes,
+    // 把**实际生效**的盯守预算回给调用方：不然 `timeoutMs` 传 60000 与传 1800000
+    // 行为完全一样，调用方无从知道自己的意愿被抬高了。
+    notes: [
+      ...submitted.notes,
+      `后台盯守 ${Math.round(effectiveBudgetMs / 60_000)} 分钟${effectiveBudgetMs > options.timeoutMs ? '（timeoutMs 只放宽不收紧）' : ''}`,
+    ],
   }
 }
 
@@ -114,6 +135,8 @@ export function createRunHandler(deps: {
     get: (promptId: string) => { state?: string } | undefined
     submit: (promptId: string, workflowId: string) => void
   }
+  /** 后台 sweep 的日志（进度降级、连续失败都靠它留痕）。 */
+  logger?: LoggerLike | undefined
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: RunBody
@@ -250,6 +273,8 @@ export function createRerunHandler(deps: {
   assertWritable: (dir: string) => void
   defaultOutputDir: string
   runs?: SubmitDeps['runs']
+  /** 后台 sweep 的日志。 */
+  logger?: LoggerLike | undefined
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: { path?: unknown; asInput?: unknown; timeoutMs?: unknown }

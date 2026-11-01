@@ -65,6 +65,8 @@ function applyInner(ctx: HostContext, config: unknown): void {
     assertWritable: rt.assertWritable,
     defaultOutputDir: rt.outputDir,
     runs: rt.runs,
+    // 后台 sweep 与 /ws 进度订阅的降级都靠它留痕；漏了就只有"静默没有百分比"。
+    logger: rt.logger,
     getExporter: () => rt.exportWorkflows,
   })
 

@@ -59,8 +59,9 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `workflowsDir` | 工作流仓库，默认 `~/.dsh-comfyui-workbench/workflows` |
 | `autoStart` | 探测到本机安装时是否自动拉起 ComfyUI；只停自己拉起的进程 |
 | `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开 |
-| `timeoutMs` | 单次 HTTP 请求超时，同时是 `comfyui_run` 的默认等待上限 |
+| `timeoutMs` | 单次 HTTP 请求超时。`/run`、`/rerun` 的 `timeoutMs` 另外用来**放宽**后台盯守时长（下限 30 分钟，传更小的值会被抬高，实际预算写在返回的 `notes` 里） |
 | `pollIntervalMs` | 执行状态轮询间隔 |
+| `progressStream` | 用 `/ws` 读精确进度（默认 `false`，也可用 `COMFYUI_PROGRESS_WS=1` 打开）。开了之后面板提交的记录会带 `progress: {value, max}`；只影响 `/run`、`/rerun`，工具侧没有 |
 | `roots` | 额外纳入资产库的目录（默认已含当前工作区、`dsh-comfyui-image` 的 `outputDir`、产物目录） |
 | `assetRoots` | 额外的**可写**根。`assertWritable` 取的是全部授权根的合集（`roots` / 工作区 / cwd / 产物目录 / uploads / assetRoots），只有落在合集之外才拒绝写入 |
 
@@ -74,7 +75,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
 | `comfyui_node_search` | 按类名 / 显示名 / 别名 / 分类 / 输入输出类型 / 包名搜索本机节点，四档排序。默认只回一行摘要，`detail` 才给输入输出 |
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |
-| `comfyui_runs` | 查任务状态：正在跑（`state: running`）、排队中（带 `queuePosition`）、最近完成或失败的。进度只落记录、**不进对话**，所以不打断当前回合。`progress` 字段只在显式开启 `progressStream` 时出现、且未经真机验证——**缺这个字段不代表异常**；开启后百分比按采样节点重置，会回跳 |
+| `comfyui_runs` | 查任务状态：正在跑（`state: running`）、排队中（带 `queuePosition`）、最近完成或失败的。进度只落记录、**不进对话**，所以不打断当前回合。`progress` 字段只在开启 `progressStream` 时出现，而且**只对面板 `/run`、`/rerun` 提交的运行有**（工具提交的没有）——缺这个字段不代表异常；开启后百分比按采样节点重置，会回跳 |
 | `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数，或不同工作流各跑一次）。逐条报结果，**一条失败不影响其它条**；默认全部异步 |
 | `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查角色与画师，**只返回 tag**。写提示词前用它对齐名字，能少跑偏 |
 | `danbooru_lookup_batch` | 一次查多个名字（上限 50），**只查本地不联网** —— 缺哪个再用单条 `danbooru_lookup` 补（那个会自动走在线） |

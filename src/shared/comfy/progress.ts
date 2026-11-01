@@ -10,10 +10,16 @@
  * - 调用方（`sweepRun`）本来就在轮询，拿不到进度只是少了个百分比，
  *   不会影响"能不能出图"
  *
- * 实测局限：本机 ComfyUI 离线，这条路径**未经真机验证**。所以默认不启用，
- * 且**目前没有任何生产调用方传 `progressStream: true`**（`Settings` 里也没有开关）——
- * 只有测试与直接调用模块能开。真机还需要确认：ComfyUI 是否把 `progress`
- * 广播给非提交方 clientId；Node 20 没有全局 `WebSocket`（engines 写的是 >=20）。
+ * 真机事实（对照本机 ComfyUI 源码 + 实测核实）：
+ * - `progress` 带 sid 发出（`main.py:475`），`server.client_id` 在**开始执行**时由
+ *   `extra_data["client_id"]` 赋值（`execution.py:740`）—— 也就是本任务的提交方。
+ *   所以订阅**必须复用提交时的 `clientId`**，随机 id 永远收不到（实测 20 步 0 事件）。
+ * - `server.py:341-345` 同 sid 再连会 `self.sockets.pop(sid, None)`：旧连接不 close、
+ *   只是不再收消息。因此同一个 `client_id` 只能有一条活着的订阅，并发两条运行时
+ *   先建的那条会静默没有百分比。
+ * - 默认关（`Settings.progressStream`，或 `COMFYUI_PROGRESS_WS=1`）；目前只有
+ *   `/run` 与 `/rerun` 两条面板路径接线，工具侧没有（`ToolDeps` 里没有 settings）。
+ * - Node 20 没有全局 `WebSocket`（engines 写的是 >=20），那时会静默不生效。
  */
 
 /** 进度回调。 */
@@ -46,6 +52,17 @@ export function watchProgress(
   options: {
     connectTimeoutMs?: number
     /**
+     * 必须与**提交任务时**用的 `client_id` 一致。
+     *
+     * ComfyUI 发 `progress` 时带的是 `server.client_id`（`main.py:475` 的
+     * `send_sync("progress", progress, client_id)`），也就是最后一个提交任务的
+     * 那个客户端。自己另造一个随机 id 连上去，握手会成功、`status` 能收到，
+     * 但**永远收不到本任务的 progress** —— 真机实测过：20 步跑完，相关事件 0 条。
+     *
+     * 不传时才退回一个随机 id（只用于测试或独立调试）。
+     */
+    clientId?: string
+    /**
      * 只用来**告知**降级，不参与判断。
      *
      * 没有它的话，"以为开了、其实一直静默降级"没人能发现 ——
@@ -62,7 +79,8 @@ export function watchProgress(
     return () => {}
   }
 
-  const url = `${baseUrl.replace(/^http/i, 'ws')}/ws?clientId=comfyui-workbench-${Math.random().toString(36).slice(2)}`
+  const clientId = options.clientId ?? `comfyui-workbench-${Math.random().toString(36).slice(2)}`
+  const url = `${baseUrl.replace(/^http/i, 'ws')}/ws?clientId=${encodeURIComponent(clientId)}`
   let socket: WebSocket | undefined
   let closed = false
 

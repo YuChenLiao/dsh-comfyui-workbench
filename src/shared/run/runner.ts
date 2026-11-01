@@ -85,6 +85,19 @@ export interface PendingContext {
 /** 进程内登记表：promptId → 上下文。插件重启即丢，丢了不影响 ComfyUI 侧的结果。 */
 const pending = new Map<string, PendingContext>()
 
+/**
+ * 正在收取的产物：promptId → 那一次的 promise。
+ *
+ * **这只在同一个 bundle 内有效**：本仓库每条组件 entry 是独立的 esbuild bundle，
+ * 本模块会被各内联一份 —— 面板（`lib/index.js`）与工具（`lib/entries/generate.js`）
+ * 各持一张表，互不可见。所以它只是**同 bundle 内的并发快速路径**，
+ * 真正跨 bundle 的幂等判据是磁盘上的 sidecar（见 `collectedBefore`）。
+ *
+ * 它仍然值得留着：同一条 entry 内 `sweepRun` 的并发 tick、或 `waitForRun` 与
+ * watcher 撞在同一时刻时，能让第二个调用方等第一个的结果，而不是再跑一遍 `view`。
+ */
+const collecting = new Map<string, Promise<RunOutcome>>()
+
 /** 登记一次提交。 */
 export function rememberRun(promptId: string, context: PendingContext): void {
   pending.set(promptId, context)
@@ -176,8 +189,77 @@ function targetFor(outputDir: string, filename: string): string {
   const safe = path.basename(filename)
   const first = path.join(outputDir, safe)
   if (!fs.existsSync(first)) return first
-  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
+  // 毫秒级（17 位）：同一秒内的两次收集会算出同一个名字而不是两份。
+  // 小数点要去掉，否则 slice 出来是 `20261101062331.96` —— 带点的文件名在 Windows
+  // 上会被当成扩展名的一部分，而 `endsWith('-原名')` 的匹配也会失手。
+  const stamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 17)
   return path.join(outputDir, `${stamp}-${safe}`)
+}
+
+/**
+ * 这份产物**是否已经为本 promptId 收过**；收过就直接从盘上复用。
+ *
+ * 为什么判据必须落在磁盘上：`resumeRun`（面板按 promptId 轮询）与 `sweepRun`
+ * （后台兜底）可能先后或同时处理同一个 promptId。而本仓库每条组件 entry 都是
+ * **独立 bundle**，esbuild 会把本模块各内联一份 —— 模块级 Map 在 `lib/index.js`
+ * 与 `lib/entries/generate.js` 里各有一份，**跨 bundle 不共享**
+ * （`runtime.ts` 的注释记过这个坑，`RunRegistry` 也因此挂在 runtime 上）。
+ *
+ * 没有这层时，顺序的第二次收集会走 `targetFor` 的时间戳分支再落一份图；而且
+ * 此时 `forgetRun` 已把上下文清掉（跨 bundle 时 `recallRun` 恒空），那份副本的
+ * sidecar 里 `workflowId` 会是 `"unknown"` —— 面板上点「作为输入出图」会直接
+ * 报 `no-workflow`，成为死链资产。
+ *
+ * 判据是产物旁边 sidecar 里的 `comfy.promptId`：同名但不同任务仍会新建副本。
+ *
+ * **候选文件名要扫一遍目录**：`targetFor` 在原名已存在时会改落 `<时间戳>-原名`，
+ * 所以第一次收集可能落在时间戳名下。只查原名的话第二次永远不命中，照样落副本。
+ *
+ * @param outputDir - 产物目录。
+ * @param filename - ComfyUI 给的文件名。
+ * @param promptId - 本次运行的 id。
+ * @returns 已收过的产物（重新读盘算 digest / 尺寸），没有则 undefined。
+ */
+function collectedBefore(outputDir: string, filename: string, promptId: string): Artifact | undefined {
+  const safe = path.basename(filename)
+  let candidates: string[]
+  try {
+    // 一次 readdir 同时覆盖原名与它的时间戳变体（`<17 位>-原名`）
+    candidates = fs.readdirSync(outputDir)
+      .filter(name => name === safe || name.endsWith(`-${safe}`))
+      .map(name => path.join(outputDir, name))
+  } catch {
+    return undefined
+  }
+
+  for (const target of candidates) {
+    let recorded: unknown
+    try {
+      const meta: unknown = JSON.parse(fs.readFileSync(`${target}.json`, 'utf8'))
+      recorded = meta !== null && typeof meta === 'object'
+        ? (meta as { comfy?: { promptId?: unknown } }).comfy?.promptId
+        : undefined
+    } catch {
+      continue
+    }
+    if (recorded !== promptId) continue
+    try {
+      const bytes = fs.readFileSync(target)
+      const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOf(target), bytes: bytes.length }
+      if (path.extname(target).toLowerCase() === '.png') {
+        const parsed = readPngTextChunks(target, bytes.length)
+        if (parsed !== undefined && parsed.width > 0 && parsed.height > 0) {
+          artifact.width = parsed.width
+          artifact.height = parsed.height
+        }
+      }
+      return artifact
+    } catch {
+      // 这个候选读不了就跳过，继续看下一个（原名与时间戳变体都在候选里）
+      continue
+    }
+  }
+  return undefined
 }
 
 /** sha256 前 12 位。 */
@@ -284,6 +366,29 @@ export async function collectArtifacts(
   entry: HistoryEntry,
   context: PendingContext,
 ): Promise<RunOutcome> {
+  const inflight = collecting.get(promptId)
+  if (inflight !== undefined) return inflight
+  const task = collectArtifactsOnce(client, promptId, entry, context)
+  collecting.set(promptId, task)
+  try {
+    return await task
+  } finally {
+    // 只清自己那一条：并发时后到的调用方进来又会建一条新的
+    if (collecting.get(promptId) === task) collecting.delete(promptId)
+  }
+}
+
+/**
+ * 真正收产物（`collectArtifacts` 的单次实现）。
+ *
+ * 抽出来是为了让「同一 promptId 复用同一个 promise」这层薄壳不淹没主逻辑。
+ */
+async function collectArtifactsOnce(
+  client: ComfyClient,
+  promptId: string,
+  entry: HistoryEntry,
+  context: PendingContext,
+): Promise<RunOutcome> {
   const all = fileRefsOf(entry.outputs, context.workflow)
 
   // 两类都要排掉：预览节点的产物，以及 type=temp 的文件（ComfyUI 会把 temp 清掉，
@@ -297,7 +402,15 @@ export async function collectArtifacts(
   ensureDir(context.outputDir)
   const artifacts: Artifact[] = []
   const unreadable: string[] = []
+  /** 这一轮真正落盘的产物路径（复用的不进来）。 */
+  const fresh = new Set<string>()
   for (const ref of refs) {
+    // 同一个 promptId 已经收过就直接复用，别落第二份 —— 详见 `collectedBefore`。
+    const reused = collectedBefore(context.outputDir, ref.filename, promptId)
+    if (reused !== undefined) {
+      artifacts.push(reused)
+      continue
+    }
     let bytes: Buffer
     try {
       bytes = await client.view({ filename: ref.filename, subfolder: ref.subfolder, type: ref.type })
@@ -309,6 +422,7 @@ export async function collectArtifacts(
     }
     const target = targetFor(context.outputDir, ref.filename)
     fs.writeFileSync(target, bytes)
+    fresh.add(target)
 
     const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOf(target), bytes: bytes.length }
     if (path.extname(target).toLowerCase() === '.png') {
@@ -328,7 +442,14 @@ export async function collectArtifacts(
   const durationMs = Date.now() - context.submittedAt
   const primary = artifacts[0]
   let metadataPath: string | undefined
-  if (context.writeMetadata && primary !== undefined) {
+  // 只给**本轮真正落盘**的主产物写 sidecar。
+  //
+  // 复用的那条（例如第二次收集命中了第一次的产物）不该被重写：第二次的 context 可能
+  // 是跨 bundle 后丢掉的 fallback（`workflowId: 'unknown'`、`effective: {}`），
+  // 写下去会把第一份正确的 sidecar 覆盖成死链资产。
+  // 注意判据是「primary 自己在不在 fresh 里」，不是「本轮有没有新落盘其它文件」——
+  // 后者在"部分复用 + 部分新落盘"时会让复用的 primary 被错写。
+  if (context.writeMetadata && primary !== undefined && fresh.has(primary.path)) {
     metadataPath = `${primary.path}.json`
     const meta = {
       plugin: 'dsh-comfyui-workbench',

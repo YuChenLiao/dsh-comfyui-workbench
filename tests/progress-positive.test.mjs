@@ -151,6 +151,49 @@ test('默认关闭时不建 socket', async () => {
   }
 })
 
+test('watchProgress 复用传入的 clientId（progress 带 sid，只发提交方）', async () => {
+  // ComfyUI 的 `main.py:475` 是 `send_sync("progress", progress, client_id)` ——
+  // 带 sid，只发给最后提交任务的客户端。独立随机 id 握手能成、status 能收，
+  // 但永远收不到本任务的 progress（真机实测 20 步跑完，相关事件 0 条）。
+  const restore = withFakeWebSocket()
+  try {
+    const stop = watchProgress('http://127.0.0.1:8188', 'p1', () => {}, { clientId: 'submitter-abc' })
+    const socket = FakeSocket.last
+    assert.ok(socket !== undefined, '要建 socket')
+    assert.match(String(socket.url), /clientId=submitter-abc/, `URL 要带提交方的 client_id，实际 ${socket.url}`)
+    stop()
+  } finally {
+    restore()
+  }
+})
+
+test('sweepRun 开了 progressStream 会把客户端的 client_id 接下去', async () => {
+  const restore = withFakeWebSocket()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pv4-'))
+  const runs = new RunRegistry(dir)
+  runs.submit('p1', 'wf')
+  const stop = sweepRun({
+    // 模拟真实的 ComfyClient：它有公开的 clientId（与提交时用的同一个）
+    client: { ...pendingClient(), clientId: 'client-from-submit' },
+    promptId: 'p1',
+    workflowId: 'wf',
+    outputDir: dir,
+    intervalMs: 60,
+    registry: runs,
+    progressStream: true,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+  })
+  try {
+    const socket = FakeSocket.last
+    assert.ok(socket !== undefined, '开了就该连')
+    assert.match(String(socket.url), /clientId=client-from-submit/, `要复用提交方的 id，实际 ${socket.url}`)
+  } finally {
+    stop()
+    restore()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('watchProgress 自身：正向拿到 tick，取消后关闭', async () => {
   const restore = withFakeWebSocket()
   try {

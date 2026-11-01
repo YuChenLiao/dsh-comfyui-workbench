@@ -16,11 +16,13 @@ import { test } from 'node:test'
 
 import {
   RunRegistry,
+  SWEEP_MIN_BUDGET_MS,
   codeOf,
   finalStateOf,
   giveUpMessage,
   isFatalRunError,
   isRetryable,
+  sweepBudgetOf,
   waitForRun,
 } from '../lib/index.js'
 
@@ -87,6 +89,19 @@ test('giveUpMessage 按错误类型分开说，不能撒谎', () => {
 
   const auth = giveUpMessage(err('auth_failed', '401'), 'p4', 1)
   assert.match(auth, /认证/)
+})
+
+test('sweepBudgetOf：timeoutMs 只能放宽盯守时长，不能收紧', () => {
+  // 出图实测中位 115 秒、最长 336 秒。`/run` 的 timeoutMs 默认来自
+  // settings.timeoutMs（真机是 300000），直接当 maxWaitMs 会把真在跑的任务标 unknown。
+  assert.equal(SWEEP_MIN_BUDGET_MS, 30 * 60_000, '下限是 30 分钟')
+  assert.equal(sweepBudgetOf(60_000), SWEEP_MIN_BUDGET_MS, '比下限小的要抬到下限')
+  assert.equal(sweepBudgetOf(300_000), SWEEP_MIN_BUDGET_MS, '默认 5 分钟也要抬')
+  assert.equal(sweepBudgetOf(3_600_000), 3_600_000, '比下限大的照用（放宽不截断）')
+  assert.equal(sweepBudgetOf(undefined), SWEEP_MIN_BUDGET_MS, '没给就用下限')
+  assert.equal(sweepBudgetOf(Number.NaN), SWEEP_MIN_BUDGET_MS)
+  assert.equal(sweepBudgetOf(-1), SWEEP_MIN_BUDGET_MS)
+  assert.equal(sweepBudgetOf(0), SWEEP_MIN_BUDGET_MS)
 })
 
 test('无 code 的错误兜底不该是 execution_failed（会被误判成执行失败）', () => {

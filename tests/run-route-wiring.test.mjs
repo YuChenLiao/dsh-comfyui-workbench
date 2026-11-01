@@ -135,6 +135,31 @@ test('生产路由：ComfyUI 报错时收敛 failed（不是永远 pending）', 
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
+test('生产路由 POST /run：把有效盯守预算回给调用方（timeoutMs 不是死参数）', async () => {
+  // `timeoutMs` 原先被 `submitWorkflow` 丢掉；现在它只放宽 `sweepRun` 的 `maxWaitMs`。
+  // 这条断言锁的是**接线**：note 读的就是传给 `sweepRun` 的同一个对象，
+  // 摘掉 `maxWaitMs` 字段，note 会变成 0 分钟 → 这条红。
+  const { routes, dir } = makeRoutes(() => ({
+    status: { status_str: 'success', completed: true },
+    outputs: { 7: { images: [{ filename: 'o.png', subfolder: '', type: 'output' }] } },
+  }))
+  const res = fakeRes()
+  await routes.exact['/run'](new URL('http://x/run'), res, fakeReq({ workflowId: 'wf', vars: { seed: 1 }, timeoutMs: 60_000 }))
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, true)
+  const notes = (payload.notes ?? []).join(' ')
+  assert.match(notes, /后台盯守 30 分钟/, `要比下限抬到 30 分钟并写回来，实际：${notes}`)
+  assert.match(notes, /只放宽不收紧/, `被抬高时要说清，实际：${notes}`)
+
+  // 传得比下限大时照用
+  const res2 = fakeRes()
+  await routes.exact['/run'](new URL('http://x/run'), res2, fakeReq({ workflowId: 'wf', vars: { seed: 2 }, timeoutMs: 3_600_000 }))
+  const notes2 = (JSON.parse(res2.body).notes ?? []).join(' ')
+  assert.match(notes2, /后台盯守 60 分钟/, `1 小时照用，实际：${notes2}`)
+  assert.ok(!/只放宽不收紧/.test(notes2), `没被抬高时不该有那句，实际：${notes2}`)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
 test('生产路由：提交失败仍 ok:false', async () => {
   const { routes, dir } = makeRoutes(() => undefined)
   // 让提交直接失败

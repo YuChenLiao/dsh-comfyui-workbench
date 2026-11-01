@@ -34,6 +34,22 @@
 
   两个已知边界（未修，都不改变终态）：`client.ts` 的 `queue()` 没有 single-flight，缓存是在 `await fetch` **之后**才赋值，批量 20 条同时进入首个 tick 时最多 20 路并发穿透（上界；实际因逐条 `await submitWorkflow` 后才挂 sweep，挂载时刻天然错开。稳态仍是 1 次/秒 —— 缓存是 client 实例级）；`syncQueueState` 放在 `checkRun` 之前，而 `queue` 的请求超时默认 120 秒（`COMFYUI_TIMEOUT_MS` 可配，最大 1 小时），ComfyUI 卡死时完成发现可能被推迟该次超时的时长。
 
+- **`/run` 与 `/rerun` 的 `timeoutMs` 是死参数**：接口认真校验 1s~1h、`submitAndTrack` 认真往下传，而 `submitWorkflow` **一次都没读过 `RunOptions.timeoutMs`** —— 声明了、校验了、然后被丢掉。现在它只做一件事：**放宽**后台盯守时长（`maxWaitMs = max(30min, timeoutMs)`，见 `sweepBudgetOf`），并把实际生效的预算写进返回的 `notes`。传 60000 会被抬到 30 分钟（出图实测中位 115 秒、最长 336 秒，按 120s/300s 收紧会把真在跑的任务标 `unknown`），传 1 小时照用。
+
+  这条接线原先不可测：纯函数用例删掉调用照样全绿。现在 `note` 读的就是传给 `sweepRun` 的**同一个对象**，摘掉 `maxWaitMs` 字段 note 会变 0 分钟，route 级用例立刻变红。
+
+- **`resumeRun` 与 `sweepRun` 会把同一产物收两份**：面板按 promptId 轮询与后台兜底会同时（或先后）处理同一个 promptId。`targetFor` 用 `fs.existsSync` 判冲突 —— 都判"没冲突"就写同名（内容相同、无害），后一个判"有冲突"就落一份带时间戳前缀的副本，用户看到两张一样的图。
+
+  更常见的是**顺序**的第二次：`forgetRun` 已把上下文清掉，跨 bundle 时 `recallRun` 恒空，那份副本的 sidecar 里 `workflowId` 会是 `"unknown"` —— 面板上点"作为输入出图"直接报 `no-workflow`，成为死链资产。
+
+  判据因此落在**磁盘**上（比对 sidecar 里的 `comfy.promptId`），而不是模块级 Map：本仓库每条组件 entry 都是独立 bundle，模块级状态跨 bundle 不共享（`runtime.ts` 记过这个坑）。内存里那张 in-flight 表只作为同一 bundle 内的快速路径。
+
+- **`progressStream` 在真机上不可能工作**：`progress` 事件带 sid 发出（`main.py:475`），而 `watchProgress` 自己造了个随机 `clientId` 去连 `/ws` —— 握手成功、`status` 能收，但**永远收不到本任务的进度**。真机实测：20 步跑完，相关事件 0 条。现在复用 `ComfyClient.clientId`（提交时用的那个），并新增 `Settings.progressStream`（默认关，`COMFYUI_PROGRESS_WS=1` 可开）。
+
+  两条真机事实（对照本机 ComfyUI 源码核实）：`server.client_id` 是在**开始执行**时由 `extra_data["client_id"]` 赋值的（`execution.py:740`），所以它指的是"本任务的提交方"而不是"最后提交的那个"；但 `server.py:341-345` 同 sid 再连会 `sockets.pop(sid)`（旧连接不 close、只是不再收消息），所以**同一个 `client_id` 只能有一条活着的订阅**，并发两条运行时先建的那条会静默没有百分比。
+
+  只接了面板路径（`/run`、`/rerun`）；工具侧没接 —— `ToolDeps` 里没有 `settings`，扩它要动 11 个工具的依赖面。
+
 - **`comfyui_rerun`：从产物重跑 / 做变体**（第 11 个工具）。出图后最常见的下一步是"再来一张"或"这张构图好但细节差，调一点重跑"，而 sidecar 里已经躺着复现材料（`workflowId` / `workflowHash` / `vars` / `seed`），原来只能手工抄参数。
 
   三种 seed 策略：给数字就用它（`count>1` 依次 +1）、`'random'` 每张独立、不给就沿用原值递增。**sidecar 没记 seed 时出多张会各自随机** —— 否则三张是同一张的复制，"做变体"就失去意义。

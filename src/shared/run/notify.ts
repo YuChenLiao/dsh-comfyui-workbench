@@ -406,8 +406,9 @@ export function sweepRun(options: {
   /**
    * 是否用 ComfyUI 的 WebSocket 读精确进度。
    *
-   * 默认关（这条路径本机离线未真机验证）。开了也只影响记录里有没有 progress，
-   * 出图本身仍靠轮询 —— 连不上时静默降级。
+   * 默认关（`Settings.progressStream` / `COMFYUI_PROGRESS_WS=1` 打开）。开了也只影响
+   * 记录里有没有 `progress`，出图本身仍靠轮询 —— 连不上时静默降级。
+   * 订阅会复用提交时的 `client_id`，否则收不到（见 `watchProgress` 的说明）。
    */
   progressStream?: boolean
   registry?: QueueRegistry | undefined
@@ -452,7 +453,14 @@ export function sweepRun(options: {
       } catch {
         // 写不进去就算了
       }
-    }, { ...(options.logger === undefined ? {} : { logger: options.logger }) })
+    }, {
+      // 必须复用提交时的 client_id：`progress` 带 sid 发出（`main.py:475`），
+      // 而 sid 是执行开始时由 `extra_data["client_id"]` 赋的（`execution.py:740`）。
+      // 自己另造一个 id 连上去，握手成功、status 能收，但永远收不到本任务的 progress。
+      // 注意同 sid 再连会互踢（`server.py:341-345`），同一 client 只能有一条订阅活着。
+      clientId: client.clientId,
+      ...(options.logger === undefined ? {} : { logger: options.logger }),
+    })
     progressStops.add(stopProgress)
   }
 

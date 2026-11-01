@@ -22,6 +22,30 @@
 export const TRANSIENT_LIMIT = 6
 
 /**
+ * 后台盯一次运行的最短预算（30 分钟）。
+ *
+ * 面板 `/run` 与 `/rerun` 的 `timeoutMs` 是「调用方愿意等多久」，但它**只该放宽
+ * 后台的盯守时长，不能收紧** —— 出图实测中位 115 秒、最长 336 秒，拿默认
+ * 120s（`COMFYUI_TIMEOUT_MS`）或 300s 去当 `maxWaitMs`，会把真在跑的任务标成
+ * `unknown`。所以折算取 `max(30min, timeoutMs)`。
+ */
+export const SWEEP_MIN_BUDGET_MS = 30 * 60_000
+
+/**
+ * 把调用方的 `timeoutMs` 折算成 `sweepRun` 的 `maxWaitMs`。
+ *
+ * `/run` 与 `/rerun` 的 `timeoutMs` 原先被原样传给 `submitWorkflow`，而那个函数
+ * **一次都没读过它** —— 参数声明了、校验了 1s~1h、然后被丢掉，属于「声明即承诺」。
+ *
+ * @param timeoutMs - 调用方给的等待上限（可为 undefined / NaN / 负数）。
+ * @returns 实际用于 `sweepRun` 的盯守时长，永不小于 {@link SWEEP_MIN_BUDGET_MS}。
+ */
+export function sweepBudgetOf(timeoutMs: number | undefined): number {
+  if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) return SWEEP_MIN_BUDGET_MS
+  return Math.max(SWEEP_MIN_BUDGET_MS, Math.round(timeoutMs))
+}
+
+/**
  * 可重试失败攒够次数后，记录该写成什么状态。
  *
  * 一般写 `unknown` —— 连续查不到 `/history` 只说明我们观测不到，不代表任务失败。

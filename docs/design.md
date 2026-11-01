@@ -109,7 +109,7 @@ custom(settings.roots) → workingDirectory → workspaceRegistry.list()
 
 ### 3.1 触发
 
-三条入口共用宿主服务：模型工具 `comfyui_run`、客户端 `POST /comfyui-workbench/api/run`、只读查询。宿主侧单实例串行队列（ComfyUI 单卡排队无并发收益，且串行保证 `/interrupt` 取消的一定是自己那条）。
+三条入口共用宿主服务：模型工具 `comfyui_run`、客户端 `POST /comfyui-workbench/api/run`、只读查询。宿主侧单实例串行队列（ComfyUI 单卡排队无并发收益；串行的额外好处是将来真做取消时，`/interrupt` 取消的一定是自己那条）。
 
 ### 3.2 输入
 
@@ -119,8 +119,8 @@ interface RunInput {
   vars?: Record<string, string | number | boolean>
   outputPath?: string
   tags?: string[]
-  wait?: boolean          // 默认 true
-  timeoutMs?: number      // 默认 300000
+  wait?: boolean          // 默认 false（提交即返回；出图后由 followup 通知）
+  waitMs?: number         // wait: true 时的等待上限；`timeoutMs` 已弃用（见工具参数表）
   /** 已弃用，字段保留以兼容旧调用：工具响应不能承载图片字节，图片一律只给路径。见 §3.3。 */
   returnImages?: 'first' | 'all' | 'none'
 }
@@ -183,10 +183,10 @@ interface RunResult {
 | `execution_failed` | `/history` 的 `status.messages` 含 `execution_error` | 附异常节点与堆栈首行 | 否 |
 | `no_output` | 执行成功但 `outputs` 无文件引用：末端只产出了非文件数据，或原本写文件的那条链被 validate 忽略、**且**剩下能跑完的链都不写文件 | 指出这两种成因（**不能说成"缺输出节点"**：一个 OUTPUT_NODE 都没有的模板在提交阶段就被 `prompt_no_outputs` 拒了；全部链被拒则回 400 `prompt_outputs_failed_validation`） | 否 |
 | `output_unreadable` | `/view` 失败或 0 字节 | 附完整 query | 是 |
-| `timeout` | 超 `timeoutMs` | **必须已发 `POST /interrupt`**，附 promptId | 是 |
+| `timeout` | `waitForRun` 的 deadline 到了 | 返回 pending（附 promptId 让调用方续查）。**当前不发 `POST /interrupt`** —— 全仓 `client.interrupt()` 零调用，任务在 ComfyUI 那边继续跑 | 否 |
 | `cancelled` | 用户取消 | — | 是 |
 
-超时必发 `/interrupt` 是硬要求，否则队列被已放弃的任务堵住，下一次运行莫名排队。`dsh-comfyui-image` 的 `comfy/client.ts` 已实现该调用，沿用。
+（早期设计曾要求「超时必发 `/interrupt`」。实测后改成**不中断**：出图实测中位 115 秒、最长 336 秒，超时只说明「我们不再等」，任务本身通常还在正常跑，中断它等于把已经算了一半的图扔掉。`client.interrupt()` 保留给未来的显式取消。）
 
 ### 3.6 视图分层：完整配置在里，只展示 IO 在外面
 
@@ -687,6 +687,7 @@ ctx.inject(['betterSidebar'], (scope) => {
     pollIntervalMs: 1000
     indexMode: auto           # auto | off
     betterSidebarTab: auto    # auto | on | off
+    progressStream: false     # 用 /ws 读精确进度；也可 COMFYUI_PROGRESS_WS=1
 ```
 
 优先级与 `dsh-comfyui-image` 同链：profile 配置 → `~/.dsh-comfyui-workbench/config.json` → 环境变量（复用 `COMFYUI_URL` / `COMFYUI_BASE_URL` / `COMFYUI_TIMEOUT_MS` 同名键，保证三个插件指向同一台服务）→ 内置默认。`~/.dsh-comfyui-image/config.json` 的 `outputDir` 作为**扫描根来源**继续读取，不作为本插件配置项。
@@ -738,7 +739,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 | B10 | 根目录来源 | 在 `~/.dsh-comfyui-image/config.json` 里设 `outputDir` | `/roots` 出现 `kind: output` 的该项（证明仍在读旧配置） |
 | B11 | 类型保真 | 模板 `"steps": "{{steps}}"`，传 20 | 提交 JSON 里是数字 20；单测覆盖 |
 | B12 | 变量缺失 / 节点预检 | 分别删必填绑定、塞不存在的 class_type | `variable_unbound` / `node_missing`，且**未发出** `POST /prompt`（请求日志核对） |
-| B13 | 超时收尾 | `timeoutMs: 1500` 跑长工作流 | 返回 `timeout`，ComfyUI `/queue` 里该 prompt 已消失 |
+| B13 | 超时收尾 | 跑一个超过 `waitMs` 的长工作流 | 返回 pending（或 `timeout`）；**ComfyUI `/queue` 里该 prompt 仍在** —— 当前不发 `POST /interrupt`（全仓 `client.interrupt()` 零调用） |
 | B14 | 无产物 | 末端只连纯文本输出节点（`outputs` 有内容但无 `filename`） | `no_output`，hint 说明两种成因。**模板一个输出节点都没有**是另一件事：ComfyUI 在提交阶段就以 `prompt_no_outputs` 拒掉，落 `submit_rejected` |
 | B15 | sidecar 互通 | 用 `dsh-comfyui-image` 产出的图走本插件 | 列表显示提示词/种子；两者共用同一 `outputDir` 时新图立刻可见 |
 | B16 | 索引可重建 | 删 `index.db` 重启 | 从 sidecar 重建，`/assets` 结果与删除前一致 |
@@ -821,9 +822,9 @@ ctx.inject(['betterSidebar'], (scope) => {
 
 ### 阶段 2：runner 与工具
 
-`lib/host/runner.js`（提交、轮询、`/interrupt` 收尾、产物发现）+ 工具注册（0.3.0 起共 6 个：4 个 `comfyui_*` + 2 个 `danbooru_*`）。
+`lib/host/runner.js`（提交、轮询、产物发现）+ 工具注册（0.3.0 起共 6 个：4 个 `comfyui_*` + 2 个 `danbooru_*`）。
 
-- 过关：B11（类型保真）、B12（缺变量与缺节点都在 `POST /prompt` 之前失败）、B13（超时后队列已清）、B14、B27（列表体积）
+- 过关：B11（类型保真）、B12（缺变量与缺节点都在 `POST /prompt` 之前失败）、B13（超时返回 pending，**不中断**任务）、B14、B27（列表体积）
 
 ### 阶段 3：索引与检索
 
@@ -869,7 +870,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 | 工作流导入（仅 API 格式） | ✅ | UI 格式拒绝并给出 Export (API) 指引 |
 | IO 面推断 | ✅ | 连线跳过、内部参数跳过、正负提示词回溯命名、basic 段只收提示词与图像 |
 | `bind` + `{{var}}` 双轨替换 | ✅ | 整串占位符保类型（有单测钉住） |
-| 执行链（预检 → 提交 → 轮询 → 取产物 → sidecar） | ✅ | 超时必发 `/interrupt`；缺节点/缺变量在提交前失败 |
+| 执行链（预检 → 提交 → 轮询 → 取产物 → sidecar） | ✅ | 超时**不中断**任务、返回 pending 让调用方续查；缺节点/缺变量在提交前失败 |
 | 四个模型工具 | ✅ | list / inspect（nodeId 下钻）/ run / edit |
 | 资产索引 | ✅（偏离） | 用 JSONL 而非 sqlite；追加超阈值自动压实；可删可重建 |
 | `/assets` 检索与重建 | ✅ | q / workflow / tag / kind / status / 游标 |

@@ -63,6 +63,13 @@ export interface Settings {
   indexMode: 'auto' | 'off'
   /** better-sidebar 页签：auto | on | off。 */
   betterSidebarTab: 'auto' | 'on' | 'off'
+  /**
+   * 是否用 ComfyUI 的 `/ws` 读精确进度（默认关，`COMFYUI_PROGRESS_WS=1` 可开）。
+   *
+   * 开了之后 `sweepRun` 会复用提交时的 `client_id` 订阅 `progress` 事件，把
+   * `{value, max}` 写进运行记录。连不上只是没有百分比，出图不受影响。
+   */
+  progressStream: boolean
 }
 
 /** 环境变量 → 配置键（与既有插件同名，保证三个插件指向同一台服务）。 */
@@ -96,6 +103,8 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
   const raw = input !== null && typeof input === 'object' ? (input as Record<string, unknown>) : {}
 
   const pick = (key: keyof Settings): unknown => (raw[key] !== undefined ? raw[key] : envSettings[key])
+  /** `COMFYUI_PROGRESS_WS=1|true|yes|on` 打开 WebSocket 进度。 */
+  const envProgress = ['1', 'true', 'yes', 'on'].includes(String(env.COMFYUI_PROGRESS_WS ?? '').trim().toLowerCase())
 
   const int = (value: unknown, fallback: number, min: number, max: number): number => {
     const n = typeof value === 'number' ? Math.round(value) : Number.parseInt(String(value ?? ''), 10)
@@ -147,5 +156,6 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     pollIntervalMs: int(raw.pollIntervalMs, 1_000, 100, 10_000),
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),
     betterSidebarTab: oneOf(raw.betterSidebarTab, ['auto', 'on', 'off'] as const, 'auto'),
+    progressStream: raw.progressStream === true || envProgress === true,
   }
 }

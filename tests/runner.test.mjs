@@ -15,7 +15,7 @@ import { test } from 'node:test'
 import { listenSafe } from './helpers.mjs'
 
 import { ComfyClient } from '../lib/comfy.js'
-import { resumeRun, runWorkflow } from '../lib/run.js'
+import { collectArtifacts, resumeRun, runWorkflow } from '../lib/run.js'
 
 /** 1×1 透明 PNG。 */
 const PNG = Buffer.from(
@@ -432,6 +432,164 @@ test('提交被拒：prompt_outputs_failed_validation 指向"所有链参数非�
         return true
       },
     )
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('并发收同一 promptId 只落一份（resumeRun 与 sweepRun 抢）', async () => {
+  // 面板按 promptId 轮询（resumeRun）与后台兜底（sweepRun）会同时看到同一条完成。
+  // 两边各自 targetFor → fs.existsSync 判冲突：可能都判"没冲突"写同名（无害），
+  // 也可能后一个判"有冲突"再落一份带时间戳前缀的副本 —— 用户看到两张一样的图。
+  const wf = workflow()
+  let viewCalls = 0
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    onView: async (_url, res) => {
+      viewCalls += 1
+      // 故意慢一点，让两个收集方真正重叠（否则第二个可能在第一个落盘之后才进来）
+      await new Promise(resolve => setTimeout(resolve, 200))
+      res.writeHead(200, { 'Content-Type': 'image/png' })
+      res.end(PNG)
+    },
+  })
+
+  const out = tmpOut()
+  const entry = { status: { completed: true }, outputs: { 7: { images: [{ filename: 'dup.png', subfolder: '', type: 'output' }] } } }
+  const context = {
+    workflowId: 't',
+    workflowHash: 'h1',
+    outputDir: out,
+    effective: {},
+    writeMetadata: true,
+    submittedAt: Date.now(),
+    workflow: wf,
+  }
+  const client = new ComfyClient({ baseUrl: comfy.baseUrl })
+
+  try {
+    const [first, second] = await Promise.all([
+      collectArtifacts(client, 'p1', entry, context),
+      collectArtifacts(client, 'p1', entry, context),
+    ])
+    assert.equal(first.promptId, 'p1')
+    assert.equal(second.artifacts[0].path, first.artifacts[0].path, '两边该拿到同一份产物')
+
+    const pngs = fs.readdirSync(out).filter(name => name.endsWith('.png'))
+    assert.equal(pngs.length, 1, `并发收只该落一份，实际 ${pngs.length} 份：${pngs.join(', ')}`)
+    const sidecars = fs.readdirSync(out).filter(name => name.endsWith('.png.json'))
+    assert.equal(sidecars.length, 1, `sidecar 也只该一份，实际 ${sidecars.length} 份`)
+    assert.equal(viewCalls, 1, `view 只该调一次，实际 ${viewCalls} 次`)
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('同一 promptId 顺序收两次：只落一份，且不把 sidecar 覆盖成 unknown', async () => {
+  // 跨 bundle 时 `collecting` 那张表不共享（各 entry 各内联一份），`recallRun` 也恒空。
+  // 所以第二次收集拿到的是 fallback 上下文（workflowId: 'unknown'）—— 没有磁盘幂等的话，
+  // 它会走 targetFor 的时间戳分支再落一份图，并把 sidecar 覆盖成 unknown，
+  // 那张副本在面板点「作为输入出图」会直接报 no-workflow，成为死链资产。
+  const wf = workflow()
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+  })
+  const out = tmpOut()
+  const entry = { status: { completed: true }, outputs: { 7: { images: [{ filename: 'once.png', subfolder: '', type: 'output' }] } } }
+  const good = {
+    workflowId: 't',
+    workflowHash: 'h1',
+    outputDir: out,
+    effective: { seed: 7 },
+    writeMetadata: true,
+    submittedAt: Date.now(),
+    workflow: wf,
+  }
+  const client = new ComfyClient({ baseUrl: comfy.baseUrl })
+
+  try {
+    const first = await collectArtifacts(client, 'p9', entry, good)
+    // 模拟跨 bundle 之后：登记表没了，只剩 fallback
+    const fallback = { ...good, workflowId: 'unknown', workflowHash: '', effective: {} }
+    const second = await collectArtifacts(client, 'p9', entry, fallback)
+
+    assert.equal(second.artifacts[0].path, first.artifacts[0].path, '第二次要复用同一份，不该新建副本')
+    const pngs = fs.readdirSync(out).filter(name => name.endsWith('.png'))
+    assert.equal(pngs.length, 1, `只该有一份图，实际 ${pngs.length}：${pngs.join(', ')}`)
+
+    const meta = JSON.parse(fs.readFileSync(`${first.artifacts[0].path}.json`, 'utf8'))
+    assert.equal(meta.workflowId, 't', `sidecar 不该被 fallback 的 unknown 覆盖，实际 ${meta.workflowId}`)
+    assert.equal(meta.vars.seed, 7, 'sidecar 的 vars 也不该被清空')
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('首次就落时间戳名时，第二次收集也能命中（不能只查原名）', async () => {
+  // `targetFor` 在原名已存在时会改落 `<时间戳>-原名`。只查原名的话，第二次永远不命中，
+  // 照样再落一份副本 —— 这条覆盖那个分支。
+  const wf = workflow()
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+  })
+  const out = tmpOut()
+  // 先放一个同名文件（别的任务的产物），逼本次走时间戳分支
+  fs.writeFileSync(path.join(out, 'once.png'), PNG)
+  const entry = { status: { completed: true }, outputs: { 7: { images: [{ filename: 'once.png', subfolder: '', type: 'output' }] } } }
+  const good = {
+    workflowId: 't', workflowHash: 'h1', outputDir: out,
+    effective: { seed: 5 }, writeMetadata: true, submittedAt: Date.now(), workflow: wf,
+  }
+  const client = new ComfyClient({ baseUrl: comfy.baseUrl })
+
+  try {
+    const first = await collectArtifacts(client, 'pA', entry, good)
+    assert.match(
+      path.basename(first.artifacts[0].path),
+      /^\d{17}-once\.png$/,
+      `该落时间戳名，实际 ${path.basename(first.artifacts[0].path)}`,
+    )
+    const second = await collectArtifacts(client, 'pA', entry, { ...good, workflowId: 'unknown', effective: {} })
+    assert.equal(second.artifacts[0].path, first.artifacts[0].path, '第二次要命中时间戳名，不能再落一份')
+    const pngs = fs.readdirSync(out).filter(name => name.endsWith('.png'))
+    assert.equal(pngs.length, 2, `原有的 1 份 + 本次 1 份，实际 ${pngs.length}：${pngs.join(', ')}`)
+  } finally {
+    await comfy.close()
+  }
+})
+
+test('部分复用 + 部分新落盘：复用那条的 sidecar 不被错写', async () => {
+  const wf = workflow()
+  const comfy = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+  })
+  const out = tmpOut()
+  const onlyA = { status: { completed: true }, outputs: { 7: { images: [{ filename: 'a.png', subfolder: '', type: 'output' }] } } }
+  const both = {
+    status: { completed: true },
+    outputs: { 7: { images: [
+      { filename: 'a.png', subfolder: '', type: 'output' },
+      { filename: 'b.png', subfolder: '', type: 'output' },
+    ] } },
+  }
+  const good = {
+    workflowId: 't', workflowHash: 'h1', outputDir: out,
+    effective: { seed: 3 }, writeMetadata: true, submittedAt: Date.now(), workflow: wf,
+  }
+  const client = new ComfyClient({ baseUrl: comfy.baseUrl })
+
+  try {
+    await collectArtifacts(client, 'pB', onlyA, good)
+    // 第二轮：a 命中复用、b 是新落的；context 是跨 bundle 后的 fallback
+    await collectArtifacts(client, 'pB', both, { ...good, workflowId: 'unknown', effective: {} })
+
+    const metaA = JSON.parse(fs.readFileSync(path.join(out, 'a.png.json'), 'utf8'))
+    assert.equal(metaA.workflowId, 't', `复用那条的 sidecar 要保留第一次的，实际 ${metaA.workflowId}`)
+    assert.equal(metaA.vars.seed, 3, 'vars 也不该被清空')
+
+    // sidecar 只跟主产物走：b 落了盘但没有 sidecar，这是既有设计，不是缺陷
+    assert.ok(fs.existsSync(path.join(out, 'b.png')), 'b 该落盘')
+    assert.equal(fs.existsSync(path.join(out, 'b.png.json')), false, 'sidecar 只给主产物写')
   } finally {
     await comfy.close()
   }

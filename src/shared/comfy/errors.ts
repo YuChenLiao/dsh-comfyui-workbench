@@ -211,10 +211,20 @@ export function outputUnreadable(filename: string, cause?: unknown): RunError {
   return new RunError('output_unreadable', `取不回产物字节：${filename}${detail}`, '重试一次；持续失败就用 GET /view 手工下载验证。')
 }
 
+/**
+ * 等待超时。
+ *
+ * **不发 `POST /interrupt`**：出图实测中位 115 秒、最长 336 秒，超时只说明"我们不再等"，
+ * 任务本身通常还在正常跑 —— 中断它等于把已经算了一半的图扔掉。全仓 `client.interrupt()`
+ * 零调用，保留给未来的显式取消。
+ *
+ * @param waitedMs - 等了多久。
+ * @param promptId - 运行 id。
+ */
 export function timedOut(waitedMs: number, promptId: string): RunError {
   return new RunError(
     'timeout',
     `等了 ${Math.round(waitedMs / 1000)} 秒仍未完成（prompt ${promptId}）。`,
-    '已向 ComfyUI 发出取消。可以调大 timeoutMs，或降低分辨率/步数。',
+    '任务没有被取消，可能还在 ComfyUI 那边跑 —— 用同一个 promptId 续查。也可以调大等待上限，或降低分辨率/步数。',
   )
 }
