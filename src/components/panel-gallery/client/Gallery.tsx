@@ -101,11 +101,14 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const handlers = { goToConversation }
 
   /**
-   * 以这张图当时的参数再跑一遍（图作为输入）。
+   * 以这张图的参数再跑一遍（图作为输入）。
    *
    * 原来这里是"让用户挑一个吃图的工作流，只传图路径" —— 那样 prompt / seed /
    * 步数 / 模型全走默认值，等于把原图的一半信息丢了。现在服务端读 sidecar 里的
    * `workflowId` + `vars` 原样重跑，只把图片输入换成这一张。
+   *
+   * **seed 会被换掉**（服务端做的）：换了参考图还沿用原 seed，等于「同一张图 +
+   * 同一个 seed」，而这条链路是位级确定的 —— 每次点都得到一模一样的一张。
    */
   const rerunAsInput = async (item: GalleryItem): Promise<void> => {
     try {
@@ -129,7 +132,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       setPendingDelete(item)
       return
     }
-    // 作为输入出图：以原参数重跑，只换图（服务端读 sidecar，不需要选工作流）
+    // 作为输入出图：其余参数照旧、换图 + 换新 seed（服务端读 sidecar，不需要选工作流）
     if (kind === 'useAsInput') {
       const key = `useAsInput:${item.path}`
       if (busy === key) return

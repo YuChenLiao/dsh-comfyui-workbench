@@ -260,17 +260,19 @@ export function createRunHandler(deps: {
 }
 
 /**
- * `POST /comfyui-workbench/api/rerun`：**以这张图当时的参数再跑一遍**。
+ * `POST /comfyui-workbench/api/rerun`：**拿这张图的参数再跑一遍**。
  *
  * 面板上"拿这张图去出图"原来只把图路径传进一个**用户挑的工作流**，
  * 别的参数（prompt / seed / 步数 / 模型…）全走默认值 —— 等于把 original
- * 的一半信息丢了。正确的语义是：读 sidecar 里的 `workflowId` 与 `vars`，
- * 原样重跑，只把图片输入换成这一张。
+ * 的一半信息丢了。现在的语义是：读 sidecar 里的 `workflowId` 与 `vars`，
+ * 其余参数照搬，**换图时换 seed**（见下）。
  *
- * 请求体：`{ path: string, asInput?: boolean }`
+ * 请求体：`{ path: string, asInput?: boolean, seed?: number }`
  * - `asInput` 为真时，找该工作流的第一个 `image` 槽位，把 `vars[slot]` 换成这张图；
- *   工作流不吃图就明确拒绝（不静默降级成"空参数重跑"）。
- * - 不给 `asInput` 时就是普通重跑（参数全保留，不换图）。
+ *   工作流不吃图就明确拒绝（不静默降级成"空参数重跑"）。**同时换一个新 seed** ——
+ *   换了参考图还沿用原 seed 等于「同一张图 + 同一个 seed」，而这条链路位级确定，
+ *   每次点都会得到一模一样的一张。`seed` 显式给了就用它，否则随机。
+ * - 不给 `asInput` 时就是普通重跑（参数全保留、不换图、不动 seed），那才是「完全复现」。
  */
 export function createRerunHandler(deps: {
   client: ComfyClient
@@ -285,7 +287,7 @@ export function createRerunHandler(deps: {
   toggles?: SubmitDeps['toggles']
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
-    let body: { path?: unknown; asInput?: unknown; timeoutMs?: unknown }
+    let body: { path?: unknown; asInput?: unknown; seed?: unknown; timeoutMs?: unknown }
     try {
       body = await readJsonBody(req) as typeof body
     } catch {
@@ -337,6 +339,12 @@ export function createRerunHandler(deps: {
     }
 
     // 需要图片输入时，找槽位并替换
+    //
+    // **同时换一个新的 seed**：换了输入图还沿用 sidecar 里的 seed，等于「同一张参考图
+    // + 同一个 seed」，而这条链路是位级确定的（实测三次，清缓存重算也逐字节相同）——
+    // 于是每次点「作为输入图」都会得到一模一样的一张，看起来像按钮没反应。
+    // 注意只对 asInput 生效：普通重跑（不传 asInput）的语义就是"完全复现"，seed 必须留着。
+    let usedSeed: number | undefined
     if (body.asInput === true) {
       const slot = entry.surface.inputs.find(input => input.type === 'image')
       if (slot === undefined) {
@@ -348,6 +356,23 @@ export function createRerunHandler(deps: {
         return
       }
       vars[slot.name] = imagePath
+
+      // 槽位名不硬编码：本仓库的 infer 就把 noise_seed 当一等命名（与 comfyui_rerun 同一条规则）
+      const seedSlot = entry.surface.inputs.find(input => /^(noise_)?seed$/i.test(input.name))?.name
+      if (seedSlot !== undefined) {
+        // **接受数字字符串**（`"654321"`）：模型很常把数字包成字符串，`comfyui_rerun` 那边
+        // 早就放宽了（见 `rerun.ts` 的 seed 解析）。两个入口同一语义，不能一个接受、
+        // 另一个静默忽略 —— 静默忽略会让用户拿到的图和预期完全不同（这里就变成随机了）。
+        const raw = body.seed
+        const explicit = typeof raw === 'number' && Number.isFinite(raw)
+          ? Math.round(raw)
+          : typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))
+            ? Math.round(Number(raw))
+            : undefined
+        const next = explicit ?? Math.floor(Math.random() * 0x7fffffff)
+        vars[seedSlot] = next
+        usedSeed = next
+      }
     }
 
     // rerun 没有 outputPath 入参，用配置默认值
@@ -382,6 +407,9 @@ export function createRerunHandler(deps: {
         pending: true,
         promptId: submitted.promptId,
         workflowId,
+        // asInput 时换了新 seed，得把它回给调用方 —— 否则用户既不知道这次用的是哪个 seed，
+        // 也没法拿它去复现
+        ...(usedSeed === undefined ? {} : { seed: usedSeed }),
         effectiveVars: submitted.effective,
         notes: submitted.notes,
       })

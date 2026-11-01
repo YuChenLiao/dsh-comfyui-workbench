@@ -52,7 +52,7 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
           <button type="button" className="cfa-btn" title={t('copyPrompt')} aria-label={t('copyPrompt')} onClick={act('copyPrompt')}><Icon name="text" size={15} /></button>
           <button type="button" className="cfa-btn" title={t('exportWorkflow')} aria-label={t('exportWorkflow')} onClick={act('exportWorkflow')}><Icon name="download" size={15} /></button>
           <button type="button" className="cfa-btn" title={t('addToChat')} aria-label={t('addToChat')} onClick={act('addToChat')}><Icon name="chat" size={15} /></button>
-          {/* 以这张图当时的参数再跑一遍（图作为输入，其余参数从 sidecar 原样带过去） */}
+          {/* 拿这张图的参数再跑一遍（换图 + 换新 seed，其余参数从 sidecar 带过去） */}
           <button type="button" className="cfa-btn" title={t('useAsInput')} aria-label={t('useAsInput')} onClick={act('useAsInput')}><Icon name="image" size={15} /></button>
           <button type="button" className="cfa-btn cfa-danger" title={t('remove')} aria-label={t('remove')} onClick={act('remove')}><Icon name="trash" size={15} /></button>
         </div>
