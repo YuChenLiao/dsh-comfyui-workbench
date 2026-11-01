@@ -100,59 +100,24 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
 
   const handlers = { goToConversation }
 
-  /** 选图出图的候选列表（null 表示没在选）。 */
-  const [inputPicker, setInputPicker] = useState<{ path: string; name: string; items: Array<{ workflowId: string; title: string; imageSlots: string[] }> } | null>(null)
-
-  // picker 开着时 Esc 关闭（原来 Esc 只在灯箱打开时挂，picker 从卡片开就管不到）
-  useEffect(() => {
-    if (inputPicker === null) return undefined
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setInputPicker(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [inputPicker])
-
-  /** 拉"吃图的工作流"，给用户挑一个。 */
-  const openInputPicker = async (item: GalleryItem): Promise<void> => {
+  /**
+   * 以这张图当时的参数再跑一遍（图作为输入）。
+   *
+   * 原来这里是"让用户挑一个吃图的工作流，只传图路径" —— 那样 prompt / seed /
+   * 步数 / 模型全走默认值，等于把原图的一半信息丢了。现在服务端读 sidecar 里的
+   * `workflowId` + `vars` 原样重跑，只把图片输入换成这一张。
+   */
+  const rerunAsInput = async (item: GalleryItem): Promise<void> => {
     try {
-      const res = await fetch(`${API}/workflows?inputs=image`, { headers: { accept: 'application/json' } })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json() as { workflows?: Array<{ workflowId?: unknown; title?: unknown; imageSlots?: unknown }> }
-      const items = (data.workflows ?? []).map(entry => ({
-        workflowId: String(entry.workflowId ?? ''),
-        title: String(entry.title ?? entry.workflowId ?? ''),
-        imageSlots: Array.isArray(entry.imageSlots) ? entry.imageSlots.map((slot: unknown) => String(slot)) : [],
-      })).filter(entry => entry.workflowId !== '' && entry.imageSlots.length > 0)
-      if (items.length === 0) {
-        setNotice({ kind: 'err', text: t('useAsInputNone') })
-        return
-      }
-      setInputPicker({ path: item.path, name: item.name, items })
-    } catch (error) {
-      setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  /** 选中工作流后提交：图路径填进它的 image 槽位。 */
-  const submitAsInput = async (workflowId: string, slot: string): Promise<void> => {
-    if (inputPicker === null) return
-    const picked = inputPicker
-    setInputPicker(null)
-    try {
-      const res = await fetch(`${API}/run`, {
+      const res = await fetch(`${API}/rerun`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        // 路由只认扁平的 workflowId（与既有 runDirect 一致）；发 { workflow: { id } } 会 400
-        body: JSON.stringify({ workflowId, vars: { [slot]: picked.path } }),
+        body: JSON.stringify({ path: item.path, asInput: true }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      // /run 执行失败也返回 200 + ok:false —— 只看 res.ok 会把失败弹成"已提交"
       const data = await res.json() as { ok?: unknown; message?: unknown; error?: unknown }
-      if (data.ok !== true) {
-        throw new Error(String(data.message ?? data.error ?? '执行失败'))
-      }
-      setNotice({ kind: 'ok', text: t('useAsInputStarted').replace('{id}', workflowId) })
+      if (data.ok !== true) throw new Error(String(data.message ?? data.error ?? '重跑失败'))
+      setNotice({ kind: 'ok', text: t('useAsInputStarted').replace('{id}', item.name) })
     } catch (error) {
       setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     }
@@ -164,9 +129,12 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       setPendingDelete(item)
       return
     }
-    // 作为输入出图：先列出吃图的工作流，选中再提交（不直接发请求）
+    // 作为输入出图：以原参数重跑，只换图（服务端读 sidecar，不需要选工作流）
     if (kind === 'useAsInput') {
-      void openInputPicker(item)
+      const key = `useAsInput:${item.path}`
+      if (busy === key) return
+      setBusy(key)
+      void rerunAsInput(item).finally(() => setBusy(''))
       return
     }
     const key = `${kind}:${item.path}`
@@ -341,37 +309,6 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
 
   return (
     <div className="cfa-root">
-      {inputPicker === null ? null : (
-        <div
-          className="cfa-picker"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('useAsInput')}
-          onClick={event => { if (event.target === event.currentTarget) setInputPicker(null) }}
-        >
-          <div className="cfa-picker-box">
-            <div className="cfa-picker-head">
-              <span>{t('useAsInputPick')}</span>
-              <button type="button" className="cfa-btn" onClick={() => setInputPicker(null)} aria-label={t('close')}><Icon name="close" size={14} /></button>
-            </div>
-            <div className="cfa-picker-list">
-              {inputPicker.items.map(entry => (
-                entry.imageSlots.map(slot => (
-                  <button
-                    key={`${entry.workflowId}:${slot}`}
-                    type="button"
-                    className="cfa-picker-item"
-                    onClick={() => { void submitAsInput(entry.workflowId, slot) }}
-                  >
-                    <span className="cfa-picker-title">{entry.title}</span>
-                    <span className="cfa-picker-slot">{slot}</span>
-                  </button>
-                ))
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
       <style>{CSS}</style>
       <Toolbar
         t={t}

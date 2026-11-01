@@ -4,7 +4,7 @@ import type { Settings } from '../../../shared/host/config.js'
 import type { ComfyClient, ComfySupervisor } from '../../../shared/comfy/index.js'
 import { availableModels } from '../../../shared/comfy/index.js'
 import { sendJson } from '../../../shared/http/respond.js'
-import { createRunHandler } from './run-api.js'
+import { createRerunHandler, createRunHandler } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
 import { handleWorkflowDetail, handleWorkflowList, handleWorkflowUpdate, workflowIdFromPath } from './workflows-api.js'
 
@@ -88,6 +88,8 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
       },
       '/run': createRunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir, runs }),
+      // 以产物当时的参数重跑（可选把图当输入）：面板上"再用这张图跑一遍"
+      '/rerun': createRerunHandler({ client, workflowDir, settings, assertWritable, defaultOutputDir, runs }),
       '/free': async (_url: URL, res: ServerResponse) => {
         try {
           await client.free()
