@@ -8,7 +8,7 @@
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
-## 六个组件
+## 七个组件
 
 装载在 profile 的 `cordis.patch.yml` 里，每一条都是独立的 loader entry —— 在宿主「设置 → 插件」里能看到、能单独开关。
 
@@ -16,8 +16,8 @@
 | --- | --- | --- |
 | `comfyui-workbench:core` | 服务端 | 初始化共享运行时（ComfyUI 客户端 / 进程托管 / 资产索引 / 产物目录）；承载浏览器端。**name 必须是包根**，宿主只给包根装配 `exports["./client"]` |
 | `comfyui-workbench:gallery` | 面板 | 资产库：列表、筛选、缩略图、删除、批量导出工作流 ZIP |
-| `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/config`、服务托管接口 |
-| `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag（只读） |
+| `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/rerun`、`/config`、服务托管接口 |
+| `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
@@ -35,7 +35,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-装完重启 DSH。`cordis.patch.yml` 里会插入七条 entry（包根 core + 六个组件），配置用 YAML 锚点共享，只写一次：
+装完重启 DSH。`cordis.patch.yml` 里会插入八条 entry（包根 core + 七个组件），配置用 YAML 锚点共享，只写一次：
 
 ```yaml
 - insert:
@@ -48,7 +48,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf
-    # :workflow / :generate / :edit / :danbooru / :terminal 同理
+    # :workflow / :tags / :generate / :edit / :danbooru / :terminal 同理
 ```
 
 ## 配置
@@ -111,7 +111,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | 作品 copyright | 8414 | 96.6% | `copyrights.jsonl` |
 | 通用 general | 30693 | 98.9% | `general.jsonl` |
 
-`general` 是动作、服装、外貌、构图这些非角色非画师的标签，`copyright` 是作品名（`touhou` → 东方Project）。四类一起建 2-gram 倒排索引：读取+解析 131ms、建索引 396ms、常驻约 **177 MB**、单次查询 **约 1ms**（线性扫描 57ms，快 54 倍）。
+`general` 是动作、服装、外貌、构图这些非角色非画师的标签，`copyright` 是作品名（`touhou` → 东方Project）。四类一起建 2-gram 倒排索引：读取+解析 129ms、建索引 420ms、常驻约 **172 MB**、单次查询 **约 1ms**（线性扫描 56ms，快约 45 倍）。
 
 **通用标签带语义分类**。Danbooru 的 tag 分组（`tag_groups` 是 wiki 不是 API）抓下来是 **91 个组、15064 个 tag**，归并成八类：动作 / 服装 / 外貌 / 构图 / 物件 / 主题 / 性相关 / 其它。`danbooru_lookup` 的 `category` 参数可以「只在服装里找」：
 
@@ -148,7 +148,7 @@ npm run danbooru:sync -- --min 0 --max 0   # 全量（角色 tag 40 万+，按�
 
 `--min` 是热度门槛（走 `search[post_count]=>N`），`--max` 是每类条数上限，`0` 表示不限。全量很慢 —— 瓶颈是逐条查 wiki，实测 8 并发下约 3~4 条/秒，40 万条要 30 小时上下。`--max` 就是为这个准备的：先拉热门段（比如 `--min 300 --max 400`，两类合计约四分钟），需要时再放宽。
 
-**万一本地库是空的**（旧版本安装、或只拷了 `lib/` 的装置 —— `github:` 安装按 `files` 打包、`link:` 直接指向仓库，两种都带 `data/`）：查询会自动走在线（`source: online`），功能不中断，但慢一个数量级 —— 实测本地 **约 30~70 毫秒**（默认查角色+画师；新进程首查约 0.13 秒，要解析 12MB JSONL），在线 **约 1 秒**（纯英文 tag，每类一次模糊匹配）/ **约 2 秒**（中文名单候选）/ **4~6 秒**（中文名多候选：先 wiki 反查、再逐条回查热度），网络差时更久。结果也更窄：本地对「圣园未花」会给 `mika_(blue_archive)` 及其泳装、体操服变体共 3 个 tag，在线只回主 tag 一个。
+**万一本地库是空的**（旧版本安装、或只拷了 `lib/` 的装置 —— `github:` 安装按 `files` 打包、`link:` 直接指向仓库，两种都带 `data/`）：查询会自动走在线（`source: online`），功能不中断，但慢得多 —— 实测本地热查询 **约 1 毫秒**（四类各建一份 2-gram 索引；新进程首查约 530ms，要先读四类合计约 20MB JSONL 再把索引建起来），在线 **约 1 秒**（纯英文 tag，每类一次模糊匹配）/ **约 2 秒**（中文名单候选）/ **4~6 秒**（中文名多候选：先 wiki 反查、再逐条回查热度），网络差时更久。结果也更窄：本地对「圣园未花」会给 `mika_(blue_archive)` 及其泳装、体操服变体共 3 个 tag，在线只回主 tag 一个。
 
 想补数据：
 
@@ -199,16 +199,15 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 ## 标签库面板
 
-第四个页签：搜 Danbooru 的四类标签（99372 条），拿到 `tag` 与中文名再贴进提示词。一个输入框同时匹配 tag、中文名、别名——查「长发」「long_hair」「长髪」都会落到 `long_hair`。
-
+第三个页签：搜 Danbooru 的四类标签（99372 条），拿到 `tag` 与中文名再贴进提示词。一个输入框同时匹配 tag、中文名、别名——查「长发」「long_hair」「长髪」都会落到 `long_hair`。
 
 - **大类筛选带实到条数**：动作 / 服装 / 外貌 / 构图 / 物件 / 主题 / 性相关 / 其它，每个按钮旁边标着能筛出多少条。分类只覆盖通用标签的 **26.9%**（`ponytail`、`braid` 这种最常见的词都不在 Danbooru 的 wiki 分组里），所以查不到时先看计数——那是"分类没覆盖"，去掉大类再搜就有了。
 - **只读 + 复制**：点「复制」拿到裸 tag，没有草稿状态。想攒提示词用 `{{变量}}` 那套工作流模板。
-- 首屏建索引 575ms，之后查询 **1–3ms**。关掉组件：`disabledComponents: ["panel.tags"]`。
+- 首屏约 550ms（读 129ms + 建索引 420ms，四类 99372 条），之后查询 **1–3ms**。关掉组件：`disabledComponents: ["panel.tags"]`。
 
 ## 终端面板
 
-第三个面板（继资产库、工作流管理之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
+第四个面板（在资产库、工作流管理、标签库之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
 
 - **外部启动的实例也能看**：插件拉起的进程直接接 stdout / stderr；外部实例（Desktop 自己起的那些）拿不到 stdout，改读它写的 `user/comfyui.log`。两条路只走一条 —— ComfyUI 的 logger 同时挂 Stream 与 File 两个 handler，两边都读是每行两份。
 - 服务没在跑时，面板上有「启动」按钮，直接拉起，不用先回对话生成一张图。
@@ -228,26 +227,29 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 ## 目录结构
 
 ```
-src/components/panel-gallery/     相册：server/(路由/扫描/索引/缩略图) + client/
-src/components/panel-workflow/    工作流管理：server/(路由/运行/配置) + client/
+src/components/panel-gallery/     资产库：server/(路由/扫描/索引/缩略图) + client/
+src/components/panel-workflow/    工作流管理：server/(路由/运行/导入/配置) + client/
+src/components/panel-tags/        标签库：server/(索引/搜索/更新任务) + client/
+src/components/panel-terminal/    终端面板：server/(日志抓取) + client/
 src/components/tool-generate/     生图工具
 src/components/tool-workflow-edit/ 工作流编辑工具
+src/components/tool-danbooru/     Danbooru 标签查询工具
 src/shared/                       公用逻辑：host / comfy / workflow / run / tools / http / authz / media
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
-src/entries/                      六个组件 entry 的入口（core 即 src/index.ts）
+src/entries/                      七个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 
-`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。
+`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条 `boot()` + 真实 fetch 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。目前覆盖 **9/14**；剩下 5 条（`/delete`、`/delete-many`、`/assets/rebuild`、`/service/stop`、`/free`）挂在脚本的 `KNOWN_UNTESTED` 白名单里，那份清单只该缩短。
 
 ## 开发
 
 ```sh
 npm install
 npm run build      # src → lib/index.js（宿主）+ lib/client.js（浏览器）+ lib/entries/*.js + lib/{workflow,store,run,comfy}.js（测试用）
-npm test           # 架构 + 类名 + 宿主接口 + 客户端渲染 + 通知 + 组件隔离
+npm test           # 架构边界 + 写接口覆盖 + 类名 + 宿主接口 + 客户端渲染 + 各组件功能
 npm run typecheck
 npm run accept     # 对着跑着的 DSH 逐条打勾（真实环境验收）；-- --run 会跑一次完整出图
 node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / 需选图

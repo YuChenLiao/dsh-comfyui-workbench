@@ -3,11 +3,11 @@
  *
  * 为什么需要它：宿主只给**包根说明符**装配浏览器端
  * （`dsh-client-modules` 的 `exactPackageSpecifier` 明确排除包子路径）。
- * 六个组件是 `dsh-comfyui-workbench/<name>` 这样的子路径 entry，能注册服务端，
+ * 七个组件是 `dsh-comfyui-workbench/<name>` 这样的子路径 entry，能注册服务端，
  * 但挂不上 client —— 少了这条包根 entry，侧栏图标与 better-sidebar 页签根本不会被加载。
  *
  * 所以这条 entry 只做两件事：让包根的 `exports["./client"]` 被装配、
- * 把共享运行时初始化好（六条组件 entry 直接复用）。
+ * 把共享运行时初始化好（七条组件 entry 直接复用）。
  */
 import { apply as applyDanbooru } from './entries/danbooru.js'
 import { apply as applyEdit } from './entries/edit.js'
@@ -90,9 +90,9 @@ export function apply(ctx: HostContext, config: unknown): void {
 }
 
 /**
- * 一次装载全部六个组件（测试与"只想挂一条 entry"的场景用）。
+ * 一次装载全部七个组件（测试与"只想挂一条 entry"的场景用）。
  *
- * 生产环境不用它：`cordis.patch.yml` 里是七条 entry（一条包根 + 六条组件），
+ * 生产环境不用它：`cordis.patch.yml` 里是八条 entry（一条包根 + 七条组件），
  * 每条各自注册，宿主才能单独开关。
  */
 export function applyAll(ctx: HostContext, config: unknown): Runtime {

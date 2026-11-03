@@ -4,11 +4,11 @@
 
 A ComfyUI workbench for [DSH](https://github.com/deepseek-ai): **hand your local ComfyUI workflows to the model**, and manage which workflows the model is allowed to use.
 
-There are three user-facing panels — Assets, Workflows, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
+There are four user-facing panels — Assets, Workflows, Tags, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
 
 > This plugin is the successor to [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album); asset browsing is inherited from it (shared code lineage). Running both gives you two entry points and two delete buttons — we recommend uninstalling the album plugin. `scripts/migrate-album.mjs` ships only in the repository: if you installed from a package you'll need to clone the repo and run it there.
 
-## Six components
+## Seven components
 
 Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — visible in the host's Settings → Plugins, and individually toggleable.
 
@@ -16,10 +16,11 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | --- | --- | --- |
 | `comfyui-workbench:core` | server | Initializes the shared runtime (ComfyUI client / process supervision / asset index / output dir) and hosts the browser bundle. **Its `name` must be the package root** — the host only assembles `exports["./client"]` for root specifiers |
 | `comfyui-workbench:gallery` | panel | Assets: listing, filtering, thumbnails, deletion, bulk workflow ZIP export |
-| `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, plus `/run`, `/config` and the service-supervision endpoints |
-| `comfyui-workbench:generate` | tools | `comfyui_workflow_list`, `comfyui_workflow_inspect`, `comfyui_run` |
+| `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
+| `comfyui-workbench:tags` | panel | Tag library: search four tag categories, filter by semantic category, copy a tag. Browsing is read-only; the "update tags" button refreshes the data from upstream |
+| `comfyui-workbench:generate` | tools | `comfyui_workflow_list`, `comfyui_workflow_inspect`, `comfyui_run`, `comfyui_run_batch`, `comfyui_rerun`, `comfyui_runs`, `comfyui_node_search` |
 | `comfyui-workbench:edit` | tools | `comfyui_workflow_edit` |
-| `comfyui-workbench:danbooru` | tools | `danbooru_lookup`, `danbooru_sync`: character/artist tag library with Chinese names. Does not touch the ComfyUI runtime, so it can be disabled on its own |
+| `comfyui-workbench:danbooru` | tools | `danbooru_lookup`, `danbooru_lookup_batch`, `danbooru_sync`: character / artist / copyright / general tag library with Chinese names (99,372 tags). Does not touch the ComfyUI runtime, so it can be disabled on its own |
 | `comfyui-workbench:terminal` | panel | ComfyUI terminal: shows child-process output or `user/comfyui.log` and can start the service from the panel |
 
 Disabling one affects only that one. Turn off `gallery`, for example and its routes 404 while workflow admin and the tools keep working. Two exceptions: bulk workflow ZIP export needs images and sidecars, so it depends on the gallery; and disabling `core` disables the whole plugin — the HTTP API and browser bundle both disappear.
@@ -34,7 +35,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-Restart DSH afterwards. Seven entries get inserted into `cordis.patch.yml` (the root `core` plus six components); their config is shared through a YAML anchor so you write it once:
+Restart DSH afterwards. Eight entries get inserted into `cordis.patch.yml` (the root `core` plus seven components); their config is shared through a YAML anchor so you write it once:
 
 ```yaml
 - insert:
@@ -47,7 +48,7 @@ Restart DSH afterwards. Seven entries get inserted into `cordis.patch.yml` (the 
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf
-    # :workflow / :generate / :edit / :danbooru / :terminal follow the same pattern
+    # :workflow / :tags / :generate / :edit / :danbooru / :terminal follow the same pattern
 ```
 
 ## Configuration
@@ -72,8 +73,13 @@ Restart DSH afterwards. Seven entries get inserted into `cordis.patch.yml` (the 
 | `comfyui_workflow_inspect` | Without `nodeId`: the IO surface plus node list. With it: one node's full config. Also reports missing nodes, missing models and available substitutes |
 | `comfyui_run` | **Asynchronous by default**: returns a `promptId` immediately, watches in the background and pushes the result into the conversation when the image is done. Supports `wait: true` for synchronous waiting and `promptId` for re-checking. Disabled workflows are rejected outright |
 | `comfyui_workflow_edit` | Edits title / description / tags and single-node parameters. Changes apply to the next run only by default; writing back to the template requires `persist` + `expectHash`. Parameters bound to a variable cannot be edited here (`param_bound`) — pass the variable through `comfyui_run`'s `vars` instead |
-| `danbooru_lookup` | Looks up characters and artists by Chinese name, Japanese name or Danbooru tag, and **returns tags only**. Aligning names before writing a prompt keeps generations on-model |
-| `danbooru_sync` | Pulls character/artist tags (including Chinese names) into the local library. Thousands of requests — call it only when the user asks |
+| `comfyui_node_search` | Searches installed nodes by class name / display name / alias / category / input-output type / package, with four ranking tiers. Returns a one-line summary by default; `detail` adds inputs and outputs |
+| `comfyui_rerun` | Runs again with the parameters an existing artifact used (or makes variants). Parameters come from the sidecar next to the artifact, so there is no need to copy seed / prompt by hand |
+| `comfyui_runs` | Checks run state: running (`state: running`), queued (with `queuePosition`), recently finished or failed. Progress lands in the record only and **never enters the conversation**, so it will not interrupt the current turn. `progress` appears only with `progressStream` on, and **only for runs submitted from the panel via `/run` or `/rerun`** (not tool submissions) — a missing field is not an anomaly; with it on, the percentage resets per sampling node and can jump backwards |
+| `comfyui_run_batch` | Submits several runs at once (one workflow with different parameters, or different workflows). Reports per item — **one failure does not affect the others**; asynchronous by default |
+| `danbooru_lookup` | Looks up **character, artist, copyright and general** tags by Chinese name / Japanese name / Danbooru tag (`kind` narrows it) and **returns tags only**. Aligning names before writing a prompt keeps generations on-model. `长发` → `long_hair`, `东方Project` → `touhou` |
+| `danbooru_lookup_batch` | Looks up many names at once (up to 50), **local only, no network** — fill the gaps with single `danbooru_lookup` calls (those go online automatically) |
+| `danbooru_sync` | Pulls character / artist tags (including Chinese names) into the local library. Thousands of requests — call it only when the user asks |
 
 A workflow's "available" flag lives in `<id>.meta.json` under `enabled` (default `true`); the panel and `comfyui_workflow_edit` write the same file.
 
@@ -104,16 +110,16 @@ Sites running "the same software, a different database" cannot serve as mirrors.
 | copyright | 8,414 | 96.6% |
 | general | 30,693 | 98.9% |
 
-`general` covers poses, clothing, appearance and composition; `copyright` is work titles (`touhou` → 东方Project). All four share one 2-gram inverted index: 131 ms to read and parse, 396 ms to build, ~177 MB resident, **~1 ms per query** (57 ms linear, 54× faster).
+`general` covers poses, clothing, appearance and composition; `copyright` is work titles (`touhou` → 东方Project). All four share one 2-gram inverted index: 129 ms to read and parse, 420 ms to build, ~172 MB resident, **~1 ms per query** (56 ms linear, roughly 45× faster).
 
-**General tags carry semantic categories.** Danbooru's tag groups live in a wiki page (`tag_groups` is not an API resource), scraped into **91 groups / 15,216 tags** and folded into eight buckets: action / clothing / appearance / composition / object / theme / explicit / other. The `category` parameter on `danbooru_lookup` narrows a search:
+**General tags carry semantic categories.** Danbooru's tag groups live in a wiki page (`tag_groups` is not an API resource), scraped into **91 groups / 15,064 tags** and folded into eight buckets: action / clothing / appearance / composition / object / theme / explicit / other. The `category` parameter on `danbooru_lookup` narrows a search:
 
 ```text
 danbooru_lookup({ query: 'skirt', category: 'clothing' })   → ["skirt"]
 danbooru_lookup({ query: 'sitting', category: 'action' })   → ["sitting", "seiza", ...]
 ```
 
-Coverage is limited: those 91 groups hit only **27.0%** of the 30,693 `general` tags directly (8,277), the rest land in "other" — even `ponytail` and `braid` are missing from the wiki groups. So **categories are an enhancement, search is the main path**; when a filter comes up empty the tool says it was filtered out rather than pretending nothing exists. Refresh with `npm run danbooru:groups` (92 requests, ~2.5 min).
+Coverage is limited: those 91 groups hit only **26.9%** of the 30,693 `general` tags directly (8,261), the rest land in "other" — even `ponytail` and `braid` are missing from the wiki groups. So **categories are an enhancement, search is the main path**; when a filter comes up empty the tool says it was filtered out rather than pretending nothing exists. Refresh with `npm run danbooru:groups` (92 requests, ~2.5 min).
 
 To bring the local library up to date, pick one of these (run them in the directory holding `package.json` — the repo root, or `node_modules/dsh-comfyui-workbench/` in an install):
 
@@ -138,7 +144,7 @@ npm run danbooru:sync -- --min 0 --max 0   # everything (400k+ character tags, a
 
 `--min` is the popularity threshold (`search[post_count]=>N`) and `--max` caps rows per kind; `0` means unlimited. A full sync is slow — the bottleneck is per-tag wiki lookups, measured at roughly 3–4 tags/second with 8 concurrent requests, so 400k tags take about 30 hours. That is what `--max` is for: pull a hot slice first (e.g. `--min 300 --max 400`, about four minutes for both kinds) and widen later.
 
-**If the local library is empty** (an older install, or a setup where only `lib/` was copied — `github:` installs pack by `files`, `link:` points at the repo and both carry `data/`), lookups fall through to online (`source: online`). Function is unaffected, but it is an order of magnitude slower — **about 30–70 ms** locally (both kinds; the first query in a fresh process is ~0.13 s because it parses 12 MB of JSONL), versus **about 1 s** online for a plain ASCII tag (one fuzzy match per kind), **about 2 s** for a single-candidate Chinese name, and **4–6 s** when a Chinese name has several candidates (wiki reverse lookup, then a `post_count` re-query per candidate); worse on a bad network. Results are also narrower: locally, "圣园未花" yields `mika_(blue_archive)` plus its swimsuit and track variants — three tags; online returns only the main tag.
+**If the local library is empty** (an older install, or a setup where only `lib/` was copied — `github:` installs pack by `files`, `link:` points at the repo and both carry `data/`), lookups fall through to online (`source: online`). Function is unaffected, but it is far slower — **about 1 ms** for a warm local query (one 2-gram index per category; the first query in a fresh process takes ~530 ms, because it parses ~20 MB of JSONL across the four categories and builds the indexes), versus **about 1 s** online for a plain ASCII tag (one fuzzy match per category), **about 2 s** for a single-candidate Chinese name, and **4–6 s** when a Chinese name has several candidates (wiki reverse lookup, then a `post_count` re-query per candidate); worse on a bad network. Results are also narrower: locally, "圣园未花" yields `mika_(blue_archive)` plus its swimsuit and track variants — three tags; online returns only the main tag.
 
 To add data:
 
@@ -187,9 +193,17 @@ The judgment is a **heuristic word list**, not a classifier. It scans the file n
 
 Filtering happens at render time only: the data stays in memory, so toggling back is instant with no refetch. With the filter on, "select all" selects only what you can see — otherwise one delete would take the hidden items with it.
 
+## Tag library panel
+
+The third tab: search the four Danbooru tag categories (99,372 tags), grab a `tag` plus its Chinese name, paste it into a prompt. One input matches tag, Chinese name and alias at once — `长发`, `long_hair` and `长髪` all land on `long_hair`.
+
+- **Category chips show their real counts**: action / clothing / appearance / composition / object / theme / explicit / other, each chip labelled with how many tags it can filter to. Categories cover only **26.9%** of general tags (`ponytail` and `braid`, among the most common words, are not in Danbooru's wiki groups), so when a search comes up empty check the count first — that means "not covered by a category", and dropping the chip brings the tag back.
+- **Read-only browsing, with copy**: the copy button yields the bare tag, with no draft state. To build prompts up over time, use the `{{variable}}` workflow templates.
+- First paint takes about 550 ms (129 ms to read + 420 ms to build the index for all 99,372 tags); queries after that take **1–3 ms**. Disable it with `disabledComponents: ["panel.tags"]`.
+
 ## Terminal panel
 
-The third panel (after Assets and Workflows) shows ComfyUI's **command-line output**. What the service is doing, where it is stuck, how far a model has loaded — that only exists in the terminal, not in the GUI.
+The fourth panel (after Assets, Workflows and Tags) shows ComfyUI's **command-line output**. What the service is doing, where it is stuck, how far a model has loaded — that only exists in the terminal, not in the GUI.
 
 - **Externally started instances work too**: a process the plugin launched has its stdout/stderr piped in; an external instance (one Desktop started itself) has no accessible stdout, so the panel reads the `user/comfyui.log` it writes. Only one path is active at a time — ComfyUI's logger attaches both a Stream handler and a File handler, so reading both would duplicate every line.
 - When the service isn't running the panel offers a Start button, launching it directly instead of making you go generate an image first.
@@ -210,25 +224,28 @@ Disabling it affects only this panel (`panel.terminal`); everything else keeps w
 
 ```
 src/components/panel-gallery/      assets: server/(routes/scan/index/thumbs) + client/
-src/components/panel-workflow/     workflow admin: server/(routes/run/config) + client/
+src/components/panel-workflow/     workflow admin: server/(routes/run/import/config) + client/
+src/components/panel-tags/         tag library: server/(index/search/sync job) + client/
+src/components/panel-terminal/     terminal: server/(log tail) + client/
 src/components/tool-generate/      generation tools
 src/components/tool-workflow-edit/ workflow editing tool
+src/components/tool-danbooru/      Danbooru tag lookup tools
 src/shared/                        shared logic: host / comfy / workflow / run / tools / http / authz / media
 src/http/                          HTTP prefix and dispatch (router)
 src/client/                        UI shell: tabs, api, i18n, icons
 src/index.ts                       package-root entry (browser bundle + shared runtime init)
-src/entries/                       six component entries (core is src/index.ts)
+src/entries/                       seven component entries (core is src/index.ts)
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 
-The first step of `npm test` (`node tests/arch.mjs`) enforces three boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client` and shell modules never import a specific component.
+The first step of `npm test` (`node tests/arch.mjs`) enforces three boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client` and shell modules never import a specific component. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a `boot()` + real-fetch case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. Coverage is currently **9/14**; the remaining five (`/delete`, `/delete-many`, `/assets/rebuild`, `/service/stop`, `/free`) sit in the script's `KNOWN_UNTESTED` allow-list, which is only meant to shrink.
 
 ## Development
 
 ```sh
 npm install
 npm run build      # src → lib/index.js (host) + lib/client.js (browser) + lib/entries/*.js + lib/{workflow,store,run,comfy}.js (for tests)
-npm test           # architecture + class names + host API + client render + notifications + component isolation
+npm test           # architecture boundaries + write-endpoint coverage + class names + host API + client render + per-component behaviour
 npm run typecheck
 npm run accept     # tick items off against a running DSH (real-environment acceptance); -- --run does one full generation
 node scripts/compat.mjs   # workflow compatibility scan: missing nodes / missing models / image inputs required
