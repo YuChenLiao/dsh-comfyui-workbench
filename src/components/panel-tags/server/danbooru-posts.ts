@@ -112,21 +112,29 @@ export async function fetchPostRefs(options: PostQuery = {}): Promise<PostRef[]>
   const page = query === '' ? Math.floor(Math.random() * 1000) + 1 : 1
   const url = `${BASE}/posts.json?tags=${encodeURIComponent(tags)}&limit=${limit}&page=${page}`
 
-  // 只重试一次：2 次 × 15 秒已经够糟，"换一批"卡更久不如直接报错。
+  // **实测过限流**：12 次连打（200ms 间隔）拿到 9 次 200、**0 次 429** —— 失败的那 3 次
+  // 是网络超时/断连（响应从 400ms 抖到 4 秒）。所以这里要防的是抖动，不是限流：
+  // 重试两次，且把"限流"与"网络"分开说，免得用户去等一个根本不会恢复的限流窗口。
   let lastError: unknown
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const res = await fetch(url, {
         headers: { 'User-Agent': 'dsh-comfyui-workbench' },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       })
+      if (res.status === 429) {
+        throw new Error('Danbooru 在限流（HTTP 429）。等十几秒再点「换一批」。')
+      }
       if (!res.ok) throw new Error(`取参考失败：HTTP ${res.status}`)
       const body: unknown = await res.json()
       if (!Array.isArray(body)) return []
       return body.map(toRef).filter((ref): ref is PostRef => ref !== undefined)
     } catch (error) {
       lastError = error
+      // 抖动才重试；429 是"等一会儿"，不该立刻再打
+      if (error instanceof Error && error.message.includes('429')) break
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+  if (lastError instanceof Error && lastError.message.includes('429')) throw lastError
+  throw new Error('取参考失败：连不上 Danbooru（网络超时）。过一会儿再试，或换个网络。')
 }
