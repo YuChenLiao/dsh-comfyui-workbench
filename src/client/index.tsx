@@ -15,6 +15,8 @@ import { WorkflowAdmin } from '../components/panel-workflow/client/WorkflowAdmin
 import { TagsPanel } from '../components/panel-tags/client/TagsPanel.js'
 import { PromptRefs } from '../components/panel-tags/client/PromptRefs.js'
 import { TAGS_CSS } from '../components/panel-tags/client/styles.js'
+import { PosesPanel } from '../components/panel-poses/client/PosesPanel.js'
+import { POSES_CSS } from '../components/panel-poses/client/styles.js'
 import { Card } from '../components/panel-gallery/client/Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from '../components/panel-gallery/client/Confirm.js'
 import { Gallery } from '../components/panel-gallery/client/Gallery.js'
@@ -157,6 +159,8 @@ export const __test = {
   TagsPanel,
   PromptRefs,
   TAGS_CSS,
+  PosesPanel,
+  POSES_CSS,
   metaLine,
   planPage,
   addToConversation,

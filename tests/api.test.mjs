@@ -550,13 +550,15 @@ test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）
   }
 })
 
-test('工具注册：11 个工具都带必要字段', async () => {
+test('工具注册：13 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
     assert.deepEqual(names, [
       'comfyui_node_search',
+      'comfyui_pose_fetch',
+      'comfyui_pose_search',
       'comfyui_rerun',
       'comfyui_run',
       'comfyui_run_batch',
@@ -599,6 +601,76 @@ test('装配接线：runtime 的 RunRegistry 真的落在 outputDir 下（漏传
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
     const ids = Array.isArray(saved) ? saved.map(record => record.promptId) : Object.keys(saved)
     assert.ok(ids.includes('pid-wire'), `记录里该有 pid-wire，实际 ${JSON.stringify(ids)}`)
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 姿势库走真实入口。
+ *
+ * 这条与 `/tags/sync` 那批是同一个理由：**不能只调 handler**。分派器在 handler 之前
+ * 有一道 `selfManaged` 的方法校验，漏登记就是恒 405，而单测全绿。
+ * 下面第 5、7 两条断言就是钉这件事的 —— 前者要 404（说明 POST 放行了）、
+ * 后者要 405（说明 GET 被拦）。两个码混在一起才说明分派层真的按方法在分流。
+ *
+ * 这里**不碰网络**：只查本地目录与不存在的 id。真取图的路径在 poses.test.mjs 里
+ * 用注入的 fetch 测。
+ */
+test('api/poses：搜索、统计、以及 /poses/fetch 的写方法真的被放行', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    // 1) 默认不含成人向：288 组里只有 98 组可见
+    const visible = await (await fetch(`${base}/poses?limit=3`)).json()
+    assert.equal(visible.ok, true)
+    assert.equal(visible.items.length, 3)
+    assert.equal(visible.total, 98, '默认该藏起成人向的 190 组')
+    assert.ok(visible.items.every(item => item.adult === false), '默认结果里不该有成人向')
+    assert.ok(typeof visible.items[0].cover.viewId === 'string', '要带封面视角 id，面板才能取图')
+
+    // 2) 勾了成人向：288 组全在
+    const all = await (await fetch(`${base}/poses?adult=1&limit=1`)).json()
+    assert.equal(all.total, 288)
+
+    // 3) 统计与随包目录一致
+    const stats = await (await fetch(`${base}/poses/stats`)).json()
+    assert.equal(stats.poseCount, 288)
+    assert.equal(stats.viewCount, 1439)
+    assert.equal(stats.adultPoseCount, 190)
+    assert.equal(stats.visiblePoseCount, 98)
+    assert.equal(stats.systems.length, 4)
+    assert.ok(stats.attribution.includes('ギア'), '要把版权人写进统计，面板底部直接显示')
+
+    // 4) 体系筛选与成人向联动：pair 全是成人向，不勾就是 0
+    const pairPlain = await (await fetch(`${base}/poses?system=pair`)).json()
+    assert.equal(pairPlain.total, 0, 'pair 体系整组是成人向，默认该是空的')
+    const pairAdult = await (await fetch(`${base}/poses?system=pair&adult=1`)).json()
+    assert.equal(pairAdult.total, 55, '勾上之后是 55 组')
+
+    // 5) 写接口：POST 放行到 handler（id 不存在 → 404，而不是 405）
+    //    这里写完整路径而不是拼 base：`arch-write-routes.mjs` 会在本文件里找
+    //    `api/poses/` 这个字面量，拼接出来的字符串匹配不到，检查就会误判成"没测"。
+    const fetchMissing = await fetch(`${app.origin}/comfyui-workbench/api/poses/fetch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'no_such_pose_front' }),
+    })
+    assert.equal(fetchMissing.status, 404, '405 就说明 router 的 selfManaged 漏了 /poses/')
+    assert.equal((await fetchMissing.json()).error, 'unknown-pose')
+
+    // 6) 代理图：同样先过索引
+    const imageMissing = await fetch(`${base}/poses/image?id=no_such_pose_front`)
+    assert.equal(imageMissing.status, 404)
+
+    // 7) 同一条路径不接受 GET —— 证明上一步的 404 不是"什么都放行"
+    const fetchWithGet = await fetch(`${base}/poses/fetch`)
+    assert.equal(fetchWithGet.status, 405, '/poses/fetch 只有 POST 语义')
   } finally {
     await app.close()
   }

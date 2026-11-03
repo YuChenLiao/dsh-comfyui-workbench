@@ -9,7 +9,7 @@
 # 全部字段都可省略。下面的 config 只是把默认值写出来，方便对照修改。
 # 优先级：profile 配置 > 环境变量（COMFYUI_URL / COMFYUI_BASE_URL / COMFYUI_TIMEOUT_MS）> 内置默认。
 - insert:
-    # 八条 entry：包根 core（承载浏览器端 + 共享运行时）+ 七个组件。
+    # 九条 entry：包根 core（承载浏览器端 + 共享运行时）+ 八个组件。
     # 宿主「设置 → 插件」里能看到并单独开关。
     # 配置用 YAML 锚点共享 —— 只写一次，改的时候也只改一处。
     # 包根 entry：只为让宿主装配 exports["./client"]（侧栏图标与 better-sidebar 页签）。
@@ -45,10 +45,11 @@
         uploadsDir: null
         # 资产索引文件；不写则用 ~/.dsh-comfyui-workbench/assets.jsonl。
         indexFile: null
-        # 关掉的组件（默认全开）。七个组件互相独立，某个出问题可以只关它：
+        # 关掉的组件（默认全开）。八个组件互相独立，某个出问题可以只关它：
         #   panel.workflow     用户面板 · 工作流
         #   panel.gallery      用户面板 · 相册
         #   panel.tags         用户面板 · 标签库（只读浏览 / 搜索 / 复制 tag）
+        #   panel.poses        用户面板 · 姿势库（浏览 / 搜索 / 取线稿）+ 姿势工具
         #   panel.terminal     用户面板 · ComfyUI 终端（命令行输出）
         #   tool.generate      模型工具 · 生图（含列出/查看工作流）
         #   tool.workflow-edit 模型工具 · 工作流编辑
@@ -91,6 +92,14 @@
         # 这里只是**默认值** —— 「工作流管理」面板上可以直接开关，不用改这个文件也不用重启。
         # 也可用环境变量 COMFYUI_PROGRESS_WS=1 打开。
         progressStream: true
+
+        # ── 姿势库 ──
+        # 默认是否包含成人向姿势（190 组，另有 98 组常规）。面板上的复选框会覆盖它。
+        posesIncludeAdult: false
+        # 姿势线稿的图床根地址，**必须 https**（否则回退默认）。图不随包分发，
+        # 运行时经服务端代理按需读取并落盘到 <插件数据目录>/cache/poses。
+        # 只该改域名，不要指到自己的机器 —— 这就是一个受白名单约束的取图出口。
+        posesOrigin: https://ai-pose-gallery.anhao.app
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf
@@ -99,6 +108,9 @@
       config: *cwf
     - id: comfyui-workbench:tags
       name: dsh-comfyui-workbench/tags
+      config: *cwf
+    - id: comfyui-workbench:poses
+      name: dsh-comfyui-workbench/poses
       config: *cwf
     - id: comfyui-workbench:generate
       name: dsh-comfyui-workbench/generate

@@ -81,6 +81,7 @@ const jobs = [
   entryJob('gallery'),
   entryJob('workflow'),
   entryJob('tags'),
+  entryJob('poses'),
   entryJob('generate'),
   entryJob('edit'),
   entryJob('danbooru'),

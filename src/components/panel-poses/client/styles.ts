@@ -1,0 +1,46 @@
+/**
+ * 姿势库面板的样式。
+ *
+ * 沿用工作台那套 `--w-*` 变量，不另起主题 —— 它是同一个壳里的一个页签。
+ * 类名前缀 `cps-`（comfyui pose studio），与 `ctg-`（标签）、`cwb-`（相册）区分开。
+ *
+ * 卡片是固定的 3:4 比例：姿势线稿全是竖构图，让它按内容撑高会让网格高低不平。
+ */
+export const POSES_CSS = `
+.cps-root{display:flex;flex-direction:column;gap:10px;padding:14px 20px 24px;min-height:0;height:100%;overflow:auto}
+.cps-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.cps-title{font-size:1.02em;font-weight:600}
+.cps-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
+.cps-search{display:flex;flex-wrap:wrap;gap:8px}
+.cps-input{flex:1;min-width:180px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.9em;padding:8px 10px}
+.cps-input:focus{border-color:var(--w-accent);outline:none}
+.cps-input::placeholder{color:var(--w-muted)}
+.cps-select{border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.86em;padding:8px 6px}
+.cps-toggle{display:inline-flex;align-items:center;gap:6px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.82em;padding:7px 10px;cursor:pointer}
+.cps-toggle input{accent-color:var(--w-accent)}
+.cps-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cps-chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.78em;padding:4px 10px;cursor:pointer;transition:border-color .12s ease,background-color .12s ease}
+.cps-chip:hover{border-color:var(--w-accent)}
+.cps-chip.on{background:var(--w-accent);border-color:var(--w-accent);color:var(--w-bg)}
+.cps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.cps-card{display:flex;flex-direction:column;gap:6px;border:1px solid var(--w-line);border-radius:11px;background:var(--w-surface);overflow:hidden}
+.cps-card:hover{border-color:var(--w-accent)}
+.cps-shot{position:relative;aspect-ratio:3/4;background:var(--w-bg);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cps-shot img{width:100%;height:100%;object-fit:contain;display:block}
+.cps-shot-fail{font-size:.72em;color:var(--w-muted);text-align:center;padding:8px}
+.cps-angles{position:absolute;left:0;right:0;bottom:0;display:flex;gap:3px;padding:4px;background:linear-gradient(transparent,rgba(0,0,0,.55))}
+.cps-angle{border:0;border-radius:6px;background:rgba(0,0,0,.35);color:#fff;font-size:.68em;padding:2px 6px;cursor:pointer}
+.cps-angle.on{background:var(--w-accent);color:var(--w-bg)}
+.cps-meta{padding:0 8px 8px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.cps-name{font-size:.82em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cps-tagline{font-size:.72em;color:var(--w-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cps-actions{display:flex;gap:6px;padding:0 8px 8px}
+.cps-btn{flex:1;border-radius:8px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.74em;padding:5px 6px;cursor:pointer}
+.cps-btn:hover{border-color:var(--w-accent)}
+.cps-btn[disabled]{opacity:.55;cursor:default}
+.cps-note{font-size:.76em;color:var(--w-muted)}
+.cps-note.bad{color:#d97757}
+.cps-empty{font-size:.82em;color:var(--w-muted);padding:18px 4px}
+.cps-attr{font-size:.72em;color:var(--w-muted);line-height:1.5;border-top:1px solid var(--w-line);padding-top:8px}
+.cps-attr a{color:inherit}
+`

@@ -4,11 +4,11 @@
 
 给 [DSH](https://github.com/deepseek-ai) 的 ComfyUI 工作台：**把本机的 ComfyUI 工作流交给模型调用**，并管理"哪些工作流对模型可用"。
 
-面向用户的界面是四块：资产库、工作流管理、标签库、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
+面向用户的界面是五块：资产库、工作流管理、标签库、姿势库、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
-## 七个组件
+## 八个组件
 
 装载在 profile 的 `cordis.patch.yml` 里，每一条都是独立的 loader entry —— 在宿主「设置 → 插件」里能看到、能单独开关。
 
@@ -18,6 +18,7 @@
 | `comfyui-workbench:gallery` | 面板 | 资产库：列表、筛选、缩略图、删除、批量导出工作流 ZIP |
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/rerun`、`/config`、服务托管接口 |
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
+| `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose_search`、`comfyui_pose_fetch` 两个工具 |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
@@ -35,7 +36,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-装完重启 DSH。`cordis.patch.yml` 里会插入八条 entry（包根 core + 七个组件），配置用 YAML 锚点共享，只写一次：
+装完重启 DSH。`cordis.patch.yml` 里会插入九条 entry（包根 core + 八个组件），配置用 YAML 锚点共享，只写一次：
 
 ```yaml
 - insert:
@@ -48,7 +49,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf
-    # :workflow / :tags / :generate / :edit / :danbooru / :terminal 同理
+    # :workflow / :tags / :poses / :generate / :edit / :danbooru / :terminal 同理
 ```
 
 ## 配置
@@ -81,6 +82,8 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查**角色、画师、作品、通用**四类标签（`kind` 可限定），**只返回 tag**。写提示词前用它对齐名字，能少跑偏。查「长发」→`long_hair`、「东方Project」→`touhou` |
 | `danbooru_lookup_batch` | 一次查多个名字（上限 50），**只查本地不联网** —— 缺哪个再用单条 `danbooru_lookup` 补（那个会自动走在线） |
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
+| `comfyui_pose_search` | 在姿势参考库里找人体姿势（288 组 / 1439 角度）：按中文名、编号或分类搜，返回 `id` 与角度数，**不含图片**。默认不含成人向 |
+| `comfyui_pose_fetch` | 把某个角度（或某个姿势的正面）的线稿下载到本机 uploads，返回路径，可直接作为工作流的图片输入（ControlNet / 图生图） |
 
 工作流的"可用"由 `<id>.meta.json` 的 `enabled` 决定（缺省 `true`），面板与 `comfyui_workflow_edit` 写同一份文件。
 
@@ -205,9 +208,21 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 - **只读 + 复制**：点「复制」拿到裸 tag，没有草稿状态。想攒提示词用 `{{变量}}` 那套工作流模板。
 - 首屏约 550ms（读 129ms + 建索引 420ms，四类 99372 条），之后查询 **1–3ms**。关掉组件：`disabledComponents: ["panel.tags"]`。
 
+## 姿势库
+
+第四块：**288 组人体姿势、1439 个角度**的人体线稿（来自 Danbooru 社区的中文图库），用来给工作流找一个"人要怎么站/坐/躺"的参考图。
+
+- **图不随包**。仓库里只有名称、分类与图地址（`data/poses/catalog.json`，253 KB）；线稿在用到时经**服务端代理**读取并落盘缓存到 `<插件数据目录>/cache/poses/`。浏览器不直连第三方图床 —— 既不为一张缩略图把出口 IP 交出去，也绕不开我们自己的缓存与失败短路。版权与使用限制见 [data/poses/NOTICE.md](data/poses/NOTICE.md)：素材**不得用于商业用途**，本项目的 MIT 不覆盖任何一张线稿。
+- **取一次就算数**：内存 32 张 + 磁盘缓存（上限 256 MB，按最久未用清理），同一个视角的并发请求只打一次上游。上游连着失败几次会短路 30 秒，面板显示「线稿暂时取不到」而不是让几十个缩略图各自挂 20 秒超时。
+- **五个角度**：正面 / 斜侧 / 侧面 / 俯视 / 仰视，卡片上直接切。287 组有满 5 个角度，1 组只有 4 个。
+- **成人向默认关**：288 组里有 190 组是成人向（性感系 + 双人体系，加上两个明确分类），默认只显示 98 组，勾「含成人向」才全开。工具侧同理，`includeAdult` 默认 `false`。
+- **拿它出图**：点「取原图」把线稿存进 uploads，返回的路径就是工作流的图片输入；模型侧用 `comfyui_pose_search` 找、`comfyui_pose_fetch` 取。这个面板不自己调生图 API —— 出图只有 `comfyui_run` 一条路。
+- 检索是本地线性扫 288 组（微秒级）。**这里不做倒排索引**：标签库 99372 条才值得建 2-gram，288 条建索引是负优化。
+- 关掉组件：`disabledComponents: ["panel.poses"]`。数据更新：`npm run poses:import`。
+
 ## 终端面板
 
-第四个面板（在资产库、工作流管理、标签库之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
+第五个面板（在资产库、工作流管理、标签库、姿势库之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
 
 - **外部启动的实例也能看**：插件拉起的进程直接接 stdout / stderr；外部实例（Desktop 自己起的那些）拿不到 stdout，改读它写的 `user/comfyui.log`。两条路只走一条 —— ComfyUI 的 logger 同时挂 Stream 与 File 两个 handler，两边都读是每行两份。
 - 服务没在跑时，面板上有「启动」按钮，直接拉起，不用先回对话生成一张图。
@@ -230,6 +245,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 src/components/panel-gallery/     资产库：server/(路由/扫描/索引/缩略图) + client/
 src/components/panel-workflow/    工作流管理：server/(路由/运行/导入/配置) + client/
 src/components/panel-tags/        标签库：server/(索引/搜索/更新任务) + client/
+src/components/panel-poses/       姿势库：server/(目录/取图代理/工具) + client/
 src/components/panel-terminal/    终端面板：server/(日志抓取) + client/
 src/components/tool-generate/     生图工具
 src/components/tool-workflow-edit/ 工作流编辑工具
@@ -238,7 +254,7 @@ src/shared/                       公用逻辑：host / comfy / workflow / run /
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
-src/entries/                      七个组件 entry 的入口（core 即 src/index.ts）
+src/entries/                      八个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 

@@ -15,6 +15,7 @@ import { apply as applyGallery } from './entries/gallery.js'
 import { apply as applyGenerate } from './entries/generate.js'
 import { apply as applyTerminal } from './entries/terminal.js'
 import { apply as applyTags } from './entries/tags.js'
+import { apply as applyPoses } from './entries/poses.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
 import { readToggles, writeToggles } from './shared/host/toggles.js'
@@ -104,6 +105,7 @@ export function applyAll(ctx: HostContext, config: unknown): Runtime {
   applyGallery(ctx, config)
   applyWorkflow(ctx, config)
   applyTags(ctx, config)
+  applyPoses(ctx, config)
   applyGenerate(ctx, config)
   applyEdit(ctx, config)
   applyDanbooru(ctx, config)
@@ -198,6 +200,12 @@ export type { TagHit, TagsIndex, TagSearchResult, TagStats } from './components/
 export { createTagsRoutes } from './components/panel-tags/server/routes.js'
 export { createSyncJob } from './components/panel-tags/server/sync-job.js'
 export { createPoolJob } from './components/panel-tags/server/pool-job.js'
+export { createPosesIndex, bundledCatalogPath } from './components/panel-poses/server/catalog.js'
+export type { PoseHit, PoseCatalog, PosesIndex, PoseStats } from './components/panel-poses/server/catalog.js'
+export { createPoseImages } from './components/panel-poses/server/images.js'
+export type { PoseImage, PoseImages, PoseImageStats } from './components/panel-poses/server/images.js'
+export { createPosesRoutes } from './components/panel-poses/server/routes.js'
+export { poseFetchTool, poseSearchTool } from './components/panel-poses/server/tools.js'
 export { fetchPostRefs, toRef } from './components/panel-tags/server/danbooru-posts.js'
 export type { PostQuery, PostRef } from './components/panel-tags/server/danbooru-posts.js'
 export { DEFAULT_POOL, fetchRandomPrompts, promptPoolInfo, promptPoolPath, searchPrompts, syncPromptPool } from './components/panel-tags/server/prompts.js'

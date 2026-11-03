@@ -228,6 +228,7 @@ assert.match(shell, /role="tablist"/, '应当有页签条')
 assert.match(shell, />tabAssets</, '应当有资产库页签')
 assert.match(shell, />tabWorkflowAdmin</, '应当有工作流管理页签')
 assert.match(shell, />tabTags</, '应当有标签库页签')
+assert.match(shell, />tabPoses</, '应当有姿势库页签')
 assert.match(shell, /class="cfa-root"/, '默认停在资产库')
 
 // 标签面板：SSR 不跑 useEffect，首帧应当是"正在建索引"而不是空列表
@@ -240,6 +241,18 @@ assert.match(tags, /tagsLoading|tagsSub/, '首帧要说明状态，不能空白'
 assert.match(tags, /ctg-chip/, '该有大类筛选按钮')
 assert.match(tags, /tagsEmpty/, '没有数据时给提示而不是一片空白')
 assert.match(tags, /class="ctg-sync"/, '该有「更新标签」按钮（断言类名，别被 title 里的文案键满足）')
+
+// 姿势库面板：SSR 不跑 useEffect，首帧要有根节点与筛选器，不能是空白
+const { PosesPanel, POSES_CSS } = mod.__test
+assert.ok(PosesPanel !== undefined, '应当导出 PosesPanel（姿势库面板）')
+assert.match(POSES_CSS, /\.cps-root/, 'POSES_CSS 该有根类')
+const poses = renderToStaticMarkup(React.createElement(PosesPanel, { t, visible: true }))
+assert.match(poses, /cps-root/, '该渲染出面板根节点')
+assert.match(poses, /cps-title/, '该有标题')
+assert.match(poses, /cps-search/, '该有搜索与筛选条')
+assert.match(poses, /cps-toggle/, '该有「含成人向」开关')
+assert.match(poses, /posesLoading|posesSub/, '首帧要说明状态，不能空白')
+assert.match(poses, /posesEmpty/, '没有数据时给提示而不是一片空白')
 
 const refs = renderToStaticMarkup(React.createElement(PromptRefs, { t, visible: true }))
 assert.match(refs, /ctg-refs/, '参考面板该渲染出根节点')

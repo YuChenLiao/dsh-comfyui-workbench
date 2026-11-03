@@ -144,7 +144,7 @@ const units = new Set(files.map(file => unitOf(path.relative(root, file).split(p
 // 组件 entry 的 inject 必须有守护：漏了 workspaceRegistry 会让探测静默失效（踩过一次）。
 // 只有创建共享 runtime 的 entry 需要注入 workspaceRegistry（产物目录探测要用）。
 // danbooru 不碰 runtime，单独校验它的注入。
-const entryFiles = ['gallery', 'workflow', 'tags', 'generate', 'edit', 'terminal']
+const entryFiles = ['gallery', 'workflow', 'tags', 'poses', 'generate', 'edit', 'terminal']
 for (const entry of entryFiles) {
   const mod = await import(pathToFileURL(path.join(root, 'lib', 'entries', `${entry}.js`)).href)
   assert.ok(Array.isArray(mod.inject) && mod.inject.includes('workspaceRegistry'), `entries/${entry}.js 的 inject 必须含 workspaceRegistry，实际：${JSON.stringify(mod.inject)}`)

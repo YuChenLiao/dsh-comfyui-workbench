@@ -4,6 +4,9 @@ export const DEFAULT_CACHE_MS = 4000
 /** ComfyUI 默认地址（与 dsh-comfyui-image 一致）。 */
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:8188'
 
+/** 姿势线稿的默认图床。上游是 Cloudflare 上的静态站，实测 thumbs/img 两条路径都在。 */
+export const DEFAULT_POSES_ORIGIN = 'https://ai-pose-gallery.anhao.app'
+
 /** 归一化后的宿主配置。 */
 export interface Settings {
   // ── 资产库 ──
@@ -33,7 +36,8 @@ export interface Settings {
   indexFile: string | null
   /**
    * 关掉的组件 id。可用的有：
-   * `panel.workflow` / `panel.gallery` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru`。
+   * `panel.workflow` / `panel.gallery` / `panel.tags` / `panel.poses` / `panel.terminal`
+   * / `tool.generate` / `tool.workflow-edit` / `tool.danbooru`。
    * 空数组表示全开；某个组件出问题时可以单独关掉，不影响其他。
    */
   disabledComponents: string[]
@@ -70,6 +74,22 @@ export interface Settings {
    * `{value, max}` 写进运行记录。连不上只是没有百分比，出图不受影响。
    */
   progressStream: boolean
+
+  // ── 姿势库 ──
+  /**
+   * **工具侧**默认是否包含成人向姿势（默认 `false`）。
+   *
+   * 面板上的「含成人向」复选框是独立的界面状态，默认不勾，不读这里 ——
+   * 两者都只是各自的初始值，互不覆盖。想改工具的默认行为才需要它。
+   */
+  posesIncludeAdult: boolean
+  /**
+   * 姿势线稿的图床根地址。**必须 https**，非 https 一律回退默认。
+   *
+   * 收到配置里而不是硬编码：上游换域名时不必发版；但也不能让一条配置把
+   * 「服务端代理」变成任意地址的出口，所以只接受 https。
+   */
+  posesOrigin: string
 }
 
 /** 环境变量 → 配置键（与既有插件同名，保证三个插件指向同一台服务）。 */
@@ -157,5 +177,11 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),
     betterSidebarTab: oneOf(raw.betterSidebarTab, ['auto', 'on', 'off'] as const, 'auto'),
     progressStream: raw.progressStream === true || envProgress === true,
+    posesIncludeAdult: raw.posesIncludeAdult === true,
+    posesOrigin: (() => {
+      const value = str(raw.posesOrigin, DEFAULT_POSES_ORIGIN).replace(/\/+$/, '')
+      // 代理只该指向一个 https 图床；配错了回退默认，而不是让配置把出口放开
+      return /^https:\/\//.test(value) ? value : DEFAULT_POSES_ORIGIN
+    })(),
   }
 }

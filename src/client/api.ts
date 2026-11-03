@@ -503,3 +503,101 @@ export function download(blob: Blob, filename: string): void {
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
+
+// ── 姿势库 ──
+
+/** 面板上的一组姿势。字段与 `panel-poses/server/catalog.ts` 的 `PoseHit` 对齐。 */
+export interface PoseHit {
+  id: string
+  name: string
+  system: string
+  systemId: string
+  code: string
+  category: string
+  adult: boolean
+  viewCount: number
+  /** 实际存在哪些角度。有一组只有 4 个，前端不能写死五个。 */
+  angleIds: string[]
+  cover: { viewId: string; thumb: string; full: string; angle: string }
+}
+
+export interface PoseStats {
+  systems: Array<{ id: string; name: string; adult: boolean; poseCount: number; viewCount: number }>
+  categories: Record<string, number>
+  poseCount: number
+  viewCount: number
+  adultPoseCount: number
+  visiblePoseCount: number
+  attribution: string
+  source: string
+  origin: string
+}
+
+/** 查姿势（面板用）。 */
+export async function fetchPoses(
+  options: { query?: string; system?: string; category?: string; adult?: boolean; offset?: number; limit?: number },
+): Promise<{ items: PoseHit[]; total: number }> {
+  const params = new URLSearchParams()
+  if (options.query !== undefined && options.query !== '') params.set('q', options.query)
+  if (options.system !== undefined && options.system !== '') params.set('system', options.system)
+  if (options.category !== undefined && options.category !== '') params.set('category', options.category)
+  if (options.adult === true) params.set('adult', '1')
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const res = await fetch(`${API}/poses?${params.toString()}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; items?: unknown; total?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取姿势失败：HTTP ${res.status}`)
+  }
+  return {
+    items: Array.isArray(bag.items) ? (bag.items as PoseHit[]) : [],
+    total: typeof bag.total === 'number' ? bag.total : 0,
+  }
+}
+
+/** 取姿势库统计（体系、分类、成人向计数）。 */
+export async function fetchPoseStats(): Promise<PoseStats> {
+  const res = await fetch(`${API}/poses/stats`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  if (bag?.ok !== true) {
+    const message = typeof bag?.message === 'string' ? bag.message : `取姿势统计失败：HTTP ${res.status}`
+    throw new Error(message)
+  }
+  return {
+    systems: Array.isArray(bag.systems) ? (bag.systems as PoseStats['systems']) : [],
+    categories: (bag.categories !== null && typeof bag.categories === 'object' ? bag.categories : {}) as Record<string, number>,
+    poseCount: typeof bag.poseCount === 'number' ? bag.poseCount : 0,
+    viewCount: typeof bag.viewCount === 'number' ? bag.viewCount : 0,
+    adultPoseCount: typeof bag.adultPoseCount === 'number' ? bag.adultPoseCount : 0,
+    visiblePoseCount: typeof bag.visiblePoseCount === 'number' ? bag.visiblePoseCount : 0,
+    attribution: typeof bag.attribution === 'string' ? bag.attribution : '',
+    source: typeof bag.source === 'string' ? bag.source : '',
+    origin: typeof bag.origin === 'string' ? bag.origin : '',
+  }
+}
+
+/** 线稿的字节地址（服务端代理，浏览器不直连第三方图床）。 */
+export function poseImageUrl(viewId: string, size: 'thumb' | 'full' = 'thumb'): string {
+  return `${API}/poses/image?id=${encodeURIComponent(viewId)}&size=${size}`
+}
+
+/** 把某张线稿落盘到 uploads，返回本机路径（给工作流当输入图）。 */
+export async function fetchPoseFile(viewId: string, size: 'thumb' | 'full' = 'full'): Promise<{ file: string }> {
+  const res = await fetch(`${API}/poses/fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: viewId, size }),
+  })
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; file?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true || typeof bag.file !== 'string') {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取线稿失败：HTTP ${res.status}`)
+  }
+  return { file: bag.file }
+}

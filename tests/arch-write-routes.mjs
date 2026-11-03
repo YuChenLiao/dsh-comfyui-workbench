@@ -36,12 +36,19 @@ function setMembers(name) {
   return [...body.matchAll(/'([^']+)'/g)].map(match => match[1])
 }
 
-/** `selfManaged` 是表达式：只抓 `sub === 'x'` 与 `sub.startsWith('x')`。 */
+/**
+ * `selfManaged` 是表达式：只抓 `sub === 'x'` 与 `sub.startsWith('x')`。
+ *
+ * 根路径 `'/'` 要剔掉：它是 `if (sub === '/')` 的健康检查，不是写接口，
+ * 而 `api${'/'}` = `api/` 这个子串在 api.test.mjs 里到处都是，
+ * 留着它会让分母虚高并让覆盖率看起来比实际好。宁可少算一条接口，
+ * 也不要让这个检查自己变成"看起来通过"。
+ */
 function selfManagedPaths() {
   return [
     ...[...routerText.matchAll(/sub === '([^']+)'/g)].map(match => match[1]),
     ...[...routerText.matchAll(/sub\.startsWith\('([^']+)'\)/g)].map(match => match[1]),
-  ]
+  ].filter(item => item !== '/' && item !== '')
 }
 
 const writePaths = [...new Set([...setMembers('WRITABLE'), ...setMembers('POST_ONLY'), ...selfManagedPaths()])]

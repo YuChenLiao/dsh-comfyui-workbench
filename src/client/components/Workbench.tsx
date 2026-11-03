@@ -8,6 +8,8 @@ import { WorkflowAdmin } from '../../components/panel-workflow/client/WorkflowAd
 import { Terminal } from '../../components/panel-terminal/client/Terminal.js'
 import { TAGS_CSS } from '../../components/panel-tags/client/styles.js'
 import { TagsPanel } from '../../components/panel-tags/client/TagsPanel.js'
+import { POSES_CSS } from '../../components/panel-poses/client/styles.js'
+import { PosesPanel } from '../../components/panel-poses/client/PosesPanel.js'
 
 export interface WorkbenchProps {
   t: Translate
@@ -17,13 +19,14 @@ export interface WorkbenchProps {
   openSidebar: () => boolean
 }
 
-type TabId = 'assets' | 'workflow' | 'tags' | 'terminal'
+type TabId = 'assets' | 'workflow' | 'tags' | 'poses' | 'terminal'
 
 /** 页签与组件的对应关系：关掉哪个组件，对应页签就不会出现。 */
-const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' | 'tabTags' | 'tabTerminal' }> = [
+const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' | 'tabTags' | 'tabPoses' | 'tabTerminal' }> = [
   { id: 'assets', component: 'panel.gallery', label: 'tabAssets' },
   { id: 'workflow', component: 'panel.workflow', label: 'tabWorkflowAdmin' },
   { id: 'tags', component: 'panel.tags', label: 'tabTags' },
+  { id: 'poses', component: 'panel.poses', label: 'tabPoses' },
   { id: 'terminal', component: 'panel.terminal', label: 'tabTerminal' },
 ]
 
@@ -40,6 +43,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
     'panel.gallery': true,
     'panel.workflow': true,
     'panel.tags': true,
+    'panel.poses': true,
     'panel.terminal': true,
   })
 
@@ -59,7 +63,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
 
   return (
     <div className="cwb-root">
-      <style>{WORKBENCH_CSS}{TAGS_CSS}</style>
+      <style>{WORKBENCH_CSS}{TAGS_CSS}{POSES_CSS}</style>
       {available.length === 0 ? (
         <div className="cwf-empty">
           <div className="cwf-empty-title">{t('allPanelsOff')}</div>
@@ -88,6 +92,8 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
               <WorkflowAdmin t={t} visible={visible} />
             ) : current === 'tags' ? (
               <TagsPanel t={t} visible={visible} />
+            ) : current === 'poses' ? (
+              <PosesPanel t={t} visible={visible} />
             ) : current === 'terminal' ? (
               <Terminal t={t} visible={visible} />
             ) : null}
