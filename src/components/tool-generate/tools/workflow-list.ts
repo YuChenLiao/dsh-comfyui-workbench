@@ -4,8 +4,14 @@ import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { asString, jsonOutput } from '../../../shared/tools/types.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 
-/** 列表项：够模型判断"该用哪个"，又不把节点拓扑塞进上下文。 */
-function toListItem(surface: WorkflowIOSurface): Record<string, unknown> {
+/**
+ * 列表项（**模型侧**）：够判断「该用哪个」，又不把节点拓扑塞进上下文。
+ *
+ * 与面板侧那份（`panel-workflow/server/workflows-api.ts` 的 `toPanelItem`）字段已分叉，
+ * 理由见那边的注释。共同字段（workflowId / title / description / undescribed / enabled）
+ * 由 `tests/workflow-list-shape.test.mjs` 钉住不能漂。
+ */
+export function toModelItem(surface: WorkflowIOSurface): Record<string, unknown> {
   const primary = surface.models.find(model => model.primary === true) ?? surface.models[0]
   const others = surface.models.filter(model => model !== primary).map(model => model.name)
   return {
@@ -74,7 +80,7 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
 
       const items = visible
         .map(entry => {
-          const item = toListItem(entry.surface)
+          const item = toModelItem(entry.surface)
           if (available === null) return item
           const missing = missingModels(entry.surface.models, available)
           if (missing.length === 0) return item

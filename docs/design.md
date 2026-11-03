@@ -46,7 +46,7 @@
 | 7 | `rootsOf()` | 追加本插件 `outputDir` 与 `assetRoots`；**保留** `comfyOutputDir()` | 见 §2.3 |
 | 8 | `isAuthorized()` | 扩展为"源与目标都校验" | 见 §2.4 |
 | 9 | `thumbDir()` | `dsh-comfyui-album-thumbs` → `dsh-comfyui-workbench-thumbs` | 与旧插件共用缩略图目录，缓存 key 不冲突但清理会互相影响 |
-| 10 | `routes` 表 | 保留原 8 个，新增 `/runs`、`/run`、`/workflows-list`、`/assets` 等 | — |
+| 10 | `routes` 表 | 保留原 8 个，新增 `/run`、`/run-status`、`/workflows-list`、`/assets` 等（`/runs` 是早期规划，未实现） | — |
 | 11 | `client.js` 末尾 `__test` | 保留并扩展导出 | `tests/render.mjs` 靠它挂组件，丢了渲染测试就废 |
 
 保留不动：错误响应形状 `{ok, error, message}`、405/404 语义、`buildZip`（自建 ZIP，无第三方依赖）、`scanCache` 的 LRU 上限、`readJsonBody` 的体积限制、`pathsFromBody` 的 1–500 条上限。
@@ -95,9 +95,9 @@ custom(settings.roots) → workingDirectory → workspaceRegistry.list()
 
 | 路由 | 方法 | 作用 |
 | --- | --- | --- |
-| `/runs` | GET | 执行记录分页列表 |
+| `/runs` | GET | **未实现**（早期规划）。运行记录目前只能按 `promptId` 查单条（见下一行）；批量概览走 `comfyui_runs` 工具 |
 | `/run` | POST | 提交一次运行（见 §3） |
-| `/run/:id` | GET | 单次运行状态与结果 |
+| `/run-status?promptId=` | GET | 单次运行状态与结果（面板提交后靠它轮询） |
 | `/archive` | POST | 归档 / 反归档 |
 | `/tag` | POST | 改标签（写 sidecar + 索引） |
 
@@ -376,7 +376,7 @@ UI 侧只调 `GET /api/workflows?view=io`，永远拿不到完整配置 —— �
 | 改完没生效 | 该 parameter 被 `bind` 到某个变量时，改节点值会被变量替换盖掉。`patch` 检测到即报错：`param-bound`，并指出是哪个变量在控制它 |
 | 改了一个不存在/连着线的输入 | 报 `param-not-editable`。连线输入的值来自上游节点，改它没有意义 |
 | 类型不对 | 按 IO 面推断的类型校验：`number` 不接字符串、`enum` 校验 `options` 成员、`boolean` 不接 `"false"` |
-| 改完不知道改了什么 | 每次 patch 追加一条审计：`{ at, by: 'agent'|'user', workflowId, expectHash, patches, persisted }`，写进 `runs/audit.jsonl` |
+| 改完不知道改了什么 | **按路径分两种**：改**备注**（`notes`）会写 `.meta.json` 的 `updatedBy`/`updatedAt`，能溯源；改**参数并 `persist: true` 写回模板**只体现在工具返回值的 `changed` 里（`writeWorkflow` 不碰 meta，`updatedBy` 不会变成 `agent`）。早期规划的 `runs/audit.jsonl` 没实现 —— 谁在什么时候改了哪个参数，目前只能从当次工具返回值看到，事后翻不出来 |
 | 模型盲改 | 工具返回值里带"改前 → 改后"，并提示当前值来自 default 还是模板 |
 
 overrides 的生效范围只有一次运行，不跨 run 累积 —— 否则模型调过一次 seed，用户之后每张图都被固定种子，且完全无感。

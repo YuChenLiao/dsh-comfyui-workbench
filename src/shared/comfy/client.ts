@@ -37,6 +37,13 @@ export class ComfyClient {
   /** `/object_info` 缓存：响应可能好几 MB，同一进程不必反复拉。 */
   /** `/queue` 的短缓存：同一 tick 里多条任务共用一次查询。 */
   private queueCache: { at: number; value: { running: string[]; pending: string[] } } | undefined
+  /**
+   * 正在飞的那次 `/queue` 请求。
+   *
+   * 只靠 `queueCache` 挡不住并发：缓存要等结果回来才写，20 个任务在冷启动那一瞬间
+   * 看到的是同一个空缓存，于是同时发 20 个请求。共享 in-flight promise 才是真去重。
+   */
+  private queueInflight: Promise<{ running: string[]; pending: string[] }> | undefined
   private infoCache: ObjectInfo | null = null
   /**
    * 提交时带的 client_id（ComfyUI 用它区分来源），也是订阅 `/ws` 进度时必须复用的那个。
@@ -126,9 +133,21 @@ export class ComfyClient {
     // 这个数据本来就滞后于真实队列，1 秒的陈旧度不影响判定。
     const now = Date.now()
     if (this.queueCache !== undefined && now - this.queueCache.at < 1_000) return this.queueCache.value
-    const value = await this.fetchQueue()
-    this.queueCache = { at: now, value }
-    return value
+    // **single-flight**：缓存只在结果回来之后才写，所以 20 个并发调用在"冷启动那
+    // 一瞬间"会全部穿透 —— 它们看到的是同一个空缓存。共享同一个 in-flight promise
+    // 才能真的只打一次。
+    if (this.queueInflight !== undefined) return this.queueInflight
+    const inflight = this.fetchQueue().then(value => {
+      this.queueCache = { at: Date.now(), value }
+      this.queueInflight = undefined
+      return value
+    }).catch(error => {
+      // 失败不能把 promise 挂在那里：否则后续调用会一直拿到同一个 rejected promise
+      this.queueInflight = undefined
+      throw error
+    })
+    this.queueInflight = inflight
+    return inflight
   }
 
   /** 真正去拉一次队列。 */

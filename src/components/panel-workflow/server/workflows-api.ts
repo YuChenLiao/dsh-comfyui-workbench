@@ -3,8 +3,15 @@ import { importWorkflowValue, listEntries, readEntry, WorkflowExistsError, Workf
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
-/** 列表项：UI 与模型看到的是同一份数据，只是用法不同。 */
-function toListItem(
+/**
+ * 列表项（**面板侧**）。
+ *
+ * 与模型侧那份（`tool-generate/tools/workflow-list.ts` 的 `toModelItem`）字段已经分叉：
+ * 面板要 `imageSlots`（"拿这张图去出图"往哪个键传图）与 `basicCount`（分组计数），
+ * 模型要 `inputs` 明细。强行统一成一个胖形状两边都不满意，所以分开、各自命名，
+ * 由 `tests/workflow-list-shape.test.mjs` 钉住"共同字段不能漂"。
+ */
+export function toPanelItem(
   surface: WorkflowIOSurface,
   available: ReadonlySet<string> | null,
 ): Record<string, unknown> {
@@ -63,7 +70,7 @@ export async function handleWorkflowList(
   sendJson(res, 200, {
     ok: true,
     count: filtered.length,
-    workflows: filtered.map(entry => toListItem(entry.surface, available)),
+    workflows: filtered.map(entry => toPanelItem(entry.surface, available)),
     ...(broken.length > 0 ? { broken } : {}),
     ...(wantInput !== '' && filtered.length === 0
       ? { hint: `本机没有需要 ${wantInput} 输入的工作流。` }

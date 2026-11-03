@@ -2,6 +2,22 @@
 
 ## 未发布
 
+### 功能优化
+
+- **`/queue` 加了 single-flight**：批量提交时最多 20 条任务各自轮询队列，原先只有 1 秒缓存——而缓存要等结果回来才写，冷启动那一瞬间 20 个调用看到的是同一个空缓存，于是同时打出 20 个请求。现在共享同一个 in-flight promise，`tests/queue-singleflight.test.mjs` 用 30ms 延迟制造重叠，断言 20 并发只打 1 次（去掉 single-flight 会变成 20，测试会红）。
+
+  顺带发现：`fetchQueue` 对所有失败（500 / 网络炸 / 坏 body）都降级成空队列、**从不 reject**，所以 `queue()` 里的 `.catch` 是纯防御代码。测试相应改成测真实行为（降级不抛、且过缓存窗口后会重新请求，不会把"空队列"永久钉住）。
+
+- **两份 `toListItem` 各自改名**：面板侧叫 `toPanelItem`、模型侧叫 `toModelItem`。它们**没有合并**——字段已真实分叉（面板要 `imageSlots`/`basicCount`，模型要 `inputs` 明细），强行统一会造出一个谁都不满意的胖形状。改由 `tests/workflow-list-shape.test.mjs` 钉住：共同字段（`workflowId`/`title`/`description`/`undescribed`/`enabled`）必须逐字段相同，各自独有字段必须在，`outputs`/`nodes` 必须一致，以及**同名不同义的 `inputKinds`**（模型侧过滤掉 number/boolean/enum，面板侧全留）的差异要显式成立。
+
+- **`docs/design.md` 三处漂移订正**：`/runs` 标注未实现；`/run/:id` 改成实际的 `/run-status?promptId=`；「改完不知道改了什么」那行按真实行为重写——改**备注**会写 `.meta.json` 的 `updatedBy`，但改**参数并 `persist: true`** 走 `writeWorkflow`、不碰 meta，溯源只存在于当次工具返回值里，事后翻不出来。
+
+### 未关闭
+
+- **`new RunRegistry(outputDir)` 的接线守护仍是半开的**。`tests/api.test.mjs` 的 `GET /run-status` 用例能守住"完全没接线"（`runs` 为 undefined 时 `runs.get()` 会抛、返回 500），但守不住"写成了 `new RunRegistry()` 漏传目录"——那种情况 registry 纯内存、`get()` 照样返回 `undefined`、接口照样 200 `found:false`，测试依然绿。`tests/runs-wiring.test.mjs` 那条落盘测试是自己 `new RunRegistry(dir)`，不是从 `runtime` 拿的。
+
+  要真正关闭得让测试能从 `applyAll` 后的 runtime 取到 `runs` 并断言 `runs.json` 落在 `outputDir` 下；`applyAll` 目前不返回 runtime，需要改装配入口。**记在这里而不是假装关了。**
+
 ### 新功能
 
 - **标签面板多一个「参考」子页签 —— 提示词参考**：从 HuggingFace 的 `FredZhang7/stable-diffusion-prompts-2.47M`（247 万条真实用户 prompt）里翻灵感。
