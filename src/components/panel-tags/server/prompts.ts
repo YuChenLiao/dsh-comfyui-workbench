@@ -97,11 +97,38 @@ async function fetchPage(offset: number, length: number, fetchImpl: typeof fetch
   return { items, total }
 }
 
+/** 数据集总行数的模块级缓存：第一次拿到之后就不用再为它打一枪。 */
+let totalCache: { total: number; at: number } | null = null
+/** 总行数多久当一次准（数据集几乎不变，一小时足够）。 */
+const TOTAL_TTL_MS = 60 * 60_000
+
+/**
+ * 取一页，失败重试一次。
+ *
+ * HF 的深页 offset 属于冷区，偶发 5xx/超时很常见；随机模式是**主路径**，
+ * 一次抖动就白屏不可接受。
+ */
+async function fetchPageWithRetry(offset: number, fetchImpl: typeof fetch, timeoutMs: number): Promise<Page> {
+  try {
+    return await fetchPage(offset, PAGE, fetchImpl, timeoutMs)
+  } catch (first) {
+    try {
+      return await fetchPage(offset, PAGE, fetchImpl, timeoutMs)
+    } catch {
+      // 重试也失败：抛第一次的原因（更能说明是上游的问题）
+      throw first
+    }
+  }
+}
+
 /**
  * 随机抽几条。
  *
  * 不依赖本地池：随机挑一个 offset 拉一页，再从中随机取。**这是"翻灵感"的主路径**，
  * 第一次打开面板就能用。
+ *
+ * 总行数缓存在模块级：不缓存的话每次都要先拉一页 offset=0 拿 total 再丢掉，
+ * 等于恒定两次请求，而那一页的内容也用不上。
  *
  * @param count - 要几条。
  * @param options - 网络参数与注入。
@@ -114,25 +141,35 @@ export async function fetchRandomPrompts(
   const timeoutMs = options.timeoutMs ?? 30_000
   const take = Math.min(Math.max(count, 1), 20)
 
-  // 先探一次拿总行数（也从这一页里取结果，不浪费）
+  const cached = totalCache
+  if (cached !== null && Date.now() - cached.at < TOTAL_TTL_MS) {
+    // 已知总行数：直接随机挑一页，稳态只打一次网络
+    const offset = Math.floor(Math.random() * Math.max(cached.total - PAGE, 1))
+    const page = await fetchPageWithRetry(offset, fetchImpl, timeoutMs)
+    return shuffle(page.items).slice(0, take)
+  }
+
+  // 第一次：拉一页 offset=0，既拿总行数、也把这一页当兜底结果
   const first = await fetchPage(0, PAGE, fetchImpl, timeoutMs)
+  if (first.total > 0) totalCache = { total: first.total, at: Date.now() }
   if (first.total <= PAGE) return first.items.slice(0, take)
 
   // 总行数已知后再随机挑一页：offset 落在 [0, total-PAGE] 区间才不会越界
-  const span = Math.max(first.total - PAGE, 1)
-  const offset = Math.floor(Math.random() * span)
-  const page = offset === 0 ? first : await fetchPage(offset, PAGE, fetchImpl, timeoutMs)
-  const pool = page.items.length > 0 ? page.items : first.items
+  const offset = Math.floor(Math.random() * Math.max(first.total - PAGE, 1))
+  const page = offset === 0 ? first : await fetchPageWithRetry(offset, fetchImpl, timeoutMs)
+  return shuffle(page.items.length > 0 ? page.items : first.items).slice(0, take)
+}
 
-  // 从这一页里随机打散，避免每次都拿到同一批的开头几条
-  const shuffled = [...pool]
-  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+/** 打散一页，避免每次都拿到同一批的开头几条。 */
+function shuffle(items: readonly PromptHit[]): PromptHit[] {
+  const out = [...items]
+  for (let i = out.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1))
-    const a = shuffled[i] as PromptHit
-    shuffled[i] = shuffled[j] as PromptHit
-    shuffled[j] = a
+    const a = out[i] as PromptHit
+    out[i] = out[j] as PromptHit
+    out[j] = a
   }
-  return shuffled.slice(0, take)
+  return out
 }
 
 /**

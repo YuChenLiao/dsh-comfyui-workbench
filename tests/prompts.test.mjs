@@ -112,6 +112,36 @@ test('fetchRandomPrompts：上游失败时抛错，不返回空数组假装成�
   )
 })
 
+test('fetchRandomPrompts：总行数缓存后稳态只打一次网络', async () => {
+  let calls = 0
+  const counting = async () => {
+    calls += 1
+    return new Response(JSON.stringify(fakeRows(['a', 'b'], 5000)), { status: 200 })
+  }
+
+  // 第一次可能打两次（拿 total + 挑一页），取决于随机落点
+  await fetchRandomPrompts(2, { fetchImpl: counting })
+  const firstCalls = calls
+  assert.ok(firstCalls >= 1 && firstCalls <= 2, `第一次实际 ${firstCalls} 次`)
+
+  // 之后 total 已缓存：每次只应有一次请求（不缓存的话恒定两次，那一页纯浪费）
+  calls = 0
+  await fetchRandomPrompts(2, { fetchImpl: counting })
+  assert.equal(calls, 1, `缓存生效后该只打一次，实际 ${calls} 次`)
+})
+
+test('fetchRandomPrompts：第一枪失败会重试一次', async () => {
+  let calls = 0
+  const flaky = async () => {
+    calls += 1
+    if (calls === 1) return new Response('', { status: 503 })
+    return new Response(JSON.stringify(fakeRows(['ok'], 10)), { status: 200 })
+  }
+  const items = await fetchRandomPrompts(1, { fetchImpl: flaky })
+  assert.equal(items.length, 1, '重试之后该拿到结果')
+  assert.equal(calls, 2)
+})
+
 test('默认池子大小是 2 万（文档里写的就是这个数）', () => {
   assert.equal(DEFAULT_POOL, 20_000)
 })

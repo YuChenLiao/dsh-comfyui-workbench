@@ -69,13 +69,16 @@ export function PromptRefs({ t, visible }: PromptRefsProps): React.ReactElement 
       void fetchPoolSync()
         .then(next => {
           setJob(next)
-          if (next.state !== 'running') load('search', query)
+          // **用当前的 mode，不能写死 'search'**：随机模式下池子建完如果去搜，
+          // 而搜索框是空的，`searchPrompts` 返回 []——列表会被清空，
+          // 用户看到"池子 20000 条"却一条都没有。
+          if (next.state !== 'running') load(mode, mode === 'random' ? '' : query)
         })
         .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
     }, 1000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, job?.state, query])
+  }, [visible, job?.state, mode, query])
 
   const copy = (text: string): void => {
     try {
