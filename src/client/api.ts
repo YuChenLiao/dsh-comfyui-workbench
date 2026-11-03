@@ -527,21 +527,21 @@ export interface PoseStats {
   poseCount: number
   viewCount: number
   adultPoseCount: number
-  visiblePoseCount: number
+  safePoseCount: number
   attribution: string
   source: string
   origin: string
 }
 
-/** 查姿势（面板用）。 */
+/** 查姿势（面板用）。默认全给，`safe` 才收窄。 */
 export async function fetchPoses(
-  options: { query?: string; system?: string; category?: string; adult?: boolean; offset?: number; limit?: number },
+  options: { query?: string; system?: string; category?: string; safe?: boolean; offset?: number; limit?: number },
 ): Promise<{ items: PoseHit[]; total: number }> {
   const params = new URLSearchParams()
   if (options.query !== undefined && options.query !== '') params.set('q', options.query)
   if (options.system !== undefined && options.system !== '') params.set('system', options.system)
   if (options.category !== undefined && options.category !== '') params.set('category', options.category)
-  if (options.adult === true) params.set('adult', '1')
+  if (options.safe === true) params.set('safe', '1')
   if (options.offset !== undefined) params.set('offset', String(options.offset))
   if (options.limit !== undefined) params.set('limit', String(options.limit))
   const res = await fetch(`${API}/poses?${params.toString()}`)
@@ -573,7 +573,7 @@ export async function fetchPoseStats(): Promise<PoseStats> {
     poseCount: typeof bag.poseCount === 'number' ? bag.poseCount : 0,
     viewCount: typeof bag.viewCount === 'number' ? bag.viewCount : 0,
     adultPoseCount: typeof bag.adultPoseCount === 'number' ? bag.adultPoseCount : 0,
-    visiblePoseCount: typeof bag.visiblePoseCount === 'number' ? bag.visiblePoseCount : 0,
+    safePoseCount: typeof bag.safePoseCount === 'number' ? bag.safePoseCount : 0,
     attribution: typeof bag.attribution === 'string' ? bag.attribution : '',
     source: typeof bag.source === 'string' ? bag.source : '',
     origin: typeof bag.origin === 'string' ? bag.origin : '',

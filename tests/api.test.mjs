@@ -630,28 +630,28 @@ test('api/poses：搜索、统计、以及 /poses/fetch 的写方法真的被放
     const visible = await (await fetch(`${base}/poses?limit=3`)).json()
     assert.equal(visible.ok, true)
     assert.equal(visible.items.length, 3)
-    assert.equal(visible.total, 98, '默认该藏起成人向的 190 组')
-    assert.ok(visible.items.every(item => item.adult === false), '默认结果里不该有成人向')
+    assert.equal(visible.total, 288, '默认该给全部 288 组，不做内容筛选')
     assert.ok(typeof visible.items[0].cover.viewId === 'string', '要带封面视角 id，面板才能取图')
+    assert.ok(Array.isArray(visible.items[0].angleIds), '要带实际角度列表，前端按它画按钮')
 
-    // 2) 勾了成人向：288 组全在
-    const all = await (await fetch(`${base}/poses?adult=1&limit=1`)).json()
-    assert.equal(all.total, 288)
+    // 2) safe=1 才收窄到常规那 98 组
+    const safeOnly = await (await fetch(`${base}/poses?safe=1&limit=1`)).json()
+    assert.equal(safeOnly.total, 98)
 
     // 3) 统计与随包目录一致
     const stats = await (await fetch(`${base}/poses/stats`)).json()
     assert.equal(stats.poseCount, 288)
     assert.equal(stats.viewCount, 1439)
     assert.equal(stats.adultPoseCount, 190)
-    assert.equal(stats.visiblePoseCount, 98)
+    assert.equal(stats.safePoseCount, 98)
     assert.equal(stats.systems.length, 4)
     assert.ok(stats.attribution.includes('ギア'), '要把版权人写进统计，面板底部直接显示')
 
-    // 4) 体系筛选与成人向联动：pair 全是成人向，不勾就是 0
+    // 4) 体系筛选与 safe 独立：pair 55 组默认可见，safe=1 之后是 0
     const pairPlain = await (await fetch(`${base}/poses?system=pair`)).json()
-    assert.equal(pairPlain.total, 0, 'pair 体系整组是成人向，默认该是空的')
-    const pairAdult = await (await fetch(`${base}/poses?system=pair&adult=1`)).json()
-    assert.equal(pairAdult.total, 55, '勾上之后是 55 组')
+    assert.equal(pairPlain.total, 55, 'pair 体系 55 组，默认就该在结果里')
+    const pairSafe = await (await fetch(`${base}/poses?system=pair&safe=1`)).json()
+    assert.equal(pairSafe.total, 0, 'safe=1 把 pair 收干净')
 
     // 5) 写接口：POST 放行到 handler（id 不存在 → 404，而不是 405）
     //    这里写完整路径而不是拼 base：`arch-write-routes.mjs` 会在本文件里找

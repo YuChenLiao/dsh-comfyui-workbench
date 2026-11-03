@@ -33,8 +33,6 @@ export interface PoseToolDeps {
   index: PosesIndex
   images: PoseImages
   uploadsDir: () => string
-  /** 默认是否带上成人向。工具与面板读同一个开关，避免两处不一样。 */
-  includeAdult: () => boolean
 }
 
 /**
@@ -59,7 +57,7 @@ export function poseSearchTool(deps: PoseToolDeps): ToolSpec {
           description: '体系：full 全身标准 / sexy 全身性感 / bust 上半身 / pair 双人。不传则全部。',
         },
         category: { type: 'string', description: '动作分类，如「坐姿」「站姿」「趴卧」「跪立」。不传则全部。' },
-        includeAdult: { type: 'boolean', description: '是否包含成人向姿势（默认 false）。' },
+        onlySafe: { type: 'boolean', description: '只看常规姿势（默认 false，即全部）。' },
         limit: { type: 'integer', description: '最多返回几组，默认 10，上限 30。' },
       },
       additionalProperties: false,
@@ -73,17 +71,17 @@ export function poseSearchTool(deps: PoseToolDeps): ToolSpec {
       const system = asString(args.system).trim()
       const category = asString(args.category).trim()
       const limit = Math.min(Math.max(Number(args.limit ?? 10) || 10, 1), 30)
-      const includeAdult = args.includeAdult === true || (args.includeAdult === undefined && deps.includeAdult())
+      const onlySafe = args.onlySafe === true
 
       const known = deps.index.stats().systems.map(item => item.id)
       if (system !== '' && !known.includes(system)) {
         return { ok: false, error: `system 只能是 ${known.join(' / ')}，收到「${system}」。` }
       }
 
-      const result = deps.index.search({ query, systemId: system, category, includeAdult, limit })
+      const result = deps.index.search({ query, systemId: system, category, onlySafe, limit })
       if (result.items.length === 0) {
         // 区分"本来就没有"与"被筛掉了"：后者去掉条件就有了，前者要换词
-        const all = deps.index.search({ query, includeAdult: true, limit: 1 })
+        const all = deps.index.search({ query, limit: 1 })
         const unfiltered = all.total
         return {
           ok: true,
@@ -91,7 +89,7 @@ export function poseSearchTool(deps: PoseToolDeps): ToolSpec {
           total: 0,
           note: unfiltered === 0
             ? '没有匹配的姿势。换个词试试，或者去掉 system / category。'
-            : `有 ${unfiltered} 组符合关键词，但被 system / category / 成人向过滤掉了。去掉条件再查。`,
+            : `有 ${unfiltered} 组符合关键词，但被 system / category / onlySafe 过滤掉了。去掉条件再查。`,
         }
       }
 
@@ -99,7 +97,6 @@ export function poseSearchTool(deps: PoseToolDeps): ToolSpec {
         ok: true,
         total: result.total,
         poses: result.items.map(brief),
-        ...(includeAdult ? {} : { note: `默认不含成人向（另有 ${deps.index.stats().adultPoseCount} 组需要 includeAdult 才给）。` }),
       }
     },
   }

@@ -86,8 +86,13 @@ export interface PoseSearchOptions {
   query?: string
   systemId?: string
   category?: string
-  /** 是否包含成人向组。默认 false —— 与面板的勾选、工具的默认值保持一致。 */
-  includeAdult?: boolean
+  /**
+   * **只看常规**（排除标了 `adult` 的 190 组）。默认 `false` —— 默认全给。
+   *
+   * 这是个可选的收窄，不是默认门槛：内容筛选是使用者自己的事，
+   * 插件不该替他决定"你先看到什么"。
+   */
+  onlySafe?: boolean
   limit?: number
   offset?: number
 }
@@ -103,8 +108,8 @@ export interface PoseStats {
   poseCount: number
   viewCount: number
   adultPoseCount: number
-  /** 当前默认（不含成人向）下能看到多少组，面板首屏要用它说清楚"为什么只有 98 组"。 */
-  visiblePoseCount: number
+  /** 标了常规（非成人向）的组数。仅作统计，不是默认可见范围。 */
+  safePoseCount: number
   attribution: string
   source: string
   origin: string
@@ -230,13 +235,13 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
       const parts = query === '' ? [] : query.split(/\s+/).filter(Boolean)
       const systemId = options.systemId ?? ''
       const category = options.category ?? ''
-      const includeAdult = options.includeAdult === true
+      const onlySafe = options.onlySafe === true
       const limit = Math.min(Math.max(Number(options.limit ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, 1), MAX_LIMIT)
       const offset = Math.max(Number(options.offset ?? 0) || 0, 0)
 
       const filtered: PoseRecord[] = []
       for (const pose of loaded.poses) {
-        if (!includeAdult && pose.adult) continue
+        if (onlySafe && pose.adult) continue
         if (systemId !== '' && pose.systemId !== systemId) continue
         if (category !== '' && pose.category !== category) continue
         if (!matches(pose, parts)) continue
@@ -257,7 +262,7 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
         poseCount: loaded.poseCount,
         viewCount: loaded.viewCount,
         adultPoseCount: loaded.adultPoseCount,
-        visiblePoseCount: loaded.poses.filter(pose => !pose.adult).length,
+        safePoseCount: loaded.poses.filter(pose => !pose.adult).length,
         attribution: loaded.attribution,
         source: loaded.source,
         origin: loaded.origin,

@@ -33,6 +33,7 @@ export const POSES_CSS = `
 .cps-angle.on{background:var(--w-accent);color:var(--w-bg)}
 .cps-meta{padding:0 8px 8px;display:flex;flex-direction:column;gap:3px;min-width:0}
 .cps-name{font-size:.82em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cps-badge{display:inline-block;margin-right:5px;border-radius:5px;background:var(--w-line);color:var(--w-muted);font-size:.66em;padding:0 4px;vertical-align:1px}
 .cps-tagline{font-size:.72em;color:var(--w-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cps-actions{display:flex;gap:6px;padding:0 8px 8px}
 .cps-btn{flex:1;border-radius:8px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.74em;padding:5px 6px;cursor:pointer}

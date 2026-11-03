@@ -77,13 +77,6 @@ export interface Settings {
 
   // ── 姿势库 ──
   /**
-   * **工具侧**默认是否包含成人向姿势（默认 `false`）。
-   *
-   * 面板上的「含成人向」复选框是独立的界面状态，默认不勾，不读这里 ——
-   * 两者都只是各自的初始值，互不覆盖。想改工具的默认行为才需要它。
-   */
-  posesIncludeAdult: boolean
-  /**
    * 姿势线稿的图床根地址。**必须 https**，非 https 一律回退默认。
    *
    * 收到配置里而不是硬编码：上游换域名时不必发版；但也不能让一条配置把
@@ -177,7 +170,6 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),
     betterSidebarTab: oneOf(raw.betterSidebarTab, ['auto', 'on', 'off'] as const, 'auto'),
     progressStream: raw.progressStream === true || envProgress === true,
-    posesIncludeAdult: raw.posesIncludeAdult === true,
     posesOrigin: (() => {
       const value = str(raw.posesOrigin, DEFAULT_POSES_ORIGIN).replace(/\/+$/, '')
       // 代理只该指向一个 https 图床；配错了回退默认，而不是让配置把出口放开

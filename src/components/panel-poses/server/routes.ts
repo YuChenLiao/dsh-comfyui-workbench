@@ -64,8 +64,8 @@ export function createPosesRoutes(deps: PosesRoutesDeps): PosesRoutes {
             query: params.get('q') ?? '',
             systemId: params.get('system') ?? '',
             category: params.get('category') ?? '',
-            // 面板的勾选与工具的默认值走同一个语义：不显式要，就不给成人向
-            includeAdult: params.get('adult') === '1' || params.get('adult') === 'true',
+            // 默认全给；`safe=1` 才收窄到常规。筛选是使用者的选择，不是插件的默认动作。
+            onlySafe: params.get('safe') === '1' || params.get('safe') === 'true',
             limit: Number(params.get('limit') ?? '') || undefined,
             offset: Number(params.get('offset') ?? '') || undefined,
           })

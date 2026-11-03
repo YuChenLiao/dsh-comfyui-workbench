@@ -32,7 +32,8 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
   const [query, setQuery] = useState('')
   const [system, setSystem] = useState('')
   const [category, setCategory] = useState('')
-  const [includeAdult, setIncludeAdult] = useState(false)
+  /** 只看常规（排除标了 adult 的组）。默认关 —— 内容筛选交给使用者自己。 */
+  const [onlySafe, setOnlySafe] = useState(false)
   const [items, setItems] = useState<PoseHit[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<PoseStats | null>(null)
@@ -52,7 +53,7 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
     nextQuery: string,
     nextSystem: string,
     nextCategory: string,
-    nextAdult: boolean,
+    nextSafe: boolean,
   ): Promise<void> => {
     const mine = seq.current + 1
     seq.current = mine
@@ -63,7 +64,7 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
         query: nextQuery,
         system: nextSystem,
         category: nextCategory,
-        adult: nextAdult,
+        safe: nextSafe,
         limit: PAGE,
       })
       if (seq.current !== mine) return
@@ -93,17 +94,17 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
   }, [visible, load])
 
   /** 条件变了：防抖后重查。 */
-  const schedule = useCallback((next: { query?: string; system?: string; category?: string; adult?: boolean }) => {
+  const schedule = useCallback((next: { query?: string; system?: string; category?: string; safe?: boolean }) => {
     if (timer.current !== null) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       void load(
         next.query ?? query,
         next.system ?? system,
         next.category ?? category,
-        next.adult ?? includeAdult,
+        next.safe ?? onlySafe,
       )
     }, DEBOUNCE_MS)
-  }, [load, query, system, category, includeAdult])
+  }, [load, query, system, category, onlySafe])
 
   const viewOf = (pose: PoseHit): string => angleOf[pose.id] ?? pose.cover.viewId
 
@@ -150,8 +151,7 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
               ? t('posesLoading')
               : t('posesSub')
                 .replace('{poses}', String(stats.poseCount))
-                .replace('{views}', String(stats.viewCount))
-                .replace('{visible}', String(stats.visiblePoseCount))}
+                .replace('{views}', String(stats.viewCount))}
           </div>
         </div>
       </div>
@@ -198,14 +198,14 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
         <label className="cps-toggle">
           <input
             type="checkbox"
-            checked={includeAdult}
+            checked={onlySafe}
             onChange={event => {
               const value = event.target.checked
-              setIncludeAdult(value)
-              schedule({ adult: value })
+              setOnlySafe(value)
+              schedule({ safe: value })
             }}
           />
-          {t('posesIncludeAdult')}
+          {t('posesOnlySafe')}
         </label>
       </div>
 
@@ -226,7 +226,10 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
                 {angleButtons(pose)}
               </div>
               <div className="cps-meta">
-                <div className="cps-name" title={pose.name}>{pose.name}</div>
+                <div className="cps-name" title={pose.name}>
+                  {pose.adult && <span className="cps-badge">{t('posesAdultBadge')}</span>}
+                  {pose.name}
+                </div>
                 <div className="cps-tagline">{`${pose.code} · ${pose.category} · ${pose.viewCount} 角度`}</div>
               </div>
               <div className="cps-actions">

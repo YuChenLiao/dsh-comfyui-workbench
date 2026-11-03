@@ -104,7 +104,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   if (tools === undefined || typeof tools.register !== 'function') {
     console.warn('[comfyui-workbench] 拿不到 tools 服务，姿势工具未注册。')
   } else {
-    const deps = { index, images, uploadsDir, includeAdult: () => settings.posesIncludeAdult }
+    const deps = { index, images, uploadsDir }
     for (const spec of [poseSearchTool(deps), poseFetchTool(deps)]) {
       try {
         const dispose = tools.register(spec)

@@ -43,25 +43,24 @@ test('随包目录：288 组 / 1439 视角 / 四体系与上游一致', () => {
   assert.equal(Object.keys(stats.categories).length, 26)
 })
 
-test('成人向默认藏起来，勾了才给', () => {
+test('默认全给 288 组；onlySafe 才收窄到 98 组', () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
-  const plain = index.search({ limit: 100 })
-  const withAdult = index.search({ includeAdult: true, limit: 100 })
-  assert.equal(plain.total, 98)
-  assert.equal(withAdult.total, 288)
-  assert.ok(plain.items.every(item => item.adult === false))
-  // pair 与 sexy 体系整组是成人向：不勾就是空的
-  assert.equal(index.search({ systemId: 'pair' }).total, 0)
-  assert.equal(index.search({ systemId: 'pair', includeAdult: true }).total, 55)
+  assert.equal(index.search({ limit: 100 }).total, 288, '默认不该藏任何一组')
+  const safeOnly = index.search({ onlySafe: true, limit: 100 })
+  assert.equal(safeOnly.total, 98)
+  assert.ok(safeOnly.items.every(item => item.adult === false))
+  // 体系筛选与 onlySafe 独立成立
+  assert.equal(index.search({ systemId: 'pair' }).total, 55, 'pair 体系 55 组，默认可见')
+  assert.equal(index.search({ systemId: 'pair', onlySafe: true }).total, 0)
 })
 
 test('搜索与筛选：编号、分类、多词 AND、未知条件返回空', () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
-  const byCode = index.search({ query: 'P001', includeAdult: true })
+  const byCode = index.search({ query: 'P001' })
   assert.ok(byCode.total > 0)
   assert.ok(byCode.items.every(item => item.code === 'P001'))
   // 空格分隔 = 都要命中
-  const both = index.search({ query: '坐姿 后仰', includeAdult: true })
+  const both = index.search({ query: '坐姿 后仰' })
   assert.ok(both.total >= 1, '该有同时满足两个词的姿势')
   assert.ok(both.items.every(item => item.name.includes('后仰') || item.category.includes('坐姿')))
   assert.equal(index.search({ query: '绝不可能存在的姿势名' }).total, 0)
@@ -70,7 +69,7 @@ test('搜索与筛选：编号、分类、多词 AND、未知条件返回空', (
 
 test('每条都有可用的封面视角，且图路径是代理认的形态', () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
-  const { items } = index.search({ includeAdult: true, limit: 100 })
+  const { items } = index.search({ limit: 100 })
   for (const item of items) {
     assert.match(item.cover.viewId, /^[a-z0-9]+_[A-Za-z0-9]+$|^[a-z0-9]+_.+$/)
     assert.match(item.cover.thumb, /^(thumbs|img)\/[A-Za-z0-9_]+\.(jpg|png)$/)
@@ -83,7 +82,7 @@ test('每条都有可用的封面视角，且图路径是代理认的形态', ()
 
 test('findView：接受视角 id，也接受姿势 id（回落到正面）', () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
-  const pose = index.search({ includeAdult: true, limit: 1 }).items[0]
+  const pose = index.search({ limit: 1 }).items[0]
   const byPose = index.findView(pose.id)
   assert.ok(byPose !== undefined)
   assert.equal(byPose.view.angleId, 'front', '只给组 id 时该给正面')
@@ -323,7 +322,7 @@ test('路由：搜索 / 统计 / 越界参数都被夹住', async () => {
     status: 0,
     headersSent: false,
   }
-  await search(new URL('http://x/poses?limit=999&adult=1'), res, { method: 'GET' })
+  await search(new URL('http://x/poses?limit=999&safe=1'), res, { method: 'GET' })
   const payload = collected.at(-1).body
   assert.equal(payload.ok, true)
   // limit 上限 100：288 组时也最多回 100
@@ -337,7 +336,7 @@ test('路由：搜索 / 统计 / 越界参数都被夹住', async () => {
 test('工具：搜索参数校验与空结果的原因区分', async () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
   const images = createPoseImages({ cacheDir: tempDir(), origin: ORIGIN, fetchImpl: async () => new Response(TINY_PNG) })
-  const tool = poseSearchTool({ index, images, uploadsDir: () => tempDir(), includeAdult: () => false })
+  const tool = poseSearchTool({ index, images, uploadsDir: () => tempDir() })
 
   const bad = await tool.execute({ system: 'nope' })
   assert.equal(bad.ok, false)
@@ -348,10 +347,14 @@ test('工具：搜索参数校验与空结果的原因区分', async () => {
   assert.equal(none.poses.length, 0)
   assert.match(none.note, /换个词/)
 
-  // 被 adult 过滤掉时，note 要说清是"筛掉的"而不是"没有"
-  const filtered = await tool.execute({ system: 'pair' })
+  // 被条件筛掉时，note 要说清是"筛掉的"而不是"没有"
+  const filtered = await tool.execute({ system: 'pair', onlySafe: true })
   assert.equal(filtered.poses.length, 0)
   assert.match(filtered.note, /过滤掉/)
+
+  // 默认不带 onlySafe：pair 体系本来就在结果里
+  const pair = await tool.execute({ system: 'pair' })
+  assert.ok(pair.poses.length > 0, '默认该给全部，包含 pair')
 })
 
 test('工具：fetch 找不到 id 时给出可执行的下一步', async () => {
@@ -365,14 +368,14 @@ test('工具：fetch 找不到 id 时给出可执行的下一步', async () => {
       return new Response(TINY_PNG, { status: 200 })
     },
   })
-  const tool = poseFetchTool({ index, images, uploadsDir: () => tempDir(), includeAdult: () => true })
+  const tool = poseFetchTool({ index, images, uploadsDir: () => tempDir() })
 
   const missing = await tool.execute({ id: 'no_such_pose' })
   assert.equal(missing.ok, false)
   assert.match(missing.error, /comfyui_pose_search/)
   assert.equal(hits, 0, '找不到 id 时不该去打网络')
 
-  const pose = index.search({ includeAdult: true, limit: 1 }).items[0]
+  const pose = index.search({ limit: 1 }).items[0]
   const ok = await tool.execute({ id: pose.id, size: 'thumb' })
   assert.equal(ok.ok, true)
   assert.ok(fs.existsSync(ok.file), '该落盘并回绝对路径')
