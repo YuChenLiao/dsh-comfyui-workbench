@@ -80,6 +80,7 @@ const entryJob = name => ({
 const jobs = [
   entryJob('gallery'),
   entryJob('workflow'),
+  entryJob('tags'),
   entryJob('generate'),
   entryJob('edit'),
   entryJob('danbooru'),

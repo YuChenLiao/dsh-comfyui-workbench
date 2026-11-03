@@ -4,6 +4,12 @@
 
 ### 新功能
 
+- **标签库面板**：工作台多一个「标签库」页签 —— 搜索框 + 大类快捷筛选 + 一键复制 tag。搜的是四类共 **99372 条**（角色 / 画师 / 作品 / 通用），一个输入框同时匹配 tag、中文名、别名；每行显示 tag、中文名、类别、大类、热度与最多三个别名。首屏建索引 575ms，之后查询 1–3ms。
+
+  大类筛选旁边**直接标着实到条数**（「服装 1413」），因为分类只覆盖通用标签的 26.9% —— 查不到时用户能看出是"分类没覆盖"而不是"功能坏了"。实现上新开一条只读路由 `GET /tags` 与 `GET /tags/stats`，走与工具同一份数据与索引（`createTagsIndex` 懒加载、`invalidate()` 重建），区别只是工具要 tag、面板要 tag + 中文名 + 热度。
+
+  新增第八条 entry `comfyui-workbench:tags`（`panel.tags` 可单独关）。`tests/arch.mjs` 的 entry 清单原先硬编码了 5 条、连 `danbooru` 都没查，这轮补成 6 条并让计数动态。
+
 - **工作流面板可以上传 / 粘贴导入了**：`POST /workflows/import`，body `{ name?, workflow, overwrite? }`。面板右上角一个导入按钮，展开后可以粘贴 ComfyUI 导出的 API 格式 JSON，也可以选文件（内容先填进粘贴框，让你看一眼再提交）。之前只有 `node scripts/import.mjs <文件>`。
 
   三个细节值得说：**同名不静默覆盖** —— 已存在时返回 409 `already-exists`，面板弹确认，确认后才带 `overwrite: true` 重发，并把旧模板备份成 `<id>.json.bak`；覆盖只换模板，`.meta.json` 与 `.schema.json` 保留。**不填名字时用时间戳生成 id**（`workflow-<base36>`），所以连续两次空名导入不会互相踩。**`/workflows/import` 必须注册在路由的 `exact` 表**，否则会被前缀路由当成 id=`import` 的工作流去读详情（返回 `no-workflow` 而不是导入结果）。

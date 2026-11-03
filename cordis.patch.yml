@@ -48,6 +48,7 @@
         # 关掉的组件（默认全开）。六个组件互相独立，某个出问题可以只关它：
         #   panel.workflow     用户面板 · 工作流
         #   panel.gallery      用户面板 · 相册
+        #   panel.tags         用户面板 · 标签库（只读浏览 / 搜索 / 复制 tag）
         #   panel.terminal     用户面板 · ComfyUI 终端（命令行输出）
         #   tool.generate      模型工具 · 生图（含列出/查看工作流）
         #   tool.workflow-edit 模型工具 · 工作流编辑
@@ -95,6 +96,9 @@
       config: *cwf
     - id: comfyui-workbench:workflow
       name: dsh-comfyui-workbench/workflow
+      config: *cwf
+    - id: comfyui-workbench:tags
+      name: dsh-comfyui-workbench/tags
       config: *cwf
     - id: comfyui-workbench:generate
       name: dsh-comfyui-workbench/generate

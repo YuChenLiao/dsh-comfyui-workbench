@@ -184,4 +184,7 @@ export {
 } from './components/tool-danbooru/index.js'
 export type { TagKind, UpstreamResult, UpstreamRow } from './components/tool-danbooru/index.js'
 export { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'
+export { createTagsIndex } from './components/panel-tags/server/api.js'
+export type { TagHit, TagsIndex, TagSearchResult, TagStats } from './components/panel-tags/server/api.js'
+export { createTagsRoutes } from './components/panel-tags/server/routes.js'
 export { acquire, release, componentStateOf, mergedRoutes } from './runtime.js'

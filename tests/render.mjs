@@ -227,7 +227,18 @@ assert.match(shell, /role="tablist"/, '应当有页签条')
 // 测试里的 t 是 identity，所以断言的是文案键而不是中文（文案本身在 i18n-data 里）
 assert.match(shell, />tabAssets</, '应当有资产库页签')
 assert.match(shell, />tabWorkflowAdmin</, '应当有工作流管理页签')
+assert.match(shell, />tabTags</, '应当有标签库页签')
 assert.match(shell, /class="cfa-root"/, '默认停在资产库')
+
+// 标签面板：SSR 不跑 useEffect，首帧应当是"正在建索引"而不是空列表
+const { TagsPanel, TAGS_CSS } = mod.__test
+assert.ok(TagsPanel !== undefined, '应当导出 TagsPanel（标签库面板）')
+assert.match(TAGS_CSS, /\.ctg-root/, 'TAGS_CSS 该有根类')
+const tags = renderToStaticMarkup(React.createElement(TagsPanel, { t, visible: true }))
+assert.match(tags, /ctg-root/, '该渲染出面板根节点')
+assert.match(tags, /tagsLoading|tagsSub/, '首帧要说明状态，不能空白')
+assert.match(tags, /ctg-chip/, '该有大类筛选按钮')
+assert.match(tags, /tagsEmpty/, '没有数据时给提示而不是一片空白')
 
 // 空列表：给出导入指引而不是一片空白
 const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
@@ -238,4 +249,4 @@ const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
 // SSR 不跑 useEffect，首帧停在"加载中"——这正是修掉"把加载中显示成空"的证明
 assert.match(panel, /loadingWorkflows/, '首帧应当显示加载中而不是空态')
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin）')
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / TagsPanel）')

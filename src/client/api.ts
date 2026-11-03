@@ -99,6 +99,67 @@ export async function updateWorkflow(
   return data as { enabled: boolean; description: string; title: string }
 }
 
+/** 标签面板的一行。 */
+export interface TagHit {
+  tag: string
+  kind: string
+  postCount: number
+  zh: string
+  aliases: string[]
+  category: string
+  groups: string[]
+}
+
+/** 标签面板首屏要的统计。 */
+export interface TagStats {
+  kinds: Record<string, number>
+  categories: Record<string, number>
+  labels: Record<string, string>
+  total: number
+}
+
+/** 查标签（面板用）。 */
+export async function fetchTags(
+  options: { query?: string; kind?: string; category?: string; offset?: number; limit?: number },
+): Promise<{ items: TagHit[]; total: number }> {
+  const params = new URLSearchParams()
+  if (options.query !== undefined && options.query !== '') params.set('q', options.query)
+  if (options.kind !== undefined && options.kind !== '') params.set('kind', options.kind)
+  if (options.category !== undefined && options.category !== '') params.set('category', options.category)
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const res = await fetch(`${API}/tags?${params.toString()}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; items?: unknown; total?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取标签失败：HTTP ${res.status}`)
+  }
+  return {
+    items: Array.isArray(bag.items) ? (bag.items as TagHit[]) : [],
+    total: typeof bag.total === 'number' ? bag.total : 0,
+  }
+}
+
+/** 取标签库的统计（四类与大类的计数）。 */
+export async function fetchTagStats(): Promise<TagStats> {
+  const res = await fetch(`${API}/tags/stats`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; kinds?: unknown; categories?: unknown; labels?: unknown; total?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取标签统计失败：HTTP ${res.status}`)
+  }
+  return {
+    kinds: (bag.kinds !== null && typeof bag.kinds === 'object' ? bag.kinds : {}) as Record<string, number>,
+    categories: (bag.categories !== null && typeof bag.categories === 'object' ? bag.categories : {}) as Record<string, number>,
+    labels: (bag.labels !== null && typeof bag.labels === 'object' ? bag.labels : {}) as Record<string, string>,
+    total: typeof bag.total === 'number' ? bag.total : 0,
+  }
+}
+
 /**
  * 同名工作流已存在，需要显式确认覆盖。
  *

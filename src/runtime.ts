@@ -74,9 +74,13 @@ export interface Runtime {
 /** 组件启用状态：由配置的 disabledComponents 推导。 */
 export function componentStateOf(rt: Runtime): Record<string, boolean> {
   const disabled = new Set(rt.settings.disabledComponents)
+  // 加组件时**必须**在这里补一行：漏了的话 `/config` 的 components 里没有这个键，
+  // 前端 `enabled[x] !== false` 恒真 → 被关掉的页签照样显示，点进去 404。
+  // 这个坑踩过两次（先是 workflow，再是 tags）。
   return {
     'panel.gallery': !disabled.has('panel.gallery'),
     'panel.workflow': !disabled.has('panel.workflow'),
+    'panel.tags': !disabled.has('panel.tags'),
     'panel.terminal': !disabled.has('panel.terminal'),
     'tool.generate': !disabled.has('tool.generate'),
     'tool.workflow-edit': !disabled.has('tool.workflow-edit'),

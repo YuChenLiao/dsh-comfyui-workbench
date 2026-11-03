@@ -144,7 +144,7 @@ const units = new Set(files.map(file => unitOf(path.relative(root, file).split(p
 // 组件 entry 的 inject 必须有守护：漏了 workspaceRegistry 会让探测静默失效（踩过一次）。
 // 只有创建共享 runtime 的 entry 需要注入 workspaceRegistry（产物目录探测要用）。
 // danbooru 不碰 runtime，单独校验它的注入。
-const entryFiles = ['gallery', 'workflow', 'generate', 'edit', 'terminal']
+const entryFiles = ['gallery', 'workflow', 'tags', 'generate', 'edit', 'terminal']
 for (const entry of entryFiles) {
   const mod = await import(pathToFileURL(path.join(root, 'lib', 'entries', `${entry}.js`)).href)
   assert.ok(Array.isArray(mod.inject) && mod.inject.includes('workspaceRegistry'), `entries/${entry}.js 的 inject 必须含 workspaceRegistry，实际：${JSON.stringify(mod.inject)}`)
@@ -160,4 +160,4 @@ assert.ok(Array.isArray(terminalMod.inject) && terminalMod.inject.includes('webS
 const coreMod = await import(pathToFileURL(path.join(root, 'lib', 'index.js')).href)
 assert.ok(coreMod.inject.includes('workspaceRegistry'), '包根 entry 的 inject 必须含 workspaceRegistry')
 
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，7 条 entry 注入齐备）`)
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备）`)

@@ -12,6 +12,8 @@
  * React 由宿主通过 factory 的 require 注入。
  */
 import { WorkflowAdmin } from '../components/panel-workflow/client/WorkflowAdmin.js'
+import { TagsPanel } from '../components/panel-tags/client/TagsPanel.js'
+import { TAGS_CSS } from '../components/panel-tags/client/styles.js'
 import { Card } from '../components/panel-gallery/client/Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from '../components/panel-gallery/client/Confirm.js'
 import { Gallery } from '../components/panel-gallery/client/Gallery.js'
@@ -151,6 +153,8 @@ export const __test = {
   ConfirmBulkRemove,
   Workbench,
   WorkflowAdmin,
+  TagsPanel,
+  TAGS_CSS,
   metaLine,
   planPage,
   addToConversation,

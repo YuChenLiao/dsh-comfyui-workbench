@@ -4,7 +4,7 @@
 
 给 [DSH](https://github.com/deepseek-ai) 的 ComfyUI 工作台：**把本机的 ComfyUI 工作流交给模型调用**，并管理"哪些工作流对模型可用"。
 
-面向用户的界面只有三块：资产库、工作流管理、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
+面向用户的界面是四块：资产库、工作流管理、标签库、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
@@ -17,6 +17,7 @@
 | `comfyui-workbench:core` | 服务端 | 初始化共享运行时（ComfyUI 客户端 / 进程托管 / 资产索引 / 产物目录）；承载浏览器端。**name 必须是包根**，宿主只给包根装配 `exports["./client"]` |
 | `comfyui-workbench:gallery` | 面板 | 资产库：列表、筛选、缩略图、删除、批量导出工作流 ZIP |
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/config`、服务托管接口 |
+| `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag（只读） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
@@ -195,6 +196,15 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 **负向提示词不参与判定**。Danbooru 系底模（AnimagineXL / Pony）的官方推荐负向模板里就写着 `nsfw`，拿它判定会让一整套工作流的图全被藏起来，而那恰恰是在排除成人内容。
 
 过滤只在渲染层：数据仍在内存里，切回「显示」立刻可见，不用重新拉。隐藏状态下的「全选」只会选看得见的那些 —— 否则一次删除会把看不见的一起删掉。
+
+## 标签库面板
+
+第四个页签：搜 Danbooru 的四类标签（99372 条），拿到 `tag` 与中文名再贴进提示词。一个输入框同时匹配 tag、中文名、别名——查「长发」「long_hair」「长髪」都会落到 `long_hair`。
+
+
+- **大类筛选带实到条数**：动作 / 服装 / 外貌 / 构图 / 物件 / 主题 / 性相关 / 其它，每个按钮旁边标着能筛出多少条。分类只覆盖通用标签的 **26.9%**（`ponytail`、`braid` 这种最常见的词都不在 Danbooru 的 wiki 分组里），所以查不到时先看计数——那是"分类没覆盖"，去掉大类再搜就有了。
+- **只读 + 复制**：点「复制」拿到裸 tag，没有草稿状态。想攒提示词用 `{{变量}}` 那套工作流模板。
+- 首屏建索引 575ms，之后查询 **1–3ms**。关掉组件：`disabledComponents: ["panel.tags"]`。
 
 ## 终端面板
 
