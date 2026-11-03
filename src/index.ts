@@ -198,6 +198,8 @@ export type { TagHit, TagsIndex, TagSearchResult, TagStats } from './components/
 export { createTagsRoutes } from './components/panel-tags/server/routes.js'
 export { createSyncJob } from './components/panel-tags/server/sync-job.js'
 export { createPoolJob } from './components/panel-tags/server/pool-job.js'
+export { fetchPostRefs, toRef } from './components/panel-tags/server/danbooru-posts.js'
+export type { PostQuery, PostRef } from './components/panel-tags/server/danbooru-posts.js'
 export { DEFAULT_POOL, fetchRandomPrompts, promptPoolInfo, promptPoolPath, searchPrompts, syncPromptPool } from './components/panel-tags/server/prompts.js'
 export type { PromptHit, PromptPoolInfo } from './components/panel-tags/server/prompts.js'
 export type { SyncJob, SyncJobState } from './components/panel-tags/server/sync-job.js'

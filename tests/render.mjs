@@ -245,7 +245,8 @@ assert.match(tags, /refsTabRefs/, '该有「参考」子页签')
 const refs = renderToStaticMarkup(React.createElement(PromptRefs, { t, visible: true }))
 assert.match(refs, /ctg-refs/, '参考面板该渲染出根节点')
 assert.match(refs, /refsRandom/, '该有随机模式')
-assert.match(refs, /refsBuild|refsPoolSize/, '该有建池入口或池子信息')
+assert.match(refs, /refsAnother/, '该有「换一批」')
+assert.match(refs, /ctg-refs-grid/, '该有结果网格（带图的那版）')
 
 // 空列表：给出导入指引而不是一片空白
 const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {

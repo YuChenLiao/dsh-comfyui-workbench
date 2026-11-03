@@ -2,6 +2,37 @@
 
 ## 未发布
 
+### 变更：参考面板换成 Danbooru 的 posts（带图、不落盘）
+
+用户要「每条参考带参考图」，并建议「数据量过大就只接入、不落盘」。原方案是
+HuggingFace 的 247 万条**纯文本** + 本地池（2 万条落盘），配不了图。
+
+新数据源是 `posts.json`：**一次请求同时给图（`preview_file_url` / `large_file_url`）、
+tag 串（已按 general/character/copyright/artist 分好类）和服务端搜索**，零落盘 ——
+前端直接 `<img src>` 加载。而且与本插件的标签库同源：参考出来的就是"用 danbooru tag
+写的提示词"，和 `comfyui_run` 的 `vars.prompt` 是同一种语言。
+
+顺带消失了三个问题：没有池子就没有"建池"、没有 429 队列、也没有"建池失败把原池写坏"。
+
+**踩到两个坑**：`order:random` 在匿名请求下让 Danbooru 直接返回 **500**（改成随机翻页，
+上限取匿名的 1000 页而不是 100 —— 否则只覆盖"最新 1200 条"约等于最近几小时）；
+多词查询偶尔超时（retry 一次，超时给到 15s 而不是 tag 查询的 8s）。
+
+**不走 `tool-danbooru` 的 `fetchJson`**：它带 SFW 镜像（`safebooru`）与模块级的
+"上次成功镜像"状态 —— `rating=all` 降级后一条 NSFW 都没有（用户以为搜不到），
+更糟的是一次 posts 超时会把后续 `tags.json` / `wiki` 查询也钉在镜像上，标签库静默变子集。
+posts 自己发请求：单主站、单独超时、单独重试。
+
+默认只看 `rating:general`（面板是学"tag 怎么写"，不是图库）；工具条右侧加了「全分级」
+开关，勾上之后 g/s/q/e 全来。
+
+### 待清理
+
+旧的 HF 那套（`prompts.ts` 的本地池、`pool-job.ts`、`GET /tags/prompts`、
+`POST /tags/prompts/sync`、`client/api.ts` 的 `PromptHit`/`PoolSyncState` 系列、
+8 个 `refsPool*` 文案键、`tests/prompts.test.mjs`）已经从 UI 摘掉但代码还在 ——
+与「只接入、不落盘」直接冲突，下一笔删干净。
+
 ### 功能优化
 
 - **`/queue` 加了 single-flight**：批量提交时最多 20 条任务各自轮询队列，原先只有 1 秒缓存——而缓存要等结果回来才写，冷启动那一瞬间 20 个调用看到的是同一个空缓存，于是同时打出 20 个请求。现在共享同一个 in-flight promise，`tests/queue-singleflight.test.mjs` 用 30ms 延迟制造重叠，断言 20 并发只打 1 次（去掉 single-flight 会变成 20，测试会红）。

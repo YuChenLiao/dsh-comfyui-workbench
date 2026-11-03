@@ -11,6 +11,7 @@ import * as prompts from './prompts.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { sendJson } from '../../../shared/http/respond.js'
+import { fetchPostRefs } from './danbooru-posts.js'
 import type { TagsIndex } from './api.js'
 import type { PoolJob } from './pool-job.js'
 import type { SyncJob } from './sync-job.js'
@@ -31,6 +32,28 @@ export interface TagsRoutes {
 export function createTagsRoutes(index: TagsIndex, job?: SyncJob, pool?: PoolJob, dataDir?: string): TagsRoutes {
   return {
     exact: {
+      // 参考提示词：**实时从 Danbooru 取，不落盘**。
+      // 一次请求同时给图、tag 串（已按 general/character/copyright/artist 分类）与服务端
+      // 搜索，所以没有池子要建、没有缓存要失效、也不会"建池跑到一半被限流把原池写坏"。
+      '/tags/refs': async (url, res, req) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
+          return
+        }
+        const query = url.searchParams.get('q') ?? ''
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 12) || 12, 1), 20)
+        const rating = url.searchParams.get('rating') === 'all' ? 'all' : 'general'
+        try {
+          const items = await fetchPostRefs({ query, limit, rating })
+          sendJson(res, 200, { ok: true, items, query, rating })
+        } catch (error) {
+          sendJson(res, 502, {
+            ok: false,
+            error: 'upstream-failed',
+            message: error instanceof Error ? error.message : String(error),
+          })
+        }
+      },
       // 提示词参考：随机（走 HF，不依赖池）与搜索（在本地池里过滤）
       '/tags/prompts': async (url, res, req) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') {

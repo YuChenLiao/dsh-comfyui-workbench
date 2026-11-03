@@ -316,6 +316,46 @@ export async function fetchRunStatus(promptId: string): Promise<RunStatus> {
   }
 }
 
+/** 一条参考（Danbooru 的 post：图 + tag 串）。 */
+export interface PostRef {
+  id: number
+  rating: string
+  score: number
+  width: number
+  height: number
+  previewUrl: string
+  largeUrl: string
+  fileUrl: string
+  prompt: string
+  tags: { general: string[]; character: string[]; copyright: string[]; artist: string[] }
+}
+
+/**
+ * 取参考提示词。
+ *
+ * **实时从 Danbooru 取，不落盘**：一次请求同时给图与 tag 串，还有服务端搜索。
+ * 所以没有池子要建、没有缓存要失效。
+ */
+export async function fetchPostRefs(options: {
+  query?: string
+  limit?: number
+  rating?: 'general' | 'all'
+}): Promise<PostRef[]> {
+  const params = new URLSearchParams()
+  if (options.query !== undefined && options.query !== '') params.set('q', options.query)
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  if (options.rating !== undefined) params.set('rating', options.rating)
+  const res = await fetch(`${API}/tags/refs?${params.toString()}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; items?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取参考失败：HTTP ${res.status}`)
+  }
+  return Array.isArray(bag.items) ? (bag.items as PostRef[]) : []
+}
+
 /**
  * 同名工作流已存在，需要显式确认覆盖。
  *

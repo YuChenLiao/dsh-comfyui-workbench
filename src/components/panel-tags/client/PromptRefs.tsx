@@ -1,21 +1,21 @@
 /**
- * 「参考」子面板：从真实用户写的 prompt 里翻灵感。
+ * 「提示词参考」子面板：看真实作品怎么用 tag。
  *
- * 两个模式：
- * - **随机**：走 HF 任意 offset 抽样，不依赖本地池 —— 第一次打开就能用，这是主路径。
- * - **搜索**：在本地池（默认 2 万条）里按关键词过滤。池子要建，约一分钟。
+ * 数据是 **Danbooru 的 posts**，实时取、**不落盘**：一次请求同时给缩略图与完整 tag 串
+ * （还按 general/character/copyright/artist 分好类），搜索由服务端做。
  *
- * 只读 + 复制。不做编辑、不做"应用到我这份工作流"（那需要和草稿状态耦合，
- * 与本面板"翻素材"的定位不相称）。
+ * 之前那版用的是纯文本数据集 + 本地池：没有图（用户要的就是带图）、要建池（2 万条
+ * 200 次请求，HF 一路 429）、而且建池失败会把原池写坏。换成 posts 之后这三个问题
+ * 一起消失了 —— 没有池子，就没有"建池"这件事。
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { fetchPoolSync, fetchPromptRefs, startPoolSync } from '../../../client/api.js'
-import type { PromptHit, PoolSyncState, PromptPoolInfo } from '../../../client/api.js'
+import { fetchPostRefs } from '../../../client/api.js'
+import type { PostRef } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
 
-const DEBOUNCE_MS = 250
-const LIMIT = 10
+const DEBOUNCE_MS = 300
+const LIMIT = 12
 
 export interface PromptRefsProps {
   t: Translate
@@ -25,24 +25,27 @@ export interface PromptRefsProps {
 export function PromptRefs({ t, visible }: PromptRefsProps): React.ReactElement {
   const [mode, setMode] = useState<'random' | 'search'>('random')
   const [query, setQuery] = useState('')
-  const [items, setItems] = useState<PromptHit[]>([])
-  const [pool, setPool] = useState<PromptPoolInfo>({ size: 0, builtAt: 0 })
+  const [items, setItems] = useState<PostRef[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [job, setJob] = useState<PoolSyncState | null>(null)
+  /** 是否放开分级过滤（默认只看 general）。 */
+  const [anyRating, setAnyRating] = useState(false)
   const seq = useRef(0)
 
-  /** 拉一批。随机模式每次都是新的一批，搜索模式跟着输入走。 */
+  /** 拉一批。随机模式每次换一批，搜索模式跟着输入走。 */
   const load = (nextMode: 'random' | 'search', nextQuery: string): void => {
     const mine = seq.current + 1
     seq.current = mine
     setLoading(true)
-    void fetchPromptRefs({ mode: nextMode, query: nextQuery, limit: LIMIT })
+    void fetchPostRefs({
+      query: nextMode === 'search' ? nextQuery : '',
+      limit: LIMIT,
+      rating: anyRating ? 'all' : 'general',
+    })
       .then(result => {
         if (seq.current !== mine) return
-        setItems(result.items)
-        setPool(result.pool)
+        setItems(result)
         setError('')
       })
       .catch(reason => {
@@ -52,33 +55,14 @@ export function PromptRefs({ t, visible }: PromptRefsProps): React.ReactElement 
       .finally(() => { if (seq.current === mine) setLoading(false) })
   }
 
-  // 进面板先给一批随机的；切到搜索后跟着输入防抖
   useEffect(() => {
     if (!visible) return undefined
     if (mode === 'random') { load('random', ''); return undefined }
     const timer = setTimeout(() => { load('search', query) }, DEBOUNCE_MS)
     return () => clearTimeout(timer)
-    // 只在模式与输入变化时重拉
+    // 只在这两个变化时重拉；`load` 每次渲染都是新函数，放进依赖会无限重挂
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, mode, query])
-
-  // 建池任务在跑 → 每秒问一次
-  useEffect(() => {
-    if (!visible || job?.state !== 'running') return undefined
-    const timer = setInterval(() => {
-      void fetchPoolSync()
-        .then(next => {
-          setJob(next)
-          // **用当前的 mode，不能写死 'search'**：随机模式下池子建完如果去搜，
-          // 而搜索框是空的，`searchPrompts` 返回 []——列表会被清空，
-          // 用户看到"池子 20000 条"却一条都没有。
-          if (next.state !== 'running') load(mode, mode === 'random' ? '' : query)
-        })
-        .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
-    }, 1000)
-    return () => clearInterval(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, job?.state, mode, query])
+  }, [visible, mode, query, anyRating])
 
   const copy = (text: string): void => {
     try {
@@ -91,27 +75,35 @@ export function PromptRefs({ t, visible }: PromptRefsProps): React.ReactElement 
     }
   }
 
-  const build = (): void => {
-    setError('')
-    setNotice('')
-    void startPoolSync()
-      .then(setJob)
-      .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
-  }
-
   if (!visible) return <div className="ctg-refs" />
 
   return (
     <div className="ctg-refs">
       <div className="ctg-refs-bar">
-        <div className="ctg-seg">
-          <button type="button" className={`ctg-seg-item${mode === 'random' ? ' on' : ''}`} onClick={() => setMode('random')}>
+        <div className="ctg-seg" role="tablist" aria-label={t('refsTabRefs')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'random'}
+            className={`ctg-seg-item${mode === 'random' ? ' on' : ''}`}
+            onClick={() => setMode('random')}
+          >
             {t('refsRandom')}
           </button>
-          <button type="button" className={`ctg-seg-item${mode === 'search' ? ' on' : ''}`} onClick={() => setMode('search')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'search'}
+            className={`ctg-seg-item${mode === 'search' ? ' on' : ''}`}
+            onClick={() => setMode('search')}
+          >
             {t('refsSearch')}
           </button>
         </div>
+        <label className="ctg-anyrating" title={t('refsAnyRatingHint')}>
+          <input type="checkbox" checked={anyRating} onChange={event => setAnyRating(event.target.checked)} />
+          <span>{t('refsAnyRating')}</span>
+        </label>
         {mode === 'random' ? (
           <button type="button" className="ctg-sync" disabled={loading} onClick={() => load('random', '')}>
             {t('refsAnother')}
@@ -132,44 +124,26 @@ export function PromptRefs({ t, visible }: PromptRefsProps): React.ReactElement 
         </div>
       ) : null}
 
-      <div className="ctg-refs-pool">
-        {pool.size === 0
-          ? t('refsPoolEmpty')
-          : t('refsPoolSize').replace('{n}', String(pool.size))}
-        <button type="button" className="ctg-sync" disabled={job?.state === 'running'} onClick={build}>
-          {job?.state === 'running' ? t('refsBuilding') : pool.size === 0 ? t('refsBuild') : t('refsRebuild')}
-        </button>
-      </div>
-
-      {job !== null && job.state !== 'idle' ? (
-        <div className={`ctg-syncbar${job.state === 'failed' ? ' bad' : ''}`}>
-          {job.state === 'running'
-            ? job.stage
-            : job.state === 'done'
-              ? t('refsPoolDone').replace('{n}', String(job.size))
-              : t('refsPoolFailed').replace('{message}', job.message)}
-        </div>
-      ) : null}
-
       {error !== '' ? <div className="ctg-error">{error}</div> : null}
       {notice !== '' ? <div className="ctg-notice">{notice}</div> : null}
 
-      <div className="ctg-list">
+      <div className="ctg-refs-grid">
         {items.map(item => (
-          <article key={`${item.source}:${item.text.slice(0, 24)}`} className="ctg-ref">
-            <p className="ctg-ref-text">{item.text}</p>
+          <article key={item.id} className="ctg-ref">
+            <a href={item.largeUrl} target="_blank" rel="noreferrer noopener" className="ctg-ref-thumb">
+              <img src={item.previewUrl} alt="" loading="lazy" />
+            </a>
+            <p className="ctg-ref-prompt" title={item.prompt}>{item.prompt}</p>
             <div className="ctg-ref-actions">
-              <span className="ctg-hot">#{item.source}</span>
-              <button type="button" className="ctg-copy" title={t('refsCopy')} onClick={() => copy(item.text)}>
+              <span className="ctg-hot">#{item.id}</span>
+              <button type="button" className="ctg-copy" title={t('refsCopy')} onClick={() => copy(item.prompt)}>
                 {t('refsCopy')}
               </button>
             </div>
           </article>
         ))}
         {items.length === 0 && !loading ? (
-          <div className="ctg-empty">
-            {mode === 'search' && pool.size === 0 ? t('refsNeedPool') : t('refsEmpty')}
-          </div>
+          <div className="ctg-empty">{t('refsEmpty')}</div>
         ) : null}
       </div>
     </div>
