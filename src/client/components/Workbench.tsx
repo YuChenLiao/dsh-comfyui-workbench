@@ -93,7 +93,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
             ) : current === 'tags' ? (
               <TagsPanel t={t} visible={visible} />
             ) : current === 'poses' ? (
-              <PosesPanel t={t} visible={visible} />
+              <PosesPanel t={t} visible={visible} goToConversation={goToConversation} />
             ) : current === 'terminal' ? (
               <Terminal t={t} visible={visible} />
             ) : null}

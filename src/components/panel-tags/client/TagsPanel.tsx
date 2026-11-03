@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchTags, fetchTagStats, fetchTagSync, startTagSync } from '../../../client/api.js'
 import type { TagHit, TagStats, TagSyncState } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
+import { shouldAutoFill, shouldLoadMore } from '../../../client/scroll.js'
 
 /** 一页多少条。 */
 const PAGE = 50
@@ -155,10 +156,14 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
    */
   const change = (apply: () => void): void => {
     seq.current += 1
-    // 列表也一并清掉：防抖那 250ms 里旧列表还在屏上、按钮还能点，
-    // 那时的 `more()` 会拿旧列表长度当 offset，把新条件的第 N 页拼到旧结果后面。
+    // 列表也一并清掉：防抖那 250ms 里旧列表还在屏上、滚动还能触发 `more()`，
+    // 那时的 offset 会拿旧列表长度去算，把新条件的中段拼到旧结果后面。
+    // 只清 `itemsRef` 不清 state 时，屏上仍会短暂出现"旧行 + 新条件第 1 页"。
     itemsRef.current = []
+    setItems([])
     setNotice('')
+    // 补页的"有没有进展"判断跟着新条件重来
+    autoFill.current = -1
     apply()
   }
 
@@ -166,6 +171,72 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
   const more = (): void => {
     void load(query, kind, category, true, PAGE)
   }
+
+  /** 滚动容器（`.ctg-root` 自己是 overflow:auto）。 */
+  const scroller = useRef<HTMLDivElement | null>(null)
+  /**
+   * 触底自动加载要读的三个实时值。
+   *
+   * `onScroll` 是原生事件，闭包捕获的是**绑定时**的 state —— 直接读 `loading` / `total`
+   * 会永远是初始值，表现为"滚到底一直在重复请求第一页"。用 ref 存实时值。
+   */
+  const live = useRef({ loading: false, shown: 0, total: 0, busyAt: 0 })
+  live.current.loading = loading
+  live.current.shown = items.length
+  live.current.total = total
+  /** 上一次补页时的 `shown`。相同说明那次没拿到新数据，补页必须停手。 */
+  const autoFill = useRef(-1)
+
+  /**
+   * 触到底部就加载下一页。
+   *
+   * 判定交给 `shouldLoadMore`（纯函数，有表驱动测试）：这里只负责把 DOM 尺寸与实时状态喂进去。
+   */
+  const onScroll = (): void => {
+    const element = scroller.current
+    if (element === null) return
+    const state = live.current
+    const now = Date.now()
+    const go = shouldLoadMore({
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+      clientHeight: element.clientHeight,
+      shown: state.shown,
+      total: state.total,
+      loading: state.loading,
+      now,
+      busyAt: state.busyAt,
+    })
+    if (!go) return
+    state.busyAt = now
+    more()
+  }
+
+  /**
+   * 内容不足一屏时补一页。
+   *
+   * 滚动触发有个死胡同：`total` 还有几万条，但当前这页正好不满一屏 —— 容器没有可滚动
+   * 的余量，就永远等不到 `onScroll`，用户看着「还有 N 条」却怎么滚都不动。
+   *
+   * **停手条件必须写在判定里**：这个 effect 没有用户动作做节流，而 `load` 每轮都会翻转
+   * `loading`（依赖之一），失败的 append 又不动 `shown`。少了"没进展就不补"这条，
+   * 一个失败请求就能让它无间隔空转。
+   */
+  useEffect(() => {
+    const element = scroller.current
+    if (element === null) return
+    const go = shouldAutoFill({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      shown: items.length,
+      total,
+      loading,
+      lastFilledShown: autoFill.current,
+    })
+    if (!go) return
+    autoFill.current = items.length
+    more()
+  }, [items.length, total, loading])
 
   const copy = (tag: string): void => {
     void navigator.clipboard.writeText(tag)
@@ -182,7 +253,7 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
   const labels = stats?.labels ?? {}
 
   return (
-    <div className="ctg-root">
+    <div className="ctg-root" ref={scroller} onScroll={onScroll}>
       <header className="ctg-head">
         <div>
           <div className="ctg-title">{t('tagsTitle')}</div>
@@ -282,15 +353,35 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
             </button>
           </article>
         ))}
-        {items.length === 0 && !loading ? (
+        {/*
+          空态与"还有 N 条"都要带 `total === 0` / `items.length > 0` 这两个前提。
+          仅凭 `items.length === 0` 判断会在换条件那一刻闪出"没有匹配的标签"——
+          那时 `change()` 刚把列表清空，而 `loading` 还没被置起来（防抖 250ms 里），
+          `total` 仍是上一个条件的几万条，于是空态与"继续往下滚还有 99372 条"会同屏。
+        */}
+        {items.length === 0 && !loading && total === 0 ? (
           <div className="ctg-empty">{t('tagsEmpty')}</div>
         ) : null}
       </div>
 
-      {items.length < total ? (
-        <button type="button" className="ctg-more" disabled={loading} onClick={more}>
-          {t('tagsMore').replace('{left}', String(total - items.length))}
-        </button>
+      {items.length > 0 && items.length < total ? (
+        // 提示行同时是键盘可达的手动兜底：自动加载是主路径，但不该让只能按 Tab/回车的人
+        // 一直等。刻意不做成按钮样式 —— 用户明确说过不要那个"再看"按钮。
+        <div
+          className="ctg-more-hint"
+          role="button"
+          tabIndex={0}
+          onClick={() => { if (!loading) more() }}
+          onKeyDown={event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            if (!loading) more()
+          }}
+        >
+          {loading
+            ? t('tagsLoadingMore')
+            : t('tagsScrollMore').replace('{left}', String(total - items.length))}
+        </div>
       ) : null}
       </>}
     </div>

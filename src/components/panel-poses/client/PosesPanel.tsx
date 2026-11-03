@@ -17,7 +17,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { fetchPoseFile, fetchPoseStats, fetchPoses, poseImageUrl } from '../../../client/api.js'
 import type { PoseHit, PoseStats } from '../../../client/api.js'
+import { addImageToConversation } from '../../../client/conversation.js'
 import type { Translate } from '../../../client/i18n.js'
+import { shouldAutoFill, shouldLoadMore } from '../../../client/scroll.js'
 
 /** 一页多少组。姿势总共 288 组，40 足够铺满一屏还有余。 */
 const PAGE = 40
@@ -26,9 +28,10 @@ const DEBOUNCE_MS = 250
 export interface PosesPanelProps {
   t: Translate
   visible: boolean
+  goToConversation: () => void
 }
 
-export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement {
+export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [system, setSystem] = useState('')
   const [category, setCategory] = useState('')
@@ -48,33 +51,55 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
   /** 输入防抖与竞态：只认最后一次请求。 */
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seq = useRef(0)
+  /** 列表的当前值（`load` 是 useCallback，闭包读不到实时 state）。 */
+  const itemsRef = useRef<PoseHit[]>([])
+  /** 滚动容器。 */
+  const scroller = useRef<HTMLDivElement | null>(null)
+  const live = useRef({ loading: false, shown: 0, total: 0, busyAt: 0 })
+  live.current.loading = loading
+  live.current.shown = items.length
+  live.current.total = total
+  /** 上一次补页时的 `shown`。相同说明那次没拿到新数据，补页必须停手。 */
+  const autoFill = useRef(-1)
 
+  /**
+   * 拉一页。
+   *
+   * @param append - true 就接在已有列表后面（滚到底自动加载），false 整份替换（换条件时）。
+   */
   const load = useCallback(async (
     nextQuery: string,
     nextSystem: string,
     nextCategory: string,
     nextSafe: boolean,
+    append = false,
   ): Promise<void> => {
     const mine = seq.current + 1
     seq.current = mine
     setLoading(true)
-    setError('')
+    if (!append) setError('')
     try {
       const result = await fetchPoses({
         query: nextQuery,
         system: nextSystem,
         category: nextCategory,
         safe: nextSafe,
+        offset: append ? itemsRef.current.length : 0,
         limit: PAGE,
       })
       if (seq.current !== mine) return
-      setItems(result.items)
+      const next = append ? [...itemsRef.current, ...result.items] : result.items
+      itemsRef.current = next
+      setItems(next)
       setTotal(result.total)
     } catch (err) {
       if (seq.current !== mine) return
       setError(err instanceof Error ? err.message : String(err))
-      setItems([])
-      setTotal(0)
+      if (!append) {
+        itemsRef.current = []
+        setItems([])
+        setTotal(0)
+      }
     } finally {
       if (seq.current === mine) setLoading(false)
     }
@@ -96,6 +121,11 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
   /** 条件变了：防抖后重查。 */
   const schedule = useCallback((next: { query?: string; system?: string; category?: string; safe?: boolean }) => {
     if (timer.current !== null) clearTimeout(timer.current)
+    // 与标签库的 `change()` 同理：先把 seq 推一格关掉"旧请求还在飞"的窗口，
+    // 并清空列表快照 —— 否则防抖那 250ms 里滚到底会拿到"新条件 + 旧 offset"的中段结果。
+    seq.current += 1
+    itemsRef.current = []
+    autoFill.current = -1
     timer.current = setTimeout(() => {
       void load(
         next.query ?? query,
@@ -107,6 +137,53 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
   }, [load, query, system, category, onlySafe])
 
   const viewOf = (pose: PoseHit): string => angleOf[pose.id] ?? pose.cover.viewId
+
+  /** 滚到底部自动加载下一页（与标签库同一套判定）。 */
+  const onScroll = (): void => {
+    const element = scroller.current
+    if (element === null) return
+    const state = live.current
+    const now = Date.now()
+    const go = shouldLoadMore({
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+      clientHeight: element.clientHeight,
+      shown: state.shown,
+      total: state.total,
+      loading: state.loading,
+      now,
+      busyAt: state.busyAt,
+    })
+    if (!go) return
+    state.busyAt = now
+    void load(query, system, category, onlySafe, true)
+  }
+
+  /**
+   * 内容不足一屏时补一页。
+   *
+   * 滚动触发有个死胡同：`total` 还有几百组，但当前这页正好不满一屏 —— 容器没有可滚动
+   * 的余量，就永远等不到 `onScroll`。
+   *
+   * **停手条件必须写在判定里**：这个 effect 没有用户动作做节流，而 `load` 每轮都会翻转
+   * `loading`（依赖之一），失败的 append 又不动 `shown`。少了"没进展就不补"这条，
+   * 一个失败请求就能让它无间隔空转。
+   */
+  useEffect(() => {
+    const element = scroller.current
+    if (element === null) return
+    const go = shouldAutoFill({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      shown: items.length,
+      total,
+      loading,
+      lastFilledShown: autoFill.current,
+    })
+    if (!go) return
+    autoFill.current = items.length
+    void load(query, system, category, onlySafe, true)
+  }, [items.length, total, loading])
 
   const angleButtons = (pose: PoseHit): React.ReactElement => {
     // 只列这组实际有的角度 —— 硬编码五个会有一组点下去 404（它只有 4 个）
@@ -141,8 +218,37 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
     }
   }
 
+  /**
+   * 把线稿塞进对话输入框。
+   *
+   * 走**代理地址取字节**而不是先落盘再读本地文件：姿势图在第三方图床上，面板手里没有
+   * 本地路径（`/file` 那条路要的是上传目录里的文件）。浏览器取的是我们自己的代理端点，
+   * 出口 IP 不会交给图床。
+   */
+  const addToChat = async (pose: PoseHit): Promise<void> => {
+    const viewId = viewOf(pose)
+    setBusy(viewId)
+    setError('')
+    try {
+      const res = await fetch(poseImageUrl(viewId, 'full'))
+      if (!res.ok) throw new Error(`线稿取不到：HTTP ${res.status}`)
+      const blob = await res.blob()
+      const angle = viewId.split('_').pop() ?? 'front'
+      await addImageToConversation(blob, `${pose.id}_${angle}.png`, { goToConversation })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  // 页签不可见时只保留外壳：better-sidebar 的非活动页签是 display:none 保留挂载，
+  // 留着完整列表会让补页判定在隐藏状态下继续工作（clientHeight 为 0 那关也拦得住，
+  // 但少渲染一份 DOM 更省）。
+  if (!visible) return <div className="cps-root" />
+
   return (
-    <div className="cps-root">
+    <div className="cps-root" ref={scroller} onScroll={onScroll}>
       <div className="cps-head">
         <div>
           <div className="cps-title">{t('posesTitle')}</div>
@@ -237,6 +343,14 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
                   type="button"
                   className="cps-btn"
                   disabled={busy === viewId}
+                  onClick={() => { void addToChat(pose) }}
+                >
+                  {t('posesAddToChat')}
+                </button>
+                <button
+                  type="button"
+                  className="cps-btn"
+                  disabled={busy === viewId}
                   onClick={() => { void fetchFile(pose) }}
                 >
                   {busy === viewId ? t('posesFetching') : t('posesFetch')}
@@ -248,9 +362,21 @@ export function PosesPanel({ t, visible }: PosesPanelProps): React.ReactElement 
         })}
       </div>
 
-      {total > items.length && (
-        <div className="cps-note">
-          {t('posesMore').replace('{left}', String(total - items.length))}
+      {items.length < total && (
+        // 提示行同时是键盘可达的手动兜底：自动加载是主路径，但不该让只能按 Tab/回车的人
+        // 一直等。刻意不做成按钮样式 —— 用户明确说过不要那个"再看"按钮。
+        <div
+          className="cps-more-hint"
+          role="button"
+          tabIndex={0}
+          onClick={() => { if (!loading) void load(query, system, category, onlySafe, true) }}
+          onKeyDown={event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            if (!loading) void load(query, system, category, onlySafe, true)
+          }}
+        >
+          {loading ? t('posesLoadingMore') : t('posesScrollMore').replace('{left}', String(total - items.length))}
         </div>
       )}
 

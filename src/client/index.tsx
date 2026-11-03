@@ -23,7 +23,8 @@ import { Gallery } from '../components/panel-gallery/client/Gallery.js'
 import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import { CSS } from '../components/panel-gallery/client/styles.js'
 import { Workbench } from './components/Workbench.js'
-import { addToConversation, findComposerEditor, pasteFile } from './conversation.js'
+import { addImageToConversation, addToConversation, findComposerEditor, pasteFile } from './conversation.js'
+import { shouldAutoFill, shouldLoadMore } from './scroll.js'
 import { metaLine, planPage } from './format.js'
 import { Icon } from './icons.js'
 import { DICT } from './i18n-data.js'
@@ -163,7 +164,10 @@ export const __test = {
   POSES_CSS,
   metaLine,
   planPage,
+  shouldLoadMore,
+  shouldAutoFill,
   addToConversation,
+  addImageToConversation,
   pasteFile,
   findComposerEditor,
   DICT,

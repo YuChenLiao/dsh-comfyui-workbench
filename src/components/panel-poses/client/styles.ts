@@ -40,6 +40,7 @@ export const POSES_CSS = `
 .cps-btn:hover{border-color:var(--w-accent)}
 .cps-btn[disabled]{opacity:.55;cursor:default}
 .cps-note{font-size:.76em;color:var(--w-muted)}
+.cps-more-hint{align-self:center;color:var(--w-muted);font-size:.78em;padding:6px 0 2px}
 .cps-note.bad{color:#d97757}
 .cps-empty{font-size:.82em;color:var(--w-muted);padding:18px 4px}
 .cps-attr{font-size:.72em;color:var(--w-muted);line-height:1.5;border-top:1px solid var(--w-line);padding-top:8px}

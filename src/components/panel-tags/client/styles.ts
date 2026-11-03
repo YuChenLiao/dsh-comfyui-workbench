@@ -53,7 +53,5 @@ export const TAGS_CSS = `
 .ctg-copy{border-radius:7px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.76em;padding:3px 8px;cursor:pointer}
 .ctg-copy:hover{border-color:var(--w-accent)}
 .ctg-empty{font-size:.86em;color:var(--w-muted);padding:18px 0;text-align:center}
-.ctg-more{position:sticky;bottom:0;align-self:center;border-radius:99px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.82em;padding:6px 16px;cursor:pointer;box-shadow:0 -6px 12px -8px #0006}
-.ctg-more:hover:not(:disabled){border-color:var(--w-accent)}
-.ctg-more:disabled{opacity:.6;cursor:default}
+.ctg-more-hint{align-self:center;color:var(--w-muted);font-size:.78em;padding:6px 0 2px}
 `.trim()

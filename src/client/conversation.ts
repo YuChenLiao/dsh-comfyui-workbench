@@ -121,17 +121,28 @@ export async function sendTextToComposer(text: string, actions: { goToConversati
 }
 
 /**
- * 把一张资产图加入当前对话的输入框草稿。
+ * 把一张图塞进当前对话的输入框草稿。
  *
- * 输入框找不到时先把图片复制到剪贴板，再报错 —— 用户至少还能手动粘一次。
+ * 抽出来的原因：资产库的图有本地路径（走 `/file` 取字节），姿势库的图只有服务端代理
+ * 地址（第三方图床，浏览器不直连），但「找到输入框 → 粘贴」这段逻辑完全一样。
+ * 复制两份必然漂移。
  *
- * @param item - 资产项。
+ * 输入框找不到时，**有本地路径**就先复制到剪贴板再报错 —— 用户至少还能手动粘一次；
+ * 只有 blob 的情况给一句明确的失败原因。
+ *
+ * @param blob - 图片字节。
+ * @param filename - 粘贴时用的文件名。
  * @param actions - 宿主提供的导航回调。
+ * @param fallbackPath - 可选：本地路径，找不到输入框时用它做剪贴板兜底。
  */
-export async function addToConversation(item: GalleryItem, actions: { goToConversation: () => void }): Promise<void> {
-  const blob = await fetchBlob(item.path)
+export async function addImageToConversation(
+  blob: Blob,
+  filename: string,
+  actions: { goToConversation: () => void },
+  fallbackPath?: string,
+): Promise<void> {
   const type = blob.type !== '' && blob.type.startsWith('image/') ? blob.type : 'image/png'
-  const file = new File([blob], item.name !== '' ? item.name : 'image.png', { type })
+  const file = new File([blob], filename !== '' ? filename : 'image.png', { type })
 
   let editor = findComposerEditor()
   if (editor === null) {
@@ -139,8 +150,11 @@ export async function addToConversation(item: GalleryItem, actions: { goToConver
     editor = await waitForEditor(1400)
   }
   if (editor === null) {
-    await copyImageToClipboard(item.path)
-    throw new Error('没找到输入框，图片已复制到剪贴板。')
+    if (fallbackPath !== undefined) {
+      await copyImageToClipboard(fallbackPath)
+      throw new Error('没找到输入框，图片已复制到剪贴板。')
+    }
+    throw new Error('没找到输入框，图片没能加入对话。')
   }
   try {
     editor.focus()
@@ -148,4 +162,15 @@ export async function addToConversation(item: GalleryItem, actions: { goToConver
     // 焦点拿不到不影响粘贴
   }
   pasteFile(editor, file)
+}
+
+/**
+ * 把一张资产图加入当前对话的输入框草稿。
+ *
+ * @param item - 资产项。
+ * @param actions - 宿主提供的导航回调。
+ */
+export async function addToConversation(item: GalleryItem, actions: { goToConversation: () => void }): Promise<void> {
+  const blob = await fetchBlob(item.path)
+  await addImageToConversation(blob, item.name, actions, item.path)
 }

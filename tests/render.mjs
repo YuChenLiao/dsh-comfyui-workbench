@@ -212,6 +212,50 @@ const partial = planPage([...page(0, 50), ...page(50, 10)], page(50, 60), 60, 20
 assert.equal(partial.items.length, 110)
 assert.equal(partial.more, true)
 
+// ── 触底自动加载的判定（两个面板共用）──
+const { shouldLoadMore } = mod.__test
+assert.equal(typeof shouldLoadMore, 'function', '应当导出 shouldLoadMore')
+const scrollBase = { scrollHeight: 4000, scrollTop: 0, clientHeight: 800, shown: 50, total: 99372, loading: false, now: 1000, busyAt: 0 }
+// 顶部：还差得远，不加载
+assert.equal(shouldLoadMore(scrollBase), false, '刚打开时不该预取下一页')
+// 距底 300px（< 320 余量）：加载
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 4000 - 800 - 300 }), true, '快到底时该自动加载')
+// 距底 400px：还不加载
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 4000 - 800 - 400 }), false, '离底还远就别提前拉')
+// 正在加载：不重复触发
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 3500, loading: true }), false, '加载中不该再触发')
+// 已经全部显示：不加载
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 3500, shown: 99372 }), false, '到底了不该再请求')
+// 一条都没有（首屏还没回来 / 筛选为空）：不预取
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 3500, shown: 0, total: 0 }), false, '空列表不该预取')
+// 节流窗口内：不重复触发
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 3500, now: 1050, busyAt: 1000 }), false, '100ms 内不该重复触发')
+assert.equal(shouldLoadMore({ ...scrollBase, scrollTop: 3500, now: 1200, busyAt: 1000 }), true, '过了节流窗口该允许')
+
+// ── 补满一屏的判定（必须有停手条件，否则失败请求会让 effect 空转）──
+const { shouldAutoFill } = mod.__test
+assert.equal(typeof shouldAutoFill, 'function', '应当导出 shouldAutoFill')
+const fillBase = { scrollHeight: 300, clientHeight: 800, shown: 50, total: 99372, loading: false, lastFilledShown: -1 }
+// 内容比可视高度还矮 → 该补
+assert.equal(shouldAutoFill(fillBase), true, '不足一屏时该补一页')
+// 已经比一屏高 → 不补（用户自己会滚）
+assert.equal(shouldAutoFill({ ...fillBase, scrollHeight: 2000 }), false, '够一屏就不该补')
+// 加载中 → 不补
+assert.equal(shouldAutoFill({ ...fillBase, loading: true }), false, '加载中不该补')
+// 页签隐藏（clientHeight 为 0）→ 不补。better-sidebar 的非活动页签是 display:none 保留挂载
+assert.equal(shouldAutoFill({ ...fillBase, scrollHeight: 0, clientHeight: 0 }), false, '隐藏时不该补页')
+// 上一次补页没拿到新数据（shown 没变）→ 停手。这条挡住"失败后无间隔重试"
+assert.equal(shouldAutoFill({ ...fillBase, lastFilledShown: 50 }), false, '补页没进展必须停手')
+// 全部显示完 → 不补
+assert.equal(shouldAutoFill({ ...fillBase, shown: 99372 }), false, '到底了不该补')
+// 空列表 → 不补
+assert.equal(shouldAutoFill({ ...fillBase, shown: 0, total: 0 }), false, '空列表不该补')
+// 刚换条件：`change()` 清了列表但 `total` 还是旧值 —— 只有 `shown === 0` 这道闸挡得住
+assert.equal(shouldAutoFill({ ...fillBase, shown: 0, total: 99372 }), false, '列表空但 total 还在时不该补')
+// slack 边界：正好等于可视高度 + 余量仍算"不足一屏"，超出一个像素才算够
+assert.equal(shouldAutoFill({ ...fillBase, scrollHeight: 804, clientHeight: 800 }), true, '等于可视高度加余量时仍该补')
+assert.equal(shouldAutoFill({ ...fillBase, scrollHeight: 805, clientHeight: 800 }), false, '超过余量一个像素就不该补')
+
 // ── 工作台外壳：两个页签 + 工作流面板空态 ──
 const { Workbench, WorkflowAdmin } = mod.__test
 assert.ok(Workbench !== undefined, '应当导出 Workbench')
@@ -246,11 +290,11 @@ assert.match(tags, /class="ctg-sync"/, '该有「更新标签」按钮（断言�
 const { PosesPanel, POSES_CSS } = mod.__test
 assert.ok(PosesPanel !== undefined, '应当导出 PosesPanel（姿势库面板）')
 assert.match(POSES_CSS, /\.cps-root/, 'POSES_CSS 该有根类')
-const poses = renderToStaticMarkup(React.createElement(PosesPanel, { t, visible: true }))
+const poses = renderToStaticMarkup(React.createElement(PosesPanel, { t, visible: true, goToConversation() {} }))
 assert.match(poses, /cps-root/, '该渲染出面板根节点')
 assert.match(poses, /cps-title/, '该有标题')
 assert.match(poses, /cps-search/, '该有搜索与筛选条')
-assert.match(poses, /cps-toggle/, '该有「含成人向」开关')
+assert.match(poses, /cps-toggle/, '该有「只看常规」开关')
 assert.match(poses, /posesLoading|posesSub/, '首帧要说明状态，不能空白')
 assert.match(poses, /posesEmpty/, '没有数据时给提示而不是一片空白')
 
