@@ -53,8 +53,8 @@ test('syncPromptPool：写入后能搜到，且同一句话只留一份', async 
       fetchImpl: async () => {
         page += 1
         const body = page === 1
-          ? fakeRows(['cyberpunk city at night', 'a cat on a chair', 'cyberpunk city at night'], 1000)
-          : fakeRows(['neon cyberpunk alley', 'a dog'], 1000)
+          ? fakeRows(Array.from({ length: 100 }, (_, i) => (i === 0 ? 'cyberpunk city at night' : i === 1 ? 'a cat on a chair' : `filler prompt ${i}`)), 1000)
+          : fakeRows(Array.from({ length: 100 }, (_, i) => (i === 0 ? 'neon cyberpunk alley' : `more filler ${i}`)), 1000)
         return new Response(JSON.stringify(body), { status: 200 })
       },
     })
@@ -142,6 +142,98 @@ test('fetchRandomPrompts：第一枪失败会重试一次', async () => {
   assert.equal(calls, 2)
 })
 
-test('默认池子大小是 2 万（文档里写的就是这个数）', () => {
-  assert.equal(DEFAULT_POOL, 20_000)
+test('默认池子 5 千条（2 万条要 200 次请求，HF 会一路 429）', () => {
+  assert.equal(DEFAULT_POOL, 5_000)
+})
+
+test('syncPromptPool：429 会退避重试，不是一撞就整趟失败', async () => {
+  const dir = tmpDir()
+  let calls = 0
+  try {
+    const result = await syncPromptPool({
+      dataDir: dir,
+      count: 200,
+      intervalMs: 0,
+      log: () => {},
+      fetchImpl: async () => {
+        calls += 1
+        // 头两次 429，之后成功：模拟 HF 限流
+        if (calls <= 2) {
+          return new Response('', { status: 429, headers: { 'retry-after': '0' } })
+        }
+        return new Response(JSON.stringify(fakeRows(Array.from({ length: 100 }, (_, i) => `prompt ${i}`), 1000)), { status: 200 })
+      },
+    })
+    assert.ok(result.size > 0, '退避之后该拿到结果')
+    assert.ok(calls >= 3, `该重试过，实际 ${calls} 次`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('syncPromptPool：失败不碰原有的池，临时文件也要清干净', async () => {
+  const dir = tmpDir()
+  try {
+    // 先建一份好池子
+    fs.mkdirSync(path.dirname(promptPoolPath(dir)), { recursive: true })
+    fs.writeFileSync(promptPoolPath(dir), `${JSON.stringify({ text: '原来的那一条', source: 1 })}\n`)
+    const before = fs.readFileSync(promptPoolPath(dir), 'utf8')
+
+    // 再建一次，但上游一直 500：必须失败，且原文件一个字不变
+    await assert.rejects(
+      () => syncPromptPool({
+        dataDir: dir,
+        count: 200,
+        intervalMs: 0,
+        log: () => {},
+        fetchImpl: async () => new Response('', { status: 500 }),
+      }),
+      /HTTP 500/,
+    )
+    assert.equal(fs.readFileSync(promptPoolPath(dir), 'utf8'), before, '失败不该动原池')
+    const strays = fs.readdirSync(path.dirname(promptPoolPath(dir))).filter(name => name.endsWith('.tmp'))
+    assert.deepEqual(strays, [], `临时文件没清：${JSON.stringify(strays)}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('syncPromptPool：首页成功、后续全 429 时不能把原池覆盖成一小撮', async () => {
+  // 这是"建池失败把原池炸了"的另一种形态：只有 `written === 0` 才判失败是不够的，
+  // 首页拿到 100 条、后面几十页全 429 时 written=100 —— 照样 rename 就把 5000 缩成 100。
+  const dir = tmpDir()
+  try {
+    const file = promptPoolPath(dir)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    // 造一个"原有 5000 条"的池
+    const lines = []
+    for (let i = 0; i < 5000; i += 1) lines.push(JSON.stringify({ text: `原来的第 ${i} 条`, source: i }))
+    fs.writeFileSync(file, `${lines.join('\n')}\n`)
+    const before = fs.readFileSync(file, 'utf8')
+
+    let calls = 0
+    await assert.rejects(
+      () => syncPromptPool({
+        dataDir: dir,
+        count: 5000,
+        intervalMs: 0,
+        maxPageRetries: 0,
+        log: () => {},
+        fetchImpl: async () => {
+          calls += 1
+          // 只有第一枪成功（100 条），之后全 429
+          if (calls === 1) {
+            return new Response(JSON.stringify(fakeRows(Array.from({ length: 100 }, (_, i) => `新的 ${i}`), 100000)), { status: 200 })
+          }
+          return new Response('', { status: 429, headers: { 'retry-after': '0' } })
+        },
+      }),
+      /看着像被限流|原有.*条/,
+    )
+    assert.equal(fs.readFileSync(file, 'utf8'), before, '原池必须一个字不变')
+    const strays = fs.readdirSync(path.dirname(file)).filter(name => name.endsWith('.tmp'))
+    assert.deepEqual(strays, [], `临时文件没清：${JSON.stringify(strays)}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

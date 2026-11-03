@@ -22,8 +22,15 @@ import { pluginDataDir } from '../../../shared/host/paths.js'
 const DATASET = 'FredZhang7/stable-diffusion-prompts-2.47M'
 /** rows 接口一次最多给 100 条。 */
 const PAGE = 100
-/** 池子默认上限。 */
-export const DEFAULT_POOL = 20_000
+/**
+ * 池子默认上限。
+ *
+ * **5000 不是随便定的**：`rows` 接口一次最多 100 条，2 万条要 200 次请求，
+ * 而 HF 的 datasets-server 对匿名请求限流很紧 —— 实测一路 429，池子根本建不起来。
+ * 50 次请求（配合 400ms 间隔，约 20 秒 + 网络）能稳定跑完。
+ * 对"翻灵感 + 关键词搜索"这个用途，5 千条足够；想要更多可以显式传 `count`。
+ */
+export const DEFAULT_POOL = 5_000
 
 /** 一条参考提示词。 */
 export interface PromptHit {
@@ -65,36 +72,64 @@ interface Page {
 }
 
 /**
- * 取一页。
+ * 取一页。**遇到 429 会退避重试**。
+ *
+ * HuggingFace 的 datasets-server 对匿名请求限流很紧，而建池要串行几十上百次请求——
+ * 不退避的话第一次 429 就会让整趟失败（用户看到的就是"建池一跑就报 429"）。
  *
  * 字段是 `row.text` 而不是 `prompt` —— HF 的 features 里那条叫 `text`。
  *
  * @param offset - 起始行号。
  * @param length - 要几条（上限 100）。
  * @param fetchImpl - 注入给测试。
+ * @param timeoutMs - 单次超时。
+ * @param retries - 429 时最多再试几次。
  */
-async function fetchPage(offset: number, length: number, fetchImpl: typeof fetch, timeoutMs: number): Promise<Page> {
-  const res = await fetchImpl(rowsUrl(offset, Math.min(length, PAGE)), {
-    headers: { 'User-Agent': 'dsh-comfyui-workbench' },
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  if (!res.ok) throw new Error(`取提示词失败：HTTP ${res.status}`)
-  const body: unknown = await res.json()
-  const bag = body !== null && typeof body === 'object'
-    ? (body as { rows?: unknown; num_rows_total?: unknown })
-    : {}
-  const total = typeof bag.num_rows_total === 'number' ? bag.num_rows_total : 0
-  const items: PromptHit[] = []
-  if (Array.isArray(bag.rows)) {
-    for (const entry of bag.rows) {
-      const row = entry !== null && typeof entry === 'object' ? (entry as { row_idx?: unknown; row?: unknown }) : {}
-      const inner = row.row !== null && typeof row.row === 'object' ? (row.row as { text?: unknown }) : {}
-      const text = typeof inner.text === 'string' ? inner.text.trim() : ''
-      if (text === '') continue
-      items.push({ text, source: typeof row.row_idx === 'number' ? row.row_idx : offset + items.length })
+async function fetchPage(
+  offset: number,
+  length: number,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+  retries = 3,
+): Promise<Page> {
+  let attempt = 0
+  for (;;) {
+    const res = await fetchImpl(rowsUrl(offset, Math.min(length, PAGE)), {
+      headers: { 'User-Agent': 'dsh-comfyui-workbench' },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (res.ok) {
+      const body: unknown = await res.json()
+      const bag = body !== null && typeof body === 'object'
+        ? (body as { rows?: unknown; num_rows_total?: unknown })
+        : {}
+      const total = typeof bag.num_rows_total === 'number' ? bag.num_rows_total : 0
+      const items: PromptHit[] = []
+      if (Array.isArray(bag.rows)) {
+        for (const entry of bag.rows) {
+          const row = entry !== null && typeof entry === 'object' ? (entry as { row_idx?: unknown; row?: unknown }) : {}
+          const inner = row.row !== null && typeof row.row === 'object' ? (row.row as { text?: unknown }) : {}
+          const text = typeof inner.text === 'string' ? inner.text.trim() : ''
+          if (text === '') continue
+          items.push({ text, source: typeof row.row_idx === 'number' ? row.row_idx : offset + items.length })
+        }
+      }
+      return { items, total }
     }
+    // 429 = 限流。按 Retry-After（秒）或 2^n 秒退避，重试几次仍不行才抛。
+    if (res.status === 429 && attempt < retries) {
+      const header = Number(res.headers.get('retry-after') ?? '')
+      const waitMs = Number.isFinite(header) && header > 0 ? header * 1_000 : Math.min(2 ** attempt * 1_500, 15_000)
+      attempt += 1
+      await new Promise(resolve => setTimeout(resolve, waitMs))
+      continue
+    }
+    throw new Error(
+      res.status === 429
+        ? '取提示词失败：HuggingFace 在限流（HTTP 429）。等一会儿再试，或先把目标条数调小。'
+        : `取提示词失败：HTTP ${res.status}`,
+    )
   }
-  return { items, total }
 }
 
 /** 数据集总行数的模块级缓存：第一次拿到之后就不用再为它打一枪。 */
@@ -175,10 +210,16 @@ function shuffle(items: readonly PromptHit[]): PromptHit[] {
 /**
  * 建（或补）本地池。
  *
- * 池子是"搜索模式"的前提。默认 2 万条——再往上边际收益很小，而首次建池是
- * 串行 200 次请求（约 1 分钟）。**幂等**：每次都重建，中途失败保留已写进去的部分。
+ * 池子是"搜索模式"的前提。默认 2 万条——再往上边际收益很小。
  *
- * @param options - 目标条数、数据目录、日志与网络参数。
+ * **两条硬约束**（都是踩出来的）：
+ * - **请求要限速**：HF 的 datasets-server 对匿名请求限流很紧，串行狂打会一路 429。
+ *   默认每次之间隔 `intervalMs`，并给 `fetchPage` 配了 429 退避。
+ * - **临时文件不能撞名**：原来用 `${file}.${pid}.tmp`，同一进程里连点两次建池会写同一个
+ *   临时文件，两个流交错 → rename 出一份坏文件，看起来就是"建池失败把原来的池炸了"。
+ *   加时间戳与随机后缀，并且**失败时删掉临时文件、绝不动原文件**。
+ *
+ * @param options - 目标条数、数据目录、日志、网络与限速参数。
  */
 export async function syncPromptPool(options: {
   dataDir?: string
@@ -186,25 +227,43 @@ export async function syncPromptPool(options: {
   log?: (message: string) => void
   fetchImpl?: typeof fetch
   timeoutMs?: number
+  /** 两次请求之间的间隔（毫秒）。默认 400ms。 */
+  intervalMs?: number
+  /** 单页 429 的重试次数（测试里传 0 免得等退避）。 */
+  maxPageRetries?: number
 } = {}): Promise<{ size: number; seconds: number; file: string }> {
   const started = Date.now()
   const file = promptPoolPath(options.dataDir)
   const want = Math.min(Math.max(options.count ?? DEFAULT_POOL, PAGE), 100_000)
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? 30_000
+  const intervalMs = Math.max(options.intervalMs ?? 400, 0)
+  const maxPageRetries = Math.max(options.maxPageRetries ?? 3, 0)
   const log = options.log ?? (() => {})
 
   const first = await fetchPage(0, PAGE, fetchImpl, timeoutMs)
   const total = first.total
-  if (total === 0) throw new Error('数据集报告总行数为 0，接口可能变了。')
+  if (total === 0) throw new Error('数据集总行数为 0，接口可能变了。')
 
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const tmp = `${file}.${process.pid}.tmp`
+  // 临时文件名带时间戳与随机后缀：同一进程连开两次也不会撞到同一个文件
+  const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`
   const write = fs.createWriteStream(tmp, { encoding: 'utf8' })
+  /**
+   * 异步写错误。
+   *
+   * `createWriteStream` 的失败（磁盘满、权限、句柄失效）是**异步 emit** 的，
+   * 没有监听器就是 uncaught exception —— 宿主进程直接崩，`catch` 里的清理也跑不到。
+   */
+  let writeError: Error | null = null
+  write.on('error', error => {
+    writeError = error instanceof Error ? error : new Error(String(error))
+  })
 
   const seen = new Set<string>()
   let written = 0
   const emit = (hit: PromptHit): void => {
+    if (writeError !== null) return
     // 数据集里同一句话可能重复出现，池子里留一份就够
     const key = hit.text
     if (seen.has(key)) return
@@ -213,26 +272,53 @@ export async function syncPromptPool(options: {
     written += 1
   }
 
-  for (const hit of first.items) emit(hit)
+  try {
+    for (const hit of first.items) emit(hit)
 
-  // 均匀铺开取：等距抽样比连续取更能代表全库（连续取会集中在某个 offset 附近）
-  const step = Math.max(Math.floor(total / Math.ceil(want / PAGE)), PAGE)
-  for (let offset = step; offset < total && written < want; offset += step) {
-    try {
-      const page = await fetchPage(offset, PAGE, fetchImpl, timeoutMs)
-      for (const hit of page.items) {
-        if (written >= want) break
-        emit(hit)
+    // 均匀铺开取：等距抽样比连续取更能代表全库（连续取会集中在某个 offset 附近）
+    const step = Math.max(Math.floor(total / Math.ceil(want / PAGE)), PAGE)
+    for (let offset = step; offset < total && written < want; offset += step) {
+      if (writeError !== null) throw writeError
+      if (intervalMs > 0) await new Promise(resolve => setTimeout(resolve, intervalMs))
+      try {
+        const page = await fetchPage(offset, PAGE, fetchImpl, timeoutMs, maxPageRetries)
+        for (const hit of page.items) {
+          if (written >= want) break
+          emit(hit)
+        }
+      } catch (error) {
+        // 单页失败不该让整趟白跑：记一句，继续下一段
+        log(`第 ${offset} 行那页取失败：${error instanceof Error ? error.message : String(error)}`)
       }
-    } catch (error) {
-      // 单页失败不该让整趟白跑：记一句，继续下一段
-      log(`第 ${offset} 行那页取失败：${error instanceof Error ? error.message : String(error)}`)
+      if (written > 0 && written % 500 < PAGE) log(`  已收集 ${written}/${want}`)
     }
-    if (written % (PAGE * 10) === 0 || written >= want) log(`  已收集 ${written}/${want}`)
-  }
+    if (writeError !== null) throw writeError
 
-  await new Promise<void>(resolve => { write.end(resolve) })
-  fs.renameSync(tmp, file)
+    // **不能只看 `written === 0`**：限流下"首页成功、后续几十页全 429"会得到
+    // written=100 —— 照样 rename 覆盖原池，池子从 5000 缩到 100。那正是用户报的
+    // "建池失败把原池炸了"的另一种形态。用原池大小的一半当及格线。
+    const previous = promptPoolInfo(options.dataDir).size
+    const floor = Math.min(want, Math.max(previous, PAGE)) * 0.5
+    if (written < floor) {
+      throw new Error(
+        `只取到 ${written} 条（目标 ${want}，原有 ${previous} 条），看着像被限流。原有的池没有被改动。`,
+      )
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      write.end((error?: Error | null) => (error === null || error === undefined ? resolve() : reject(error)))
+    })
+    fs.renameSync(tmp, file)
+  } catch (error) {
+    // 失败路径：关流、删临时文件。**原文件一个字都不动**。
+    await new Promise<void>(resolve => { write.end(() => resolve()) })
+    try {
+      fs.unlinkSync(tmp)
+    } catch {
+      // 临时文件可能已经不存在
+    }
+    throw error
+  }
 
   const seconds = Number(((Date.now() - started) / 1000).toFixed(1))
   log(`池子建好：${written} 条 → ${file}（${seconds}s）`)

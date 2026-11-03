@@ -38,6 +38,14 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
   const [kind, setKind] = useState('')
   const [category, setCategory] = useState('')
   const [items, setItems] = useState<TagHit[]>([])
+  /**
+   * 列表的当前值（给 `load` 读）。
+   *
+   * `load` 是 `useCallback(..., [])`，闭包捕获的是**首次渲染**的 `items`——直接读它
+   * 会永远是空数组：`offset` 恒为 0，追加时 `[...items]` 也是空的，于是点「再看 N 条」
+   * 等于又取第一页再覆盖第一页，表现为"点了没反应"。用 ref 拿实时值。
+   */
+  const itemsRef = useRef<TagHit[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<TagStats | null>(null)
   const [loading, setLoading] = useState(false)
@@ -47,8 +55,6 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
   const [sync, setSync] = useState<TagSyncState | null>(null)
   /** 子页签：标签 / 参考。 */
   const [view, setView] = useState<'tags' | 'refs'>('tags')
-  /** 已加载多少条（用作下一页的 offset）。 */
-  const [loaded, setLoaded] = useState(PAGE)
   /** 防抖与竞态：只认最后一次请求的结果。 */
   const seq = useRef(0)
 
@@ -77,12 +83,18 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
         query: nextQuery,
         kind: nextKind,
         category: nextCategory,
-        offset: append ? items.length : 0,
+        // 读 ref 而不是闭包里的 `items`：前者是实时的，后者永远是首次渲染那个空数组
+        offset: append ? itemsRef.current.length : 0,
         limit: take,
       })
       // 期间又改了条件：这份结果已经过期，丢掉
       if (seq.current !== mine) return
-      setItems(append ? [...items, ...result.items] : result.items)
+      // 用函数式更新：即使中途有别的写入，也不会把已加载的那几页冲掉
+      setItems(prev => {
+        const next = append ? [...prev, ...result.items] : result.items
+        itemsRef.current = next
+        return next
+      })
       setTotal(result.total)
       setError('')
     } catch (reason) {
@@ -146,15 +158,16 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
    */
   const change = (apply: () => void): void => {
     seq.current += 1
-    setLoaded(PAGE)
+    // 列表也一并清掉：防抖那 250ms 里旧列表还在屏上、按钮还能点，
+    // 那时的 `more()` 会拿旧列表长度当 offset，把新条件的第 N 页拼到旧结果后面。
+    itemsRef.current = []
     setNotice('')
     apply()
   }
 
-  /** 再看一页：接在已有列表后面。 */
+  /** 再看一页：接在已有列表后面（offset 由 `itemsRef` 提供）。 */
   const more = (): void => {
     void load(query, kind, category, true, PAGE)
-    setLoaded(loaded + PAGE)
   }
 
   const copy = (tag: string): void => {
