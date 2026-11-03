@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { fetchPostRefs } from '../../../client/api.js'
+import { API, fetchPostRefs } from '../../../client/api.js'
 import type { PostRef } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
 
@@ -131,7 +131,7 @@ export function PromptRefs({ t, visible }: PromptRefsProps): React.ReactElement 
         {items.map(item => (
           <article key={item.id} className="ctg-ref">
             <a href={item.largeUrl} target="_blank" rel="noreferrer noopener" className="ctg-ref-thumb">
-              <img src={item.previewUrl} alt="" loading="lazy" />
+              <img src={`${API}/tags/refs/image?u=${encodeURIComponent(item.previewUrl)}`} alt="" loading="lazy" />
             </a>
             <p className="ctg-ref-prompt" title={item.prompt}>{item.prompt}</p>
             <div className="ctg-ref-actions">

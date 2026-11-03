@@ -233,3 +233,26 @@ test('GET /tags/prompts 只接受 GET（建池走 POST /tags/prompts/sync）', a
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('GET /tags/refs/image：只代理 cdn.donmai.us，其它一律拒（不能开 SSRF 口子）', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-img-'))
+  try {
+    const routes = createTagsRoutes(createTagsIndex(dir))
+    const callImg = async (q, method = 'GET') => {
+      const res = fakeRes()
+      const req = Readable.from([Buffer.from('')])
+      req.method = method
+      await routes.exact['/tags/refs/image'](new URL(`http://x/tags/refs/image${q}`), res, req)
+      return { status: res.status, body: JSON.parse(res.body) }
+    }
+
+    assert.equal((await callImg('')).status, 400, '缺 u 要 400')
+    assert.equal((await callImg('?u=not-a-url')).status, 400, '不是 URL 要 400')
+    assert.equal((await callImg(`?u=${encodeURIComponent('https://example.com/a.jpg')}`)).status, 400, '非白名单 host 要 400')
+    assert.equal((await callImg(`?u=${encodeURIComponent('file:///etc/passwd')}`)).status, 400, 'file:// 要 400')
+    assert.equal((await callImg(`?u=${encodeURIComponent('http://cdn.donmai.us/a.jpg')}`)).status, 400, 'http 也要 400（只走 https）')
+    assert.equal((await callImg('?u=https%3A%2F%2Fcdn.donmai.us%2Fa.jpg', 'POST')).status, 405, '非 GET 要 405')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -32,6 +32,56 @@ export interface TagsRoutes {
 export function createTagsRoutes(index: TagsIndex, job?: SyncJob, pool?: PoolJob, dataDir?: string): TagsRoutes {
   return {
     exact: {
+      // 参考图的代理。
+      //
+      // **必须代理，不能让前端直连**：`cdn.donmai.us` 明确拒绝浏览器 UA（实测
+      // `Mozilla/5.0 …` → 403，而 `dsh-comfyui-workbench` 或 curl 的 UA → 200），
+      // 所以 `<img src="https://cdn.donmai.us/…">` 一定加载不出来。
+      // 这里用插件自己的 UA 取，**流式转发不落盘**。
+      //
+      // 只允许 cdn.donmai.us：不校验就是给任意 URL 开一个 SSRF 出口。
+      '/tags/refs/image': async (url, res, req) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
+          return
+        }
+        const raw = url.searchParams.get('u') ?? ''
+        let target: URL
+        try {
+          target = new URL(raw)
+        } catch {
+          sendJson(res, 400, { ok: false, error: 'bad-url', message: '要给 u=<图片地址>。' })
+          return
+        }
+        if (target.protocol !== 'https:' || target.hostname !== 'cdn.donmai.us') {
+          sendJson(res, 400, { ok: false, error: 'bad-host', message: '只代理 cdn.donmai.us 的图片。' })
+          return
+        }
+        try {
+          const upstream = await fetch(target, {
+            headers: { 'User-Agent': 'dsh-comfyui-workbench' },
+            signal: AbortSignal.timeout(20_000),
+          })
+          if (!upstream.ok) {
+            sendJson(res, 502, { ok: false, error: 'upstream-failed', message: `图片取不到：HTTP ${upstream.status}` })
+            return
+          }
+          const buffer = Buffer.from(await upstream.arrayBuffer())
+          res.writeHead(200, {
+            'Content-Type': upstream.headers.get('content-type') ?? 'image/jpeg',
+            // 图是内容寻址的（文件名就是 hash），缓存一天没问题
+            'Cache-Control': 'public, max-age=86400',
+            'Content-Length': String(buffer.length),
+          })
+          res.end(buffer)
+        } catch (error) {
+          sendJson(res, 502, {
+            ok: false,
+            error: 'upstream-failed',
+            message: error instanceof Error ? error.message : String(error),
+          })
+        }
+      },
       // 参考提示词：**实时从 Danbooru 取，不落盘**。
       // 一次请求同时给图、tag 串（已按 general/character/copyright/artist 分类）与服务端
       // 搜索，所以没有池子要建、没有缓存要失效、也不会"建池跑到一半被限流把原池写坏"。
