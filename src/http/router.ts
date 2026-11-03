@@ -65,9 +65,14 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       // /workflows —— GET 列表 / POST 批量导出
       // /terminal  —— GET 拉增量 / POST 清屏或启动
       // /config    —— GET 读配置 / POST 切面板开关（progressStream 等）
+      // /tags/sync —— POST 开始更新 / GET 轮进度（两条都要放行）
       // 注意不能把这类路径塞进 WRITABLE：那个集合的语义是"整条路径只接受 POST/DELETE"，
       // 塞进去会把 GET 也一起拦成 405（终端面板因此整整瞎掉一轮）。
-      const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/') || sub === '/terminal' || sub === '/config'
+      // 这个坑踩过四次了 —— 而且前三次的测试都是直接调组件 handler，绕过了这一层，
+      // 于是"单测全绿、真机 405"。新加这类路径请顺手在 tests/api.test.mjs 里补一条
+      // 走真实 boot() 的用例。
+      const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/')
+        || sub === '/terminal' || sub === '/config' || sub === '/tags/sync'
       const writable = WRITABLE.has(sub)
       const methodOk = POST_ONLY.has(sub)
         ? req.method === 'POST'

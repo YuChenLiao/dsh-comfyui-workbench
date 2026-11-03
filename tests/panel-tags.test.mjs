@@ -11,7 +11,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { test } from 'node:test'
 
-import { createTagsIndex, createTagsRoutes } from '../lib/index.js'
+import { createTagsIndex, createSyncJob, createTagsRoutes } from '../lib/index.js'
 
 /** 假的 ServerResponse：只收 body。 */
 function fakeRes() {
@@ -109,6 +109,68 @@ test('面板路由是只读的：POST / PUT / DELETE 一律 405', async () => {
       const { status } = await call(routes, sub, sub, method)
       assert.equal(status, 405, `${method} ${sub} 该 405`)
     }
+  }
+})
+
+test('POST /tags/sync 开跑、GET 轮进度；同一刻只允许一个任务', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-syncjob-'))
+  let runs = 0
+  const job = createSyncJob({
+    dataDir: dir,
+    // 注入：不联网，只验证状态机
+    runCsv: async kind => { runs += 1; return { kind, records: 3, withNames: 3 } },
+    runGroups: async () => ({ groups: 91, tags: 15064, failed: [], file: '', seconds: 0, fromCache: false }),
+  })
+  const routes = createTagsRoutes(createTagsIndex(dir), job)
+
+  try {
+    const started = await call(routes, '/tags/sync', '/tags/sync', 'POST')
+    assert.equal(started.status, 200)
+    assert.equal(started.body.state, 'running', JSON.stringify(started.body))
+
+    // 再点一次：拿到的是同一次任务，不会起第二个
+    const again = await call(routes, '/tags/sync', '/tags/sync', 'POST')
+    assert.equal(again.body.state, 'running')
+
+    let status = again.body
+    for (let i = 0; i < 50 && status.state === 'running'; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      status = (await call(routes, '/tags/sync', '/tags/sync')).body
+    }
+    assert.equal(status.state, 'done', JSON.stringify(status))
+    assert.equal(status.results.length, 4, '四类各一条结果')
+    assert.equal(status.groups.groups, 91)
+    assert.equal(runs, 4, '四类各导入一次')
+
+    for (const method of ['PUT', 'DELETE']) {
+      const res = await call(routes, '/tags/sync', '/tags/sync', method)
+      assert.equal(res.status, 405)
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('更新任务失败时如实报错，不假装成功', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-syncfail-'))
+  const job = createSyncJob({
+    dataDir: dir,
+    runCsv: async () => { throw new Error('下载 general.csv 失败：HTTP 500') },
+    runGroups: async () => { throw new Error('不该走到这里') },
+  })
+  const routes = createTagsRoutes(createTagsIndex(dir), job)
+  try {
+    await call(routes, '/tags/sync', '/tags/sync', 'POST')
+    let status
+    for (let i = 0; i < 50; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      status = (await call(routes, '/tags/sync', '/tags/sync')).body
+      if (status.state !== 'running') break
+    }
+    assert.equal(status.state, 'failed')
+    assert.match(status.message, /HTTP 500/, '要把真实原因带出来')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 })
 

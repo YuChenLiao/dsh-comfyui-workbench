@@ -9,8 +9,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { fetchTags, fetchTagStats } from '../../../client/api.js'
-import type { TagHit, TagStats } from '../../../client/api.js'
+import { fetchTags, fetchTagStats, fetchTagSync, startTagSync } from '../../../client/api.js'
+import type { TagHit, TagStats, TagSyncState } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
 
 /** 一页多少条。 */
@@ -42,6 +42,8 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  /** 「更新标签」的后台任务状态（`null` 表示还没问过）。 */
+  const [sync, setSync] = useState<TagSyncState | null>(null)
   /** 已加载多少条（用作下一页的 offset）。 */
   const [loaded, setLoaded] = useState(PAGE)
   /** 防抖与竞态：只认最后一次请求的结果。 */
@@ -105,6 +107,34 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
     return () => clearTimeout(timer)
   }, [visible, query, kind, category, load])
 
+  // 更新任务在跑 → 每秒问一次进度；跑完刷新统计与列表
+  useEffect(() => {
+    if (!visible || sync?.state !== 'running') return undefined
+    const timer = setInterval(() => {
+      void fetchTagSync()
+        .then(next => {
+          setSync(next)
+          if (next.state !== 'running') {
+            // 数据换了：统计要重取，列表要重查
+            void fetchTagStats().then(setStats).catch(() => { /* 下次进面板再试 */ })
+            seq.current += 1
+            void load(query, kind, category, false, PAGE)
+          }
+        })
+        .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [visible, sync?.state, query, kind, category, load])
+
+  /** 点「更新标签」：开跑，然后交给上面的轮询。 */
+  const beginSync = (): void => {
+    setError('')
+    setNotice('')
+    void startTagSync()
+      .then(setSync)
+      .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+  }
+
   /**
    * 换条件。
    *
@@ -149,7 +179,32 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
               : t('tagsSub').replace('{total}', String(stats.total)).replace('{shown}', String(total))}
           </div>
         </div>
+        <div className="ctg-head-actions">
+          <button
+            type="button"
+            className="ctg-sync"
+            disabled={sync?.state === 'running'}
+            title={t('tagsSyncHint')}
+            onClick={beginSync}
+          >
+            {sync?.state === 'running' ? t('tagsSyncRunning') : t('tagsSync')}
+          </button>
+        </div>
       </header>
+
+      {sync !== null && sync.state !== 'idle' ? (
+        <div className={`ctg-syncbar${sync.state === 'failed' ? ' bad' : ''}`}>
+          {sync.state === 'running'
+            ? `${sync.stage}${sync.total > 0 ? `（${sync.done}/${sync.total}）` : ''}`
+            : sync.state === 'done'
+              ? t('tagsSyncDone')
+                .replace('{kinds}', sync.results.map(item => `${item.kind} ${item.records}`).join(' / '))
+                .replace('{groups}', String(sync.groups?.groups ?? 0))
+                .replace('{tags}', String(sync.groups?.tags ?? 0))
+              : t('tagsSyncFailed').replace('{message}', sync.message)
+                + (sync.results.length === 0 ? '' : `（已完成：${sync.results.map(item => item.kind).join(' / ')}）`)}
+        </div>
+      ) : null}
 
       <div className="ctg-search">
         <input

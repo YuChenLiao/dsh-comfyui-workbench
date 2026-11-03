@@ -14,6 +14,7 @@ import { apply as applyEdit } from './entries/edit.js'
 import { apply as applyGallery } from './entries/gallery.js'
 import { apply as applyGenerate } from './entries/generate.js'
 import { apply as applyTerminal } from './entries/terminal.js'
+import { apply as applyTags } from './entries/tags.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
 import { readToggles, writeToggles } from './shared/host/toggles.js'
@@ -98,6 +99,7 @@ export function applyAll(ctx: HostContext, config: unknown): void {
   mountConfig(ctx, acquire(ctx, config))
   applyGallery(ctx, config)
   applyWorkflow(ctx, config)
+  applyTags(ctx, config)
   applyGenerate(ctx, config)
   applyEdit(ctx, config)
   applyDanbooru(ctx, config)
@@ -187,4 +189,6 @@ export { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'
 export { createTagsIndex } from './components/panel-tags/server/api.js'
 export type { TagHit, TagsIndex, TagSearchResult, TagStats } from './components/panel-tags/server/api.js'
 export { createTagsRoutes } from './components/panel-tags/server/routes.js'
+export { createSyncJob } from './components/panel-tags/server/sync-job.js'
+export type { SyncJob, SyncJobState } from './components/panel-tags/server/sync-job.js'
 export { acquire, release, componentStateOf, mergedRoutes } from './runtime.js'

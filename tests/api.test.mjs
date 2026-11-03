@@ -496,6 +496,32 @@ test('POST /workflows/import：贴 API JSON 能导入，同名覆盖保留备注
   }
 })
 
+test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）', async () => {
+  // 这条防的是"单测全绿、真机 405"：`/tags/sync` 需要 POST（开始）与 GET（轮进度）
+  // 两种方法，必须进 router 的 selfManaged，否则分派器在 handler 之前就 405 了。
+  // 仓库在这个坑上踩过三次（/workflows、/terminal、/config），这是第四次。
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    // GET 是轮询路径，必须通
+    const poll = await fetch(`${app.origin}/comfyui-workbench/api/tags/sync`)
+    assert.equal(poll.status, 200, `GET /tags/sync 该放行，实际 ${poll.status}`)
+    const body = await poll.json()
+    assert.equal(body.ok, true, JSON.stringify(body))
+    assert.equal(body.state, 'idle', '没跑过时该是 idle')
+
+    // DELETE 这种真不支持的，仍然要 405（不能为了放行把整条路径变成万能）
+    const del = await fetch(`${app.origin}/comfyui-workbench/api/tags/sync`, { method: 'DELETE' })
+    assert.equal(del.status, 405, `DELETE 该 405，实际 ${del.status}`)
+  } finally {
+    await app.close()
+  }
+})
+
 test('工具注册：11 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })

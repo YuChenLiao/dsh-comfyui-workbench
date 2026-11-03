@@ -160,6 +160,50 @@ export async function fetchTagStats(): Promise<TagStats> {
   }
 }
 
+/** 「更新标签」任务的状态。 */
+export interface TagSyncState {
+  state: 'idle' | 'running' | 'done' | 'failed'
+  stage: string
+  done: number
+  total: number
+  message: string
+  lastSuccessAt: number
+  results: Array<{ kind: string; records: number; withNames: number }>
+  groups: { groups: number; tags: number; failed: string[]; fromCache: boolean } | null
+}
+
+/** 开始一次标签更新（后台跑，立刻返回当前状态）。 */
+export async function startTagSync(): Promise<TagSyncState> {
+  const res = await fetch(`${API}/tags/sync`, { method: 'POST' })
+  return readSyncState(res)
+}
+
+/** 查更新进度。 */
+export async function fetchTagSync(): Promise<TagSyncState> {
+  const res = await fetch(`${API}/tags/sync`)
+  return readSyncState(res)
+}
+
+async function readSyncState(res: Response): Promise<TagSyncState> {
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as Partial<TagSyncState> & { ok?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `更新失败：HTTP ${res.status}`)
+  }
+  return {
+    state: (bag.state ?? 'idle') as TagSyncState['state'],
+    stage: typeof bag.stage === 'string' ? bag.stage : '',
+    done: typeof bag.done === 'number' ? bag.done : 0,
+    total: typeof bag.total === 'number' ? bag.total : 0,
+    message: typeof bag.message === 'string' ? bag.message : '',
+    lastSuccessAt: typeof bag.lastSuccessAt === 'number' ? bag.lastSuccessAt : 0,
+    results: Array.isArray(bag.results) ? bag.results : [],
+    groups: bag.groups ?? null,
+  }
+}
+
 /**
  * 同名工作流已存在，需要显式确认覆盖。
  *

@@ -239,6 +239,7 @@ assert.match(tags, /ctg-root/, '该渲染出面板根节点')
 assert.match(tags, /tagsLoading|tagsSub/, '首帧要说明状态，不能空白')
 assert.match(tags, /ctg-chip/, '该有大类筛选按钮')
 assert.match(tags, /tagsEmpty/, '没有数据时给提示而不是一片空白')
+assert.match(tags, /class="ctg-sync"/, '该有「更新标签」按钮（断言类名，别被 title 里的文案键满足）')
 
 // 空列表：给出导入指引而不是一片空白
 const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {

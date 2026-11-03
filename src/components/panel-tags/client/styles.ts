@@ -21,6 +21,12 @@ export const TAGS_CSS = `
 .ctg-count{font-size:.85em;opacity:.72;font-variant-numeric:tabular-nums}
 .ctg-error{font-size:.82em;color:var(--w-danger)}
 .ctg-notice{font-size:.82em;color:var(--w-muted)}
+.ctg-head-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.ctg-sync{border-radius:8px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.8em;padding:5px 12px;cursor:pointer}
+.ctg-sync:hover:not(:disabled){border-color:var(--w-accent)}
+.ctg-sync:disabled{opacity:.6;cursor:default}
+.ctg-syncbar{font-size:.8em;color:var(--w-muted);border-left:2px solid var(--w-accent);padding-left:8px}
+.ctg-syncbar.bad{color:var(--w-danger);border-left-color:var(--w-danger)}
 .ctg-list{display:flex;flex-direction:column;gap:6px;min-height:0}
 .ctg-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;border:1px solid var(--w-line);border-radius:10px;background:var(--w-surface);padding:7px 10px}
 .ctg-row-main{display:flex;align-items:baseline;gap:8px;min-width:0}
