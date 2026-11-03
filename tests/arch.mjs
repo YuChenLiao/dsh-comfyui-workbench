@@ -161,3 +161,4 @@ const coreMod = await import(pathToFileURL(path.join(root, 'lib', 'index.js')).h
 assert.ok(coreMod.inject.includes('workspaceRegistry'), '包根 entry 的 inject 必须含 workspaceRegistry')
 
 console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备）`)
+
