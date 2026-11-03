@@ -32,7 +32,25 @@ export interface WorkflowRouteDeps {
   runs: {
     submit: (promptId: string, workflowId: string) => void
     update: (promptId: string, patch: object) => void
-    get: (promptId: string) => { state?: string } | undefined
+    /**
+     * 查一条记录。
+     *
+     * 返回类型要给全（不只 `state`）：`/run-status` 要把 error / artifacts /
+     * 排队位次一起回给面板，否则前端只能显示"出图中"这三个字。
+     * 这里写结构类型而不是 import `RunRecord` —— `shared/run` 的出口没有它，
+     * 而 `RunRegistry.get` 的返回结构与此兼容。
+     */
+    get: (promptId: string) => {
+      state: string
+      workflowId: string
+      submittedAt: number
+      startedAt?: number
+      finishedAt?: number
+      queuePosition?: number
+      progress?: { value: number; max: number }
+      error?: { code: string; message: string }
+      artifacts?: Array<{ path: string; bytes: number; width?: number; height?: number }>
+    } | undefined
   }
   /** 后台 sweep 与进度订阅的日志（不给的话降级与连续失败都留不下痕）。 */
   logger?: LoggerLike | undefined
@@ -101,6 +119,40 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
           return
         }
         sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '/workflows 只接受 GET（列表）或 POST（批量导出）。' })
+      },
+      // 单条运行的状态查询：面板提交完只能弹一句提示，之后看不见进度/结果。
+      // 只读，所以独立成 new path 而不是给 `/run` 加 GET —— 后者是 POST_ONLY，
+      // 改它的方法语义会牵到别处（WRITABLE 里也登记过 /run，历史遗留）。
+      '/run-status': (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
+          return
+        }
+        const promptId = url.searchParams.get('promptId') ?? ''
+        if (promptId === '') {
+          sendJson(res, 400, { ok: false, error: 'bad-request', message: '要给 promptId。' })
+          return
+        }
+        const record = runs.get(promptId)
+        if (record === undefined) {
+          // 重启后内存里的注册表就空了，但 runs.json 还在 —— 这不是错误，是"查不到"
+          sendJson(res, 200, { ok: true, found: false, promptId })
+          return
+        }
+        sendJson(res, 200, {
+          ok: true,
+          found: true,
+          promptId,
+          state: record.state,
+          workflowId: record.workflowId,
+          submittedAt: record.submittedAt,
+          ...(record.startedAt === undefined ? {} : { startedAt: record.startedAt }),
+          ...(record.finishedAt === undefined ? {} : { finishedAt: record.finishedAt }),
+          ...(record.queuePosition === undefined ? {} : { queuePosition: record.queuePosition }),
+          ...(record.progress === undefined ? {} : { progress: record.progress }),
+          ...(record.error === undefined ? {} : { error: record.error }),
+          ...(record.artifacts === undefined ? {} : { artifacts: record.artifacts }),
+        })
       },
       '/run': createRunHandler({
         client, workflowDir, settings, assertWritable, defaultOutputDir, runs,

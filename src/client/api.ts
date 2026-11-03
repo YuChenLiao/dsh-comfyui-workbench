@@ -286,6 +286,36 @@ function readPoolState(res: Response, data: unknown): PoolSyncState {
   }
 }
 
+/** 单条运行的状态（面板提交后轮询用）。 */
+export interface RunStatus {
+  found: boolean
+  state: string
+  queuePosition?: number
+  progress?: { value: number; max: number }
+  error?: { code: string; message: string }
+  artifacts?: Array<{ path: string; bytes: number }>
+}
+
+/** 查一条运行的状态。 */
+export async function fetchRunStatus(promptId: string): Promise<RunStatus> {
+  const res = await fetch(`${API}/run-status?promptId=${encodeURIComponent(promptId)}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; found?: unknown; state?: unknown; message?: unknown } & Partial<RunStatus>)
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `查运行状态失败：HTTP ${res.status}`)
+  }
+  return {
+    found: bag.found === true,
+    state: typeof bag.state === 'string' ? bag.state : 'unknown',
+    ...(typeof bag.queuePosition === 'number' ? { queuePosition: bag.queuePosition } : {}),
+    ...(bag.progress === undefined ? {} : { progress: bag.progress }),
+    ...(bag.error === undefined ? {} : { error: bag.error }),
+    ...(bag.artifacts === undefined ? {} : { artifacts: bag.artifacts }),
+  }
+}
+
 /**
  * 同名工作流已存在，需要显式确认覆盖。
  *

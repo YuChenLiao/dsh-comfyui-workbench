@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Icon } from '../../../client/icons.js'
 import { API } from '../../../client/api.js'
 import { runAction } from '../../../client/actions.js'
-import { download } from '../../../client/api.js'
+import { download, fetchRunStatus } from '../../../client/api.js'
 import { useGalleryData } from './hooks/useGalleryData.js'
 import type { Translate } from '../../../client/i18n.js'
 import { isNsfw } from '../../../shared/gallery/nsfw.js'
@@ -24,6 +24,16 @@ export interface GalleryProps {
   openSidebar: () => boolean
 }
 
+/** 轮询间隔：与后端 `sweepRun` 的节奏对齐，比它更快没有意义。 */
+const POLL_MS = 1500
+/**
+ * 最多轮多少次（5 分钟）。
+ *
+ * `found:false`（运行记录被注册表 trim 掉、或插件重启过）时不能无限轮询，
+ * 否则每 1.5 秒一个请求打到天荒地老，而且永远没有结论。
+ */
+const POLL_MAX_TICKS = 200
+
 /**
  * 资产库主视图。
  *
@@ -43,9 +53,21 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  /** 正在盯的运行（提交后轮询它的状态）。 */
+  const [watching, setWatching] = useState<string | null>(null)
 
   const gallery = useGalleryData({ visible, root, query, includeBare, mergeDuplicates })
-  const { items, itemsRef, total, truncated, loading, loadingMore, hasMore, notice, setNotice } = gallery
+  const { items, itemsRef, total, truncated, loading, loadingMore, hasMore, notice, setNotice, reload } = gallery
+
+  /**
+   * 最新的 `reload`。
+   *
+   * `useGalleryData` 每次都返回新函数，而轮询 effect 只依赖 `watching` —— 直接闭包
+   * 捕获的话，用户在轮询期间改了筛选/搜索，完成时 `reload(true)` 会按**旧参数**拉数据，
+   * 列表与当前筛选对不上。走 ref 每次取当前那个。
+   */
+  const reloadRef = useRef(reload)
+  reloadRef.current = reload
 
   // NSFW 过滤只作用在渲染层：数据仍全量在内存里，切回去立刻可见，不用重新拉。
   const nsfwFlags = items.map(item => isNsfw({
@@ -118,13 +140,65 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         body: JSON.stringify({ path: item.path, asInput: true }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json() as { ok?: unknown; message?: unknown; error?: unknown }
+      const data = await res.json() as { ok?: unknown; message?: unknown; error?: unknown; promptId?: unknown }
       if (data.ok !== true) throw new Error(String(data.message ?? data.error ?? '重跑失败'))
       setNotice({ kind: 'ok', text: t('useAsInputStarted').replace('{id}', item.name) })
+      // 拿到 promptId 就盯住它：提交后什么都不显示，用户不知道到底出没出图
+      if (typeof data.promptId === 'string' && data.promptId !== '') setWatching(data.promptId)
     } catch (error) {
       setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     }
   }
+
+  /**
+   * 盯一条刚提交的运行。
+   *
+   * `state` 收敛成 `done` / `failed` / `unknown` 就停；`unknown` 也要**刷新列表** ——
+   * `wait_timeout` 与网络瞬断都会转 unknown，而那种情况下图往往已经落盘了。
+   *
+   * 三条防呆：
+   * - **有上限**：`found:false`（注册表被 trim 掉、或插件重启过）时不能无限轮询，
+   *   超过 `POLL_MAX_TICKS` 就停并提示。否则每 1.5 秒一个请求打到天荒地老。
+   * - **用最新的 reload**：轮询期间用户可能改了筛选/搜索，闭包捕获的旧 `reload`
+   *   会按旧参数拉数据，列表与当前筛选不符。走 ref 取当前那个。
+   * - 单次查询失败不算数，等下一次。
+   */
+  useEffect(() => {
+    if (watching === null) return undefined
+    let ticks = 0
+    const timer = setInterval(() => {
+      ticks += 1
+      if (ticks > POLL_MAX_TICKS) {
+        clearInterval(timer)
+        setWatching(null)
+        setNotice({ kind: 'err', text: t('rerunUnknown') })
+        return
+      }
+      void fetchRunStatus(watching)
+        .then(status => {
+          if (!status.found) return
+          if (status.state === 'done') {
+            setWatching(null)
+            setNotice({ kind: 'ok', text: t('rerunDone') })
+            reloadRef.current(true)
+            return
+          }
+          if (status.state === 'failed') {
+            setWatching(null)
+            setNotice({ kind: 'err', text: t('rerunFailed').replace('{message}', status.error?.message ?? status.state) })
+            return
+          }
+          if (status.state === 'unknown') {
+            setWatching(null)
+            // 图可能已经在盘上了：不刷新的话用户会以为没出图
+            reloadRef.current(true)
+            setNotice({ kind: 'err', text: t('rerunUnknown') })
+          }
+        })
+        .catch(() => { /* 单次查询失败不算数，下次再试 */ })
+    }, POLL_MS)
+    return () => clearInterval(timer)
+  }, [watching])
 
   const onAction = (kind: ActionKind, item: GalleryItem): void => {
     // 删除先过确认层，不在这里直接发请求。

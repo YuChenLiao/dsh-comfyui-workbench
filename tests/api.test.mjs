@@ -496,6 +496,33 @@ test('POST /workflows/import：贴 API JSON 能导入，同名覆盖保留备注
   }
 })
 
+test('GET /run-status：查得到刚提交的运行，查不到时 found:false 而不是报错', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    // 缺失 promptId：说清楚要什么
+    const missing = await fetch(`${app.origin}/comfyui-workbench/api/run-status`)
+    assert.equal(missing.status, 400)
+
+    // 不存在的 promptId：不是错误，是"查不到"（重启后注册表就是空的）
+    const absent = await fetch(`${app.origin}/comfyui-workbench/api/run-status?promptId=nope`)
+    assert.equal(absent.status, 200)
+    const body = await absent.json()
+    assert.equal(body.ok, true)
+    assert.equal(body.found, false, '查不到要如实说 found:false')
+
+    // 非 GET 一律 405
+    const post = await fetch(`${app.origin}/comfyui-workbench/api/run-status?promptId=x`, { method: 'POST' })
+    assert.equal(post.status, 405)
+  } finally {
+    await app.close()
+  }
+})
+
 test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）', async () => {
   // 这条防的是"单测全绿、真机 405"：`/tags/sync` 需要 POST（开始）与 GET（轮进度）
   // 两种方法，必须进 router 的 selfManaged，否则分派器在 handler 之前就 405 了。
