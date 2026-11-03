@@ -126,6 +126,7 @@ export const WORKBENCH_CSS = [
 @media(prefers-reduced-motion:reduce){.cwb-root *{animation:none!important;transition:none!important}}`,
   // ── 工作流管理 ──
   `.cwa-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px 10px;border-bottom:1px solid var(--w-line);flex-shrink:0}
+.cwa-head-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .cwa-title{font-size:1.02em;font-weight:600}
 .cwa-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
 .cwa-error{margin:10px 20px 0;padding:8px 11px;border-radius:9px;border:1px solid var(--w-danger);color:var(--w-danger);font-size:.84em}
@@ -148,5 +149,7 @@ export const WORKBENCH_CSS = [
 .cwa-warn{font-size:.78em;color:var(--w-danger)}
 .cwa-note{width:100%;resize:vertical;min-height:46px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.86em;line-height:1.55;padding:7px 9px}
 .cwa-note:focus{border-color:var(--w-accent);outline:none}
-.cwa-note::placeholder{color:var(--w-muted)}`,
+.cwa-note::placeholder{color:var(--w-muted)}
+.cwa-actions{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.cwa-actions label.cwf-ghost{display:inline-flex;align-items:center;gap:5px;cursor:pointer;margin-right:auto}`,
 ].join('\n')

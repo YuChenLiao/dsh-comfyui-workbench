@@ -13,12 +13,14 @@ export type { Inferred } from './infer.js'
 export { buildSurface, hashWorkflow } from './surface.js'
 export {
   importWorkflowFile,
+  importWorkflowValue,
   listEntries,
   listWorkflowIds,
   pathsOf,
   readEntry,
   removeWorkflow,
   sanitizeId,
+  WorkflowExistsError,
   WorkflowFormatError,
   writeMeta,
   writeSchema,

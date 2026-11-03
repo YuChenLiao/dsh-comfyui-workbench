@@ -8,7 +8,7 @@ import { availableModels } from '../../../shared/comfy/index.js'
 import { sendJson } from '../../../shared/http/respond.js'
 import { createRerunHandler, createRunHandler } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
-import { handleWorkflowDetail, handleWorkflowList, handleWorkflowUpdate, workflowIdFromPath } from './workflows-api.js'
+import { handleWorkflowDetail, handleWorkflowImport, handleWorkflowList, handleWorkflowUpdate, workflowIdFromPath } from './workflows-api.js'
 
 
 /** 路由处理器签名（与相册那份一致，但各自持有，避免组件间互相 import）。 */
@@ -69,6 +69,15 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
 
   return {
     exact: {
+      // 导入必须注册在 exact 里：否则 `/workflows/import` 会被前缀路由当成 id=`import`
+      // 的工作流去读详情，返回 no-workflow 而不是导入结果。
+      '/workflows/import': async (_url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '导入只接受 POST。' })
+          return
+        }
+        await handleWorkflowImport(workflowDir, res, req)
+      },
       // 同一路径两种方法：GET 列出工作流，POST 批量导出（导出由相册组件提供）。
       '/workflows': async (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
         if (req.method === 'GET' || req.method === 'HEAD') {

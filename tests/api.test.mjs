@@ -394,6 +394,108 @@ test('面板开关：POST /config 切 progressStream，且 GET 能读回（不�
   }
 })
 
+test('POST /workflows/import：贴 API JSON 能导入，同名覆盖保留备注，UI 格式明确拒绝', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+
+  /** 一份最小的 API 格式工作流。 */
+  const apiWorkflow = {
+    1: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'x.safetensors' } },
+    2: { class_type: 'KSampler', inputs: { seed: 1, steps: 20, model: ['1', 0], positive: ['3', 0], negative: ['4', 0], latent_image: ['5', 0] } },
+    3: { class_type: 'CLIPTextEncode', inputs: { text: 'a', clip: ['1', 1] } },
+    4: { class_type: 'CLIPTextEncode', inputs: { text: 'b', clip: ['1', 1] } },
+    5: { class_type: 'EmptyLatentImage', inputs: { width: 512, height: 512, batch_size: 1 } },
+    6: { class_type: 'VAEDecode', inputs: { samples: ['2', 0], vae: ['1', 2] } },
+    7: { class_type: 'SaveImage', inputs: { images: ['6', 0], filename_prefix: 'x' } },
+  }
+
+  const post = body => fetch(`${app.origin}/comfyui-workbench/api/workflows/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  try {
+    // 1) 路由陷阱：`/workflows/import` 不能被当成 id=import 的工作流去读详情
+    const ok = await post({ name: 'My Painted Flow', workflow: apiWorkflow })
+    const okBody = await ok.json()
+    assert.equal(ok.status, 200, `实际 ${ok.status} ${JSON.stringify(okBody)}`)
+    assert.equal(okBody.ok, true)
+    assert.equal(okBody.workflowId, 'my-painted-flow', 'name 要经 sanitizeId 生成 id')
+    assert.equal(okBody.replaced, false, '首次导入不算覆盖')
+    assert.ok(okBody.surface !== undefined, '要把 IO 面回给前端')
+
+    // 2) 同名再导：先 409，确认后才覆盖；覆盖保留备注，旧模板备份
+    const patched = await fetch(`${app.origin}/comfyui-workbench/api/workflows/my-painted-flow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: '手动写的备注' }),
+    })
+    assert.equal(patched.status, 200)
+    const clash = await post({ name: 'my-painted-flow', workflow: apiWorkflow })
+    const clashBody = await clash.json()
+    assert.equal(clash.status, 409, '同名不该静默覆盖')
+    assert.equal(clashBody.error, 'already-exists')
+    assert.equal(clashBody.workflowId, 'my-painted-flow', '要回 id，前端才好问"覆盖 X 吗"')
+
+    const again = await post({ name: 'my-painted-flow', workflow: apiWorkflow, overwrite: true })
+    const againBody = await again.json()
+    assert.equal(again.status, 200, JSON.stringify(againBody))
+    assert.equal(againBody.replaced, true, '确认覆盖后要标 replaced')
+    const detail = await (await fetch(`${app.origin}/comfyui-workbench/api/workflows/my-painted-flow`)).json()
+    assert.equal(detail.surface.description, '手动写的备注', '覆盖模板但不该抹掉备注')
+    assert.equal(
+      fs.existsSync(path.join(dirs.workflows, 'my-painted-flow.json.bak')),
+      true,
+      '覆盖前要留一份 .bak，至少要能回退一次',
+    )
+
+    // 3) 省略 name：每次生成不同的 id，不会互相覆盖
+    const first = await (await post({ workflow: apiWorkflow })).json()
+    const second = await (await post({ workflow: apiWorkflow })).json()
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(second.ok, true, JSON.stringify(second))
+    assert.notEqual(first.workflowId, second.workflowId, '不填名字不能都落到同一个 id')
+    assert.match(first.workflowId, /^workflow-/, `缺省 id 该带时间戳：${first.workflowId}`)
+
+    // 4) 名字里的 `.json` 后缀要被 sanitizeId 去掉，中文名要保留
+    const dotted = await (await post({ name: 'Flow.JSON', workflow: apiWorkflow })).json()
+    assert.equal(dotted.workflowId, 'flow', '`.json` 不该进 id')
+    const chinese = await (await post({ name: '工作流 一号', workflow: apiWorkflow })).json()
+    assert.equal(chinese.workflowId, '工作流-一号', '中文名要保留，空格转连字符')
+    assert.equal(fs.existsSync(path.join(dirs.workflows, '工作流-一号.json')), true, '落盘名要与返回的 id 一致')
+
+    // 5) UI 格式：400 且指向 Export (API)
+    const ui = await post({ name: 'ui-flow', workflow: { nodes: [], links: [] } })
+    const uiBody = await ui.json()
+    assert.equal(ui.status, 400)
+    assert.equal(uiBody.error, 'bad-workflow')
+    assert.match(String(uiBody.message), /Export \(API\)/, `要给出可执行指引：${uiBody.message}`)
+
+    // 6) workflow 不是对象（数组 / 字符串）同样 400
+    for (const bad of [[], 'not-a-workflow', 42]) {
+      const res = await post({ name: 'bad-shape', workflow: bad })
+      assert.equal(res.status, 400, `${JSON.stringify(bad)} 该被拒`)
+      assert.equal((await res.json()).error, 'bad-workflow')
+    }
+
+    // 7) 缺 workflow 字段
+    const missing = await post({ name: 'x' })
+    assert.equal(missing.status, 400)
+    assert.equal((await missing.json()).error, 'bad-body')
+
+    // 8) 非 POST
+    const getIt = await fetch(`${app.origin}/comfyui-workbench/api/workflows/import`)
+    assert.equal(getIt.status, 405, '导入只接受 POST')
+  } finally {
+    await app.close()
+  }
+})
+
 test('工具注册：11 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })

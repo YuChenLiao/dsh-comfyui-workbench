@@ -99,6 +99,54 @@ export async function updateWorkflow(
   return data as { enabled: boolean; description: string; title: string }
 }
 
+/**
+ * 同名工作流已存在，需要显式确认覆盖。
+ *
+ * 带上 `workflowId` 让调用方能直接问"要覆盖 X 吗"，不必再解析文案。
+ */
+export class WorkflowExistsError extends Error {
+  readonly workflowId: string
+
+  constructor(workflowId: string, message: string) {
+    super(message)
+    this.name = 'WorkflowExistsError'
+    this.workflowId = workflowId
+  }
+}
+
+/**
+ * 导入一份工作流（粘贴的 JSON 对象）。
+ *
+ * 与 `POST /workflows` 不同：那是批量导出 ZIP，这条是导入。同名会**覆盖模板**，
+ * 但保留面板里写过的备注与 schema —— 所以返回值里带 `replaced` 让界面能说清。
+ *
+ * @param body - `name`（只用来生成 id，可省）与已解析的 `workflow` 对象。
+ */
+export async function importWorkflow(body: { name?: string; workflow: unknown; overwrite?: boolean }): Promise<{ workflowId: string; replaced: boolean }> {
+  const res = await fetch(`${API}/workflows/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; message?: unknown; error?: unknown; workflowId?: unknown; replaced?: unknown })
+    : null
+  // 同名且没带 overwrite：抛一个带 id 的错误，让调用方确认后再重发
+  if (bag?.error === 'already-exists') {
+    throw new WorkflowExistsError(String(bag.workflowId ?? ''), typeof bag.message === 'string' ? bag.message : '')
+  }
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `导入失败：HTTP ${res.status}`)
+  }
+  return { workflowId: String(bag.workflowId ?? ''), replaced: bag.replaced === true }
+}
+
 /** 取宿主配置。 */
 export async function fetchConfig(): Promise<HostConfig> {
   const data = await apiJson('/config')

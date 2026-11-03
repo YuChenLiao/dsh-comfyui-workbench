@@ -236,7 +236,7 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 
 `node scripts/smoke-workflows.mjs` 逐个真跑工作流（参数压到 512 长边、1 步），只验证"能提交、能出图、能取回"。
 
-导入工作流：`node scripts/import.mjs <workflow.json>`（`--list` 看已有）。只接受 API 格式 —— UI 格式请在 ComfyUI 里用 Export (API)。
+导入工作流：面板右上角的导入按钮，粘贴 ComfyUI 用 Export (API) 导出的 JSON 即可（也可以直接选文件）。批量导入用 `node scripts/import.mjs <workflow.json>`（`--list` 看已有）。只接受 API 格式 —— UI 格式请在 ComfyUI 里用 Export (API)。
 
 ## 兼容
 

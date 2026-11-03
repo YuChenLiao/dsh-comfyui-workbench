@@ -216,7 +216,7 @@ node scripts/compat.mjs   # workflow compatibility scan: missing nodes / missing
 
 `node scripts/smoke-workflows.mjs` runs each workflow for real (parameters squeezed to 512 on the long edge, 1 step) to verify only that it submits, generates and retrieves.
 
-Importing a workflow: `node scripts/import.mjs <workflow.json>` (`--list` shows what's there). API format only — for UI-format files, use Export (API) inside ComfyUI.
+Importing a workflow: use the import button at the top right of the panel and paste the JSON you exported from ComfyUI with Export (API) — or pick the file directly. For batches, `node scripts/import.mjs <workflow.json>` (`--list` shows what's there). API format only — for UI-format files, use Export (API) inside ComfyUI.
 
 ## Compatibility
 

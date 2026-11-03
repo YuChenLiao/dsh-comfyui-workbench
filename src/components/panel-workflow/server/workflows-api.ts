@@ -1,5 +1,5 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
-import { listEntries, readEntry, writeMeta } from '../../../shared/workflow/index.js'
+import { importWorkflowValue, listEntries, readEntry, WorkflowExistsError, WorkflowFormatError, writeMeta } from '../../../shared/workflow/index.js'
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
@@ -143,4 +143,82 @@ export async function handleWorkflowUpdate(
     title: updated?.surface.title ?? '',
     description: updated?.surface.description ?? '',
   })
+}
+
+/**
+ * `POST /comfyui-workbench/api/workflows/import`：贴一份 JSON 导入工作流。
+ *
+ * **为什么要独立路径**：`POST /workflows` 是批量导出 ZIP，不能复用。而 `/workflows/import`
+ * 必须注册进路由的 `exact` 表 —— 否则会被前缀路由当成 id=`import` 的工作流去读详情，
+ * 返回 `no-workflow` 而不是导入结果。
+ *
+ * 请求体 `{ name?: string, workflow: object }`：`name` 只用来生成 id（缺省 `workflow`），
+ * `workflow` 是**已解析**的对象——前端负责 `JSON.parse` 并给出语法错误。
+ *
+ * 只接受 API 格式（UI 格式需要图转换，与 CLI 一致：让用户回 ComfyUI 重新导出）。
+ * 同名导入覆盖模板但保留 `.schema.json` / `.meta.json`，所以响应里带 `replaced`。
+ *
+ * @param dir - 工作流目录。
+ */
+export async function handleWorkflowImport(
+  dir: string,
+  res: import('node:http').ServerResponse,
+  req: import('node:http').IncomingMessage,
+): Promise<void> {
+  let body: Record<string, unknown>
+  try {
+    body = await readJsonBody(req)
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: 'bad-body', message: error instanceof Error ? error.message : String(error) })
+    return
+  }
+
+  const workflow = body.workflow
+  if (workflow === null || workflow === undefined) {
+    sendJson(res, 400, {
+      ok: false,
+      error: 'bad-body',
+      message: '需要 workflow：把 API 格式工作流的 JSON 对象放在这个字段里。',
+    })
+    return
+  }
+
+  // 缺省名带时间戳：固定用 `workflow` 的话，不填名字的第二次导入会静默覆盖上一次。
+  // 用户显式填了名字才进入"可能撞名"的分支，那条路要经过 409 + 确认。
+  const nameHint = typeof body.name === 'string' && body.name.trim() !== ''
+    ? body.name.trim()
+    : `workflow-${Date.now().toString(36)}`
+  try {
+    const result = importWorkflowValue(dir, workflow, nameHint, { overwrite: body.overwrite === true })
+    sendJson(res, 200, {
+      ok: true,
+      workflowId: result.id,
+      // 覆盖过就说明模板被换了（备注与 schema 保留），调用方需要知道这点
+      replaced: result.replaced,
+      surface: result.surface,
+    })
+  } catch (error) {
+    // 同名：让前端确认后再带 overwrite 重发。面板把导入做成一次点击，
+    // 不确认就覆盖等于静默丢数据。
+    if (error instanceof WorkflowExistsError) {
+      sendJson(res, 409, {
+        ok: false,
+        error: 'already-exists',
+        workflowId: error.id,
+        message: error.message,
+      })
+      return
+    }
+    // 格式不对：`formatHint` 的文案已经写明「去 ComfyUI 用 Export (API) 重新导出」
+    if (error instanceof WorkflowFormatError) {
+      sendJson(res, 400, { ok: false, error: 'bad-workflow', message: error.message })
+      return
+    }
+    // 其余是写盘失败（EACCES / ENOSPC / 目录不可写）—— 服务端问题，不是请求问题
+    sendJson(res, 500, {
+      ok: false,
+      error: 'import-failed',
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }

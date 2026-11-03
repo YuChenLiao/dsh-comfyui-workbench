@@ -2,6 +2,14 @@
 
 ## 未发布
 
+### 新功能
+
+- **工作流面板可以上传 / 粘贴导入了**：`POST /workflows/import`，body `{ name?, workflow, overwrite? }`。面板右上角一个导入按钮，展开后可以粘贴 ComfyUI 导出的 API 格式 JSON，也可以选文件（内容先填进粘贴框，让你看一眼再提交）。之前只有 `node scripts/import.mjs <文件>`。
+
+  三个细节值得说：**同名不静默覆盖** —— 已存在时返回 409 `already-exists`，面板弹确认，确认后才带 `overwrite: true` 重发，并把旧模板备份成 `<id>.json.bak`；覆盖只换模板，`.meta.json` 与 `.schema.json` 保留。**不填名字时用时间戳生成 id**（`workflow-<base36>`），所以连续两次空名导入不会互相踩。**`/workflows/import` 必须注册在路由的 `exact` 表**，否则会被前缀路由当成 id=`import` 的工作流去读详情（返回 `no-workflow` 而不是导入结果）。
+
+  `sanitizeId` 顺带修了一处：截断从 UTF-16 码元改按**码位**，否则名字里带星平面字符时可能切出孤代理，那个 id 回前端再 `encodeURIComponent` 会抛 `URIError`。
+
 ### 功能扩充
 
 - **标签库从 2 类扩到 4 类**：新增 `general`（**30693 条**，动作 / 服装 / 外貌 / 构图这些既不是角色也不是画师的标签）与 `copyright`（**8414 条**，作品名，`touhou` → 东方Project）。上游 `danbooru-tags-data-zh` 一直有这两个 CSV，只是导入脚本只映射了 `character` / `artist`。四类合计 **99372 条**，`general` 98.9% 有中文名（`long_hair` → 长发、`1girl` → 一个女孩）。
