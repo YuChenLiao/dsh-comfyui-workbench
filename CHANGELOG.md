@@ -12,11 +12,11 @@
 
 - **`docs/design.md` 三处漂移订正**：`/runs` 标注未实现；`/run/:id` 改成实际的 `/run-status?promptId=`；「改完不知道改了什么」那行按真实行为重写——改**备注**会写 `.meta.json` 的 `updatedBy`，但改**参数并 `persist: true`** 走 `writeWorkflow`、不碰 meta，溯源只存在于当次工具返回值里，事后翻不出来。
 
-### 未关闭
+### 功能优化（续）
 
-- **`new RunRegistry(outputDir)` 的接线守护仍是半开的**。`tests/api.test.mjs` 的 `GET /run-status` 用例能守住"完全没接线"（`runs` 为 undefined 时 `runs.get()` 会抛、返回 500），但守不住"写成了 `new RunRegistry()` 漏传目录"——那种情况 registry 纯内存、`get()` 照样返回 `undefined`、接口照样 200 `found:false`，测试依然绿。`tests/runs-wiring.test.mjs` 那条落盘测试是自己 `new RunRegistry(dir)`，不是从 `runtime` 拿的。
+- **`new RunRegistry(outputDir)` 的接线守护补上了**。这条之前是半开的：`GET /run-status` 那条用例只能守"完全没接线"（`runs` 为 undefined 时 `runs.get()` 会抛、返回 500），守不住"写成 `new RunRegistry()` 漏传目录"——那种情况 registry 纯内存、`get()` 照样返回 `undefined`、接口照样 200 `found:false`，测试依然绿。
 
-  要真正关闭得让测试能从 `applyAll` 后的 runtime 取到 `runs` 并断言 `runs.json` 落在 `outputDir` 下；`applyAll` 目前不返回 runtime，需要改装配入口。**记在这里而不是假装关了。**
+  修法是把装配入口打开：`applyAll` 现在**返回 runtime**（原来返回 void），测试从它拿到 `runs`、`submit` 一条、再断言 `outputDir/runs.json` 里真有这条记录。**变异验证**：把 `new RunRegistry(outputDir)` 改成 `new RunRegistry()`，这条立刻红；还原后全绿。
 
 ### 新功能
 

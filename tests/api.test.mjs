@@ -50,7 +50,7 @@ async function boot(config) {
     },
   }
 
-  applyAll(ctx, config)
+  const runtime = applyAll(ctx, config)
 
   const registered = prefixRoutes[0]
   assert.ok(registered !== undefined, '应当注册 HTTP 路由')
@@ -63,6 +63,7 @@ async function boot(config) {
   return {
     origin,
     tools,
+    runtime,
     close: () => new Promise(resolve => server.close(resolve)),
   }
 }
@@ -573,6 +574,31 @@ test('工具注册：11 个工具都带必要字段', async () => {
       assert.equal(typeof spec.execute, 'function')
       assert.ok(spec.output !== undefined && typeof spec.output.render === 'function')
     }
+  } finally {
+    await app.close()
+  }
+})
+
+test('装配接线：runtime 的 RunRegistry 真的落在 outputDir 下（漏传目录这条要能被抓到）', async () => {
+  // 这条守的是一个具体的洞：`new RunRegistry()` 漏传 outputDir 时 registry 纯内存，
+  // 接口照样 200 `found:false`、`get()` 照样返回 undefined —— 任何"查状态"的用例都绿。
+  // 唯一能抓到的方式是：真的提交一条、然后看 outputDir 里有没有 `runs.json`。
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    assert.ok(app.runtime !== undefined, 'applyAll 该把 runtime 回出来')
+    app.runtime.runs.submit('pid-wire', 'wf-wire')
+    app.runtime.runs.flush?.()
+
+    const file = path.join(dirs.out, 'runs.json')
+    assert.equal(fs.existsSync(file), true, `运行记录该落在 ${file}（漏传 outputDir 的话这里会是 false）`)
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const ids = Array.isArray(saved) ? saved.map(record => record.promptId) : Object.keys(saved)
+    assert.ok(ids.includes('pid-wire'), `记录里该有 pid-wire，实际 ${JSON.stringify(ids)}`)
   } finally {
     await app.close()
   }

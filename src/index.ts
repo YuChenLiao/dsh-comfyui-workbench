@@ -19,6 +19,7 @@ import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
 import { readToggles, writeToggles } from './shared/host/toggles.js'
 import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from './runtime.js'
+import type { Runtime } from './runtime.js'
 import { createConfigHandler } from './components/panel-workflow/server/config-api.js'
 export { handleWorkflowList } from './components/panel-workflow/server/workflows-api.js'
 export { createRunHandler } from './components/panel-workflow/server/run-api.js'
@@ -94,9 +95,12 @@ export function apply(ctx: HostContext, config: unknown): void {
  * 生产环境不用它：`cordis.patch.yml` 里是七条 entry（一条包根 + 六条组件），
  * 每条各自注册，宿主才能单独开关。
  */
-export function applyAll(ctx: HostContext, config: unknown): void {
+export function applyAll(ctx: HostContext, config: unknown): Runtime {
   // 与 apply 一致：先建 runtime 并挂 /config，再逐个装组件。
-  mountConfig(ctx, acquire(ctx, config))
+  // **返回 runtime** 是为了让测试能验装配结果（例如"运行记录确实落在 outputDir 下"）——
+  // 不返回的话，`new RunRegistry(outputDir)` 漏传目录这种事没有任何测试守得住。
+  const rt = acquire(ctx, config)
+  mountConfig(ctx, rt)
   applyGallery(ctx, config)
   applyWorkflow(ctx, config)
   applyTags(ctx, config)
@@ -104,6 +108,7 @@ export function applyAll(ctx: HostContext, config: unknown): void {
   applyEdit(ctx, config)
   applyDanbooru(ctx, config)
   applyTerminal(ctx, config)
+  return rt
 }
 
 // 测试与诊断用：这些能力要能被单独验证。
