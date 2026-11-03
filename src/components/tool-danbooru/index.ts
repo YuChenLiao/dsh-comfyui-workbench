@@ -18,6 +18,8 @@ export { syncKind } from './server/sync.js'
 export type { SyncOptions, SyncProgress } from './server/sync.js'
 export { importUpstream, KIND_OF_CATEGORY, parseCsvLine, rowToRecord, UPSTREAM_BASE, UPSTREAM_FILES } from './server/upstream.js'
 export type { UpstreamResult, UpstreamRow } from './server/upstream.js'
+export { categoryMapPath, categoryOf, GROUP_INDEX_TITLE, groupsPath, normalizeTag, parseGroupIndex, parseGroupPage, readCategoryMap, readGroups, syncGroups } from './server/groups.js'
+export type { CategoryMap, GroupRecord, GroupsResult } from './server/groups.js'
 
 /** 本组工具在 `disabledComponents` 里的开关名。 */
 export const DANBOORU_COMPONENT = 'tool.danbooru'

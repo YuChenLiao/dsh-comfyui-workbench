@@ -93,7 +93,27 @@ Sites running "the same software, a different database" cannot serve as mirrors.
 
 **Empty local library still works**: if the library is empty or has no match, the lookup goes online (`source` becomes `online`). Chinese and Japanese names go through `search[other_names_match]` (the only field Danbooru exposes for reverse alias lookup); plain ASCII names use `search[name_matches]` with fuzzy matching. So you can use it without ever syncing — just slower, with a network round-trip per query.
 
-**The primary data source** is [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh) (MIT, © 2026 amenorira), and **the data ships inside the plugin** under `data/danbooru/`, so it works out of the box without a sync: a community-maintained Chinese translation library covering Danbooru tags with more than 50 posts, including Chinese names, aliases (community nicknames too — Miku's "葱娘" among them) and a one-line note (notes are stored but never returned; the model only needs the tag). Measured coverage: **35,384 characters** and **24,881 artists**; 99.7% / 95.8% of upstream CSV rows carry a Chinese name or alias and after removing shared aliases (ship names and the like), the bundled copy is at **98.7% / 94.9%**. This beats scraping the wiki — that route gets almost no Chinese names for artists (Danbooru's artist wikis do not populate `other_names`) and takes 100 seconds for 400 rows.
+**The primary data source** is [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh) (MIT, © 2026 amenorira), and **the data ships inside the plugin** under `data/danbooru/`, so it works out of the box without a sync: a community-maintained Chinese translation library covering Danbooru tags with more than 50 posts, including Chinese names, aliases (community nicknames too — Miku's "葱娘" among them) and a one-line note (notes are stored but never returned; the model only needs the tag).
+
+**Four categories, 99,372 tags in total**:
+
+| Category | Rows | With Chinese name / alias |
+|---|---|---|
+| character | 35,384 | 98.7% |
+| artist | 24,881 | 94.9% |
+| copyright | 8,414 | 96.6% |
+| general | 30,693 | 98.9% |
+
+`general` covers poses, clothing, appearance and composition; `copyright` is work titles (`touhou` → 东方Project). All four share one 2-gram inverted index: 131 ms to read and parse, 396 ms to build, ~177 MB resident, **~1 ms per query** (57 ms linear, 54× faster).
+
+**General tags carry semantic categories.** Danbooru's tag groups live in a wiki page (`tag_groups` is not an API resource), scraped into **91 groups / 15,216 tags** and folded into eight buckets: action / clothing / appearance / composition / object / theme / explicit / other. The `category` parameter on `danbooru_lookup` narrows a search:
+
+```text
+danbooru_lookup({ query: 'skirt', category: 'clothing' })   → ["skirt"]
+danbooru_lookup({ query: 'sitting', category: 'action' })   → ["sitting", "seiza", ...]
+```
+
+Coverage is limited: those 91 groups hit only **27.0%** of the 30,693 `general` tags directly (8,277), the rest land in "other" — even `ponytail` and `braid` are missing from the wiki groups. So **categories are an enhancement, search is the main path**; when a filter comes up empty the tool says it was filtered out rather than pretending nothing exists. Refresh with `npm run danbooru:groups` (92 requests, ~2.5 min).
 
 To bring the local library up to date, pick one of these (run them in the directory holding `package.json` — the repo root, or `node_modules/dsh-comfyui-workbench/` in an install):
 

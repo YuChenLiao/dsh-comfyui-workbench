@@ -112,6 +112,15 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 `general` 是动作、服装、外貌、构图这些非角色非画师的标签，`copyright` 是作品名（`touhou` → 东方Project）。四类一起建 2-gram 倒排索引：读取+解析 131ms、建索引 396ms、常驻约 **177 MB**、单次查询 **约 1ms**（线性扫描 57ms，快 54 倍）。
 
+**通用标签带语义分类**。Danbooru 的 tag 分组（`tag_groups` 是 wiki 不是 API）抓下来是 **91 个组、15064 个 tag**，归并成八类：动作 / 服装 / 外貌 / 构图 / 物件 / 主题 / 性相关 / 其它。`danbooru_lookup` 的 `category` 参数可以「只在服装里找」：
+
+```text
+danbooru_lookup({ query: 'skirt', category: 'clothing' })   → ["skirt"]
+danbooru_lookup({ query: 'sitting', category: 'action' })   → ["sitting", "seiza", ...]
+```
+
+覆盖率要心里有数：这 91 组（15064 个 tag）对 `general` 的 30693 条只直接命中 **26.9%**（8261 条），其余落「其它」——`ponytail`、`braid` 这种最常见的词都不在 wiki 分组里。所以**分类是增强维度，搜索才是主路径**；筛不到时工具会明说「是筛掉的，去掉 category 再查」。更新分类用 `npm run danbooru:groups`（92 次请求，约 2.5 分钟）。
+
 这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
 
 想把本地库更新到上游最新，下面几条按需选一条（命令要在 `package.json` 所在目录执行 —— 仓库根，或安装目录里的 `node_modules/dsh-comfyui-workbench/`）：

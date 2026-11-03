@@ -1,7 +1,9 @@
 import { fetchJson } from '../server/api.js'
 import { readStore, storePath, TAG_KINDS } from '../server/store.js'
+import { categoryOf, readCategoryMap, readGroups } from '../server/groups.js'
 import { TagIndex } from '../server/tag-index.js'
 import type { TagKind, TagRecord } from '../server/store.js'
+import type { CategoryMap } from '../server/groups.js'
 import type { MatchHow } from '../server/tag-index.js'
 import { asString } from '../../../shared/tools/types.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
@@ -26,6 +28,15 @@ export interface TagCache {
    */
   search: (kind: TagKind, query: string, limit?: number) => Array<{ record: TagRecord; how: MatchHow }>
   invalidate: (kind?: TagKind) => void
+  /**
+   * tag → 所属 Danbooru 组（语义分组）。懒加载一次，`invalidate()` 后重读。
+   *
+   * 分组表是 15064 行的派生数据，只有按大类筛时才需要 —— 不带 `category`
+   * 的查询不该为它付解析成本。
+   */
+  groups: () => Map<string, string[]>
+  /** 组 → 大类映射。与 `groups()` 一起懒加载。 */
+  categoryMap: () => CategoryMap
 }
 
 /**
@@ -38,6 +49,8 @@ export interface TagCache {
  */
 export function createTagCache(dataDir: string): TagCache {
   const cache = new Map<string, { records: TagRecord[]; index: TagIndex<TagRecord> }>()
+  let groupCache: Map<string, string[]> | null = null
+  let mapCache: CategoryMap | null = null
   const load = (kind: TagKind): { records: TagRecord[]; index: TagIndex<TagRecord> } => {
     const hit = cache.get(kind)
     if (hit !== undefined) return hit
@@ -52,6 +65,17 @@ export function createTagCache(dataDir: string): TagCache {
     invalidate: kind => {
       if (kind === undefined) cache.clear()
       else cache.delete(kind)
+      // 分组表与 tag 数据是两条同步线，但分类依赖 tag 名，一并丢弃更省心
+      groupCache = null
+      mapCache = null
+    },
+    groups: () => {
+      groupCache ??= readGroups(dataDir)
+      return groupCache
+    },
+    categoryMap: () => {
+      mapCache ??= readCategoryMap(dataDir)
+      return mapCache
     },
   }
 }
@@ -199,6 +223,11 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
           enum: ['character', 'artist', 'copyright', 'general', 'all'],
           description: '限定类别：角色 / 画师 / 作品 / 通用（动作、服装、外貌等）。默认 all 查全部四类。',
         },
+        category: {
+          type: 'string',
+          enum: ['action', 'clothing', 'appearance', 'composition', 'object', 'theme', 'explicit', 'other'],
+          description: '按语义大类筛（只对 general 有效）：action 动作 / clothing 服装 / appearance 外貌 / composition 构图 / object 物件 / theme 主题 / explicit 性相关 / other 其它。分类来自 Danbooru 的 tag group，覆盖 30693 个通用标签里的约 26.9%（8261 条），筛不到时去掉这个参数重试。',
+        },
         limit: { type: 'integer', description: '最多返回几个 tag，默认 5，上限 20。' },
       },
       required: ['query'],
@@ -211,17 +240,31 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
     execute: async (args) => {
       const query = asString(args.query)
       const kindArg = asString(args.kind, 'all')
+      const categoryArg = asString(args.category, '').trim()
       const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 20)
       if (query === '') return { ok: false, error: 'query 不能为空' }
 
       const kinds: readonly TagKind[] = TAG_KINDS.includes(kindArg as TagKind) ? [kindArg as TagKind] : TAG_KINDS
+
+      // 枚举要校验：否则 `clothingx` 会被当合法类名回显，用户以为筛过了
+      const knownCategories = Object.keys(deps.cache.categoryMap().labels)
+      if (categoryArg !== '' && knownCategories.length > 0 && !knownCategories.includes(categoryArg)) {
+        return {
+          ok: false,
+          error: `category 只能是 ${knownCategories.join(' / ')}，收到「${categoryArg}」。`,
+        }
+      }
+
       const rank = { tag: 0, exact: 1, prefix: 2, contains: 3 } as Record<string, number>
       // 收集时带上档位：跨 kind 要统一排序，只留 tag 名会把档位信息丢掉 ——
       // 查 `wlop` 时角色库里某个"别名含 wlop"的会压过画师库里 tag 名就叫 wlop 的那个。
       const hits: Array<{ tag: string; how: string; postCount: number }> = []
 
+      // 带 category 时先多取候选**再**筛：按 limit 截断在前会造出假筛空
+      // （实测 limit=1 时 long/clothing 报"没有匹配"，limit=3 立刻有 long_sleeves）
+      const searchLimit = categoryArg === '' ? limit : Math.max(limit * 10, 100)
       for (const kind of kinds) {
-        for (const match of deps.cache.search(kind, query, limit)) {
+        for (const match of deps.cache.search(kind, query, searchLimit)) {
           hits.push({ tag: match.record.tag, how: match.how, postCount: match.record.postCount })
         }
       }
@@ -229,17 +272,50 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
         const byHow = (rank[a.how] ?? 4) - (rank[b.how] ?? 4)
         return byHow !== 0 ? byHow : b.postCount - a.postCount
       })
-      const found: string[] = hits.map(hit => hit.tag)
 
-      // 本地没命中（或压根没同步过）→ 直接问 Danbooru
+      // 按语义大类筛。分类只来自 Danbooru 的 tag group，只覆盖 `general` 的一部分
+      // （直接命中 8261/30693 ≈ 26.9%）—— 所以筛不到时要**说清是筛掉的**，
+      // 不能让它掉进"没找到"或"去问在线"（在线结果根本没有分类信息）。
+      let kept = hits
+      if (categoryArg !== '') {
+        const groupMap = deps.cache.groups()
+        const categoryMap = deps.cache.categoryMap()
+        const label = categoryMap.labels[categoryArg] ?? categoryArg
+        kept = hits.filter(hit => categoryOf(groupMap.get(hit.tag) ?? [], categoryMap) === categoryArg)
+        if (kept.length === 0) {
+          // 只查了角色 / 画师 / 作品时，问题不在"分类覆盖不全"而在"这几类根本没有分类"
+          const generalOnly = !kinds.includes('general')
+          return {
+            ok: false,
+            error: generalOnly
+              ? `「${label}」这个分类只作用于通用（general）标签，而这次查的是角色 / 画师 / 作品 —— 它们本身已经是分类，没有更细的组。去掉 category 或加 kind:'general' 再试。`
+              : `「${query.trim()}」在「${label}」类里没有匹配。分类来自 Danbooru 的 tag group，`
+                + `只覆盖 30693 个通用标签里的约 26.9%（ponytail、braid 这种最常见的词都不在 wiki 分组里）；`
+                + `去掉 category 参数再查一次通常就有了。`,
+          }
+        }
+      }
+
+      const found: string[] = kept.map(hit => hit.tag)
+
+      // 本地没命中（或压根没同步过）→ 直接问 Danbooru。
+      // **带 category 时不走在线**：Danbooru 的 tags 接口没有分组维度，回来的一批
+      // 会绕过筛选 —— 那比"查不到"更误导（用户以为筛过了）。
       let source: 'local' | 'online' = 'local'
       let throttled = false
-      if (found.length === 0) {
+      if (found.length === 0 && categoryArg === '') {
         source = 'online'
         const only = TAG_KINDS.includes(kindArg as TagKind) ? (kindArg as TagKind) : undefined
         const online = await searchOnlineDetailed(query, limit, only)
         throttled = online.throttled
         found.push(...online.tags)
+      }
+      if (found.length === 0 && categoryArg !== '') {
+        return {
+          ok: false,
+          error: `本地库里没有「${query.trim()}」，而带 category 时不会去问在线接口（它没有分组维度）。`
+            + `要么去掉 category，要么先跑一次 npm run danbooru:zh 把标签库更新到最新。`,
+        }
       }
 
       const tags = [...new Set(found)].slice(0, limit)

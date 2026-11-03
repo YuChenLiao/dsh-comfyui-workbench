@@ -171,6 +171,16 @@ export {
   TAG_KINDS,
   UPSTREAM_BASE,
   UPSTREAM_FILES,
+  GROUP_INDEX_TITLE,
+  groupsPath,
+  normalizeTag,
+  parseGroupIndex,
+  parseGroupPage,
+  readGroups,
+  syncGroups,
+  categoryMapPath,
+  categoryOf,
+  readCategoryMap,
 } from './components/tool-danbooru/index.js'
 export type { TagKind, UpstreamResult, UpstreamRow } from './components/tool-danbooru/index.js'
 export { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'

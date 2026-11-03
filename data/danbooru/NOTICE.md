@@ -33,6 +33,17 @@ Danbooru 标签的中文翻译数据库，收录时图片数 > 50 的标签，�
 
 注意「逐类」：跨类的同名别名（如 `miku` 同时是 `hatsune_miku` 与某画师的别名）不会被去掉，查询时靠档位与热度决胜。
 
+## 另外两份是派生数据（许可不同）
+
+`groups.jsonl` 与 `category-map.json` **不是**来自上面的翻译库，而是从 **Danbooru 官方 wiki** 派生的：
+
+- 来源：`https://danbooru.donmai.us/wiki_pages/tag_groups`（索引页）与它列出的 91 个 `Tag group:XXX` 子页面
+- 内容：`groups.jsonl` 是「tag → 所属组」的抓取结果（15064 条、1478 条跨组）；`category-map.json` 是**本插件自己写的**「组 → 大类」归并表（91 条 + 优先级），不是 Danbooru 的内容
+- 性质：wiki 文本由 Danbooru 社区维护，本目录只保存从它解析出来的事实性映射（tag 名与分组名），不含 wiki 正文
+- 更新：`npm run danbooru:groups`（92 次请求、约 2.5 分钟），或带 `--bundled` 直接更新本目录
+
+如果你要再分发本插件，这两份数据同样随包，请一并说明它们派生自 Danbooru wiki。
+
 ## 为什么不直接引用上游
 
 数据随包内聚，是为了让 `danbooru_lookup` 装好即可用、不必先联网同步。上游更新后可以重新导入：
