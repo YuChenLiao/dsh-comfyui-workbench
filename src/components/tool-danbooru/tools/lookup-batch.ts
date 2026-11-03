@@ -12,6 +12,8 @@
 import { asString } from '../../../shared/tools/types.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
+import { TAG_KINDS } from '../server/store.js'
+import type { TagKind } from '../server/store.js'
 import type { TagCache } from './lookup.js'
 
 /** 一次最多查几个名字。 */
@@ -52,8 +54,8 @@ export function danbooruLookupBatchTool(deps: { cache: TagCache; logger?: Logger
         },
         kind: {
           type: 'string',
-          enum: ['character', 'artist', 'all'],
-          description: '查角色还是画师，默认 all。',
+          enum: ['character', 'artist', 'copyright', 'general', 'all'],
+          description: '限定类别：角色 / 画师 / 作品 / 通用。默认 all 查全部四类。',
         },
         limit: { type: 'integer', description: '每个名字最多返回几个 tag，默认 3，上限 10。' },
       },
@@ -76,9 +78,7 @@ export function danbooruLookupBatchTool(deps: { cache: TagCache; logger?: Logger
       }
 
       const kindArg = asString(args.kind, 'all')
-      const kinds: Array<'character' | 'artist'> = kindArg === 'character'
-        ? ['character']
-        : kindArg === 'artist' ? ['artist'] : ['character', 'artist']
+      const kinds: readonly TagKind[] = TAG_KINDS.includes(kindArg as TagKind) ? [kindArg as TagKind] : TAG_KINDS
       const limit = Math.min(Math.max(Number(args.limit ?? 3) || 3, 1), 10)
       const rank = { tag: 0, exact: 1, prefix: 2, contains: 3 } as Record<string, number>
 

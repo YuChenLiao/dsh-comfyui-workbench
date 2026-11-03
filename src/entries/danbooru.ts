@@ -1,8 +1,8 @@
 /**
  * 组件：模型工具 · Danbooru 标签库。
  *
- * 两个工具：`danbooru_lookup`（按中文名或 tag 查角色 / 画师）与
- * `danbooru_sync`（把标签抓到本地，含中文名）。
+ * 三个工具：`danbooru_lookup` / `danbooru_lookup_batch`（按中文名、日文名或 tag 查
+ * 角色 / 画师 / 作品 / 通用四类标签）与 `danbooru_sync`（从 Danbooru 抓热门段到本地）。
  *
  * 这条 entry 刻意**不碰 ComfyUI 运行时**：它只读一个数据目录、注册两个纯本地工具。
  * 走 `acquire` 会顺带建出客户端、监督器与资产索引（还要等 workspaceRegistry 就绪），

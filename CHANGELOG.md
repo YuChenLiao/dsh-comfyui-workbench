@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 未发布
+
+### 功能扩充
+
+- **标签库从 2 类扩到 4 类**：新增 `general`（**30693 条**，动作 / 服装 / 外貌 / 构图这些既不是角色也不是画师的标签）与 `copyright`（**8414 条**，作品名，`touhou` → 东方Project）。上游 `danbooru-tags-data-zh` 一直有这两个 CSV，只是导入脚本只映射了 `character` / `artist`。四类合计 **99372 条**，`general` 98.9% 有中文名（`long_hair` → 长发、`1girl` → 一个女孩）。
+
+  实测成本（四类一起建 2-gram 倒排索引）：读取+解析 131ms、建索引 396ms、常驻约 **177 MB**、单次查询 **约 1ms**（线性扫描 57ms，快 54 倍）。这个 177 MB 是「以后还能不能再扩」的硬边界 —— 在加两万条 prompt 之前得先看内存。
+
+### 功能优化
+
+- **CSV 导入逻辑从脚本提到 `src/`**：`parseCsvLine` / `rowToRecord` / `importUpstream` 现在在 `components/tool-danbooru/server/upstream.ts`，`scripts/import-danbooru-zh.mjs` 瘦成参数解析。原因是面板上的「更新标签」按钮要走同一条路 —— 不提前抽出来，必然出现两份实现（本仓库在「同一概念两份实现」上栽过不止一次）。
+
+  顺带把 `TagRecord.kind` 从 `'character' | 'artist'` 扩成 `TagKind` 四值；文件名改用**显式映射表**而不是 `${kind}s.jsonl`，否则 `general` 会变成 `generals`，而 `characters` / `artists` 已经是复数形式并随包分发，不能为了整齐去改名。`note` 字段也正式进了类型 —— 现有数据里本来就有，之前靠类型松弛混过去。
+
+  随包数据只**新增** `general.jsonl` 与 `copyrights.jsonl`，原有 `characters.jsonl` / `artists.jsonl` 的 md5 一字未变（`ebc02196…` / `453ee1e1…`）。
+
 ## 0.5.1
 
 ### 修复

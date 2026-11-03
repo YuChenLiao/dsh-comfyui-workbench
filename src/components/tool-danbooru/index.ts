@@ -1,5 +1,5 @@
 /**
- * Danbooru 标签库：把角色 / 画师的 Danbooru tag 与中文名对上，供模型查询。
+ * Danbooru 标签库：把角色 / 画师 / 作品 / 通用四类的 Danbooru tag 与中文名对上，供模型查询。
  *
  * 与生图组件分开：它不碰 ComfyUI，只维护一份本地标签库（`<数据目录>/danbooru/*.jsonl`）。
  * 数据来自 Danbooru 的 tags + wiki 两个接口，同步是显式动作（几千次请求，不该被动触发）。
@@ -12,10 +12,12 @@ export type { SyncDefaults } from './tools/sync-tool.js'
 export { currentMirrors, fetchJson, getJson, MIRRORS, useMirrors, useTimeout } from './server/api.js'
 export { TagIndex, searchTagsLinear } from './server/tag-index.js'
 export type { IndexMatch, MatchHow } from './server/tag-index.js'
-export { bundledDir, ownStorePath, pickNames, pruneSharedAliases, readStore, searchTags, storePath, worthKeeping, writeStore } from './server/store.js'
-export type { Match, TagRecord } from './server/store.js'
+export { bundledDir, ownStorePath, pickNames, pruneSharedAliases, readStore, searchTags, storePath, TAG_KINDS, worthKeeping, writeStore } from './server/store.js'
+export type { Match, TagKind, TagRecord } from './server/store.js'
 export { syncKind } from './server/sync.js'
 export type { SyncOptions, SyncProgress } from './server/sync.js'
+export { importUpstream, KIND_OF_CATEGORY, parseCsvLine, rowToRecord, UPSTREAM_BASE, UPSTREAM_FILES } from './server/upstream.js'
+export type { UpstreamResult, UpstreamRow } from './server/upstream.js'
 
 /** 本组工具在 `disabledComponents` 里的开关名。 */
 export const DANBOORU_COMPONENT = 'tool.danbooru'

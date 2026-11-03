@@ -4,18 +4,28 @@ import { fileURLToPath } from 'node:url'
 
 import { foldPathCase } from '../../../shared/host/paths.js'
 
+/**
+ * 收录的四类标签。
+ *
+ * - `character` / `artist` / `copyright` 来自 Danbooru 的 category 4 / 1 / 3
+ * - `general` 是其余全部（动作、服装、外貌、构图…），数量最大
+ */
+export type TagKind = 'character' | 'artist' | 'general' | 'copyright'
+
 /** 一个收录的标签：Danbooru 原始 tag + 它的中文/别名。 */
 export interface TagRecord {
   /** Danbooru 上的 tag 名（下划线形式，如 `hatsune_miku`）。 */
   tag: string
-  /** 角色还是画师。 */
-  kind: 'character' | 'artist'
+  /** 属于哪一类。 */
+  kind: TagKind
   /** Danbooru 帖子数，用来排序与判断热门程度。 */
   postCount: number
   /** 该 tag 的其它写法（中文、繁体、罗马音、日文假名等），已去重、去掉空串。 */
   names: string[]
   /** 上次同步时间（ISO）。 */
   updatedAt: string
+  /** 上游给的一句说明（只入库、不进查询结果——模型只需要 tag）。 */
+  note?: string
 }
 
 /** 中日韩文字：用来从 other_names 里挑出"非英文"的那些。 */
@@ -102,15 +112,29 @@ export function bundledDir(): string {
 }
 
 /**
- * 某一类的 JSONL 路径。
+ * 文件名。
  *
- * 优先用户数据目录（可能被同步/导入更新过），没有则回退到包内自带那份。
+ * 用显式表而不是 `${kind}s.jsonl`：`general` 复数成 `generals` 很怪，而
+ * `character`/`artist` 已经是复数形式并随包分发，不能为了整齐去改名。
+ */
+const FILE_OF_KIND: Record<TagKind, string> = {
+  character: 'characters.jsonl',
+  artist: 'artists.jsonl',
+  general: 'general.jsonl',
+  copyright: 'copyrights.jsonl',
+}
+
+/** 全部四类，顺序即工具与面板的展示顺序。 */
+export const TAG_KINDS: readonly TagKind[] = ['character', 'artist', 'copyright', 'general']
+
+/**
+ * 某一类的 JSONL 路径（**写入用**，永远在用户数据目录）。
  *
  * @param dataDir - 插件数据目录。
- * @param kind - 角色或画师。
+ * @param kind - 标签类别。
  */
-export function ownStorePath(dataDir: string, kind: 'character' | 'artist'): string {
-  return path.join(danbooruDir(dataDir), `${kind}s.jsonl`)
+export function ownStorePath(dataDir: string, kind: TagKind): string {
+  return path.join(danbooruDir(dataDir), FILE_OF_KIND[kind])
 }
 
 /**
@@ -120,12 +144,12 @@ export function ownStorePath(dataDir: string, kind: 'character' | 'artist'): str
  * （测试里一个空目录就能把 7MB 的库写成一条假记录）。写请用 `ownStorePath`。
  *
  * @param dataDir - 插件数据目录。
- * @param kind - 角色或画师。
+ * @param kind - 标签类别。
  */
-export function storePath(dataDir: string, kind: 'character' | 'artist'): string {
+export function storePath(dataDir: string, kind: TagKind): string {
   const own = ownStorePath(dataDir, kind)
   if (fs.existsSync(own)) return own
-  const bundled = path.join(bundledDir(), `${kind}s.jsonl`)
+  const bundled = path.join(bundledDir(), FILE_OF_KIND[kind])
   return fs.existsSync(bundled) ? bundled : own
 }
 

@@ -163,6 +163,10 @@ test('查询工具：中文与 tag 都能查，且能按 kind 分流', async () 
   try {
     writeStore(ownStorePath(dir, 'character'), SAMPLE.filter(item => item.kind === 'character'))
     writeStore(ownStorePath(dir, 'artist'), SAMPLE.filter(item => item.kind === 'artist'))
+    // 封锁 general / copyright 的回退：不写这两个文件的话，storePath 会回退到随包
+    // 20 MB 数据，测试就不再是隔离环境了（查角色会串出随包的 cosplay 变体）。
+    writeStore(ownStorePath(dir, 'general'), [])
+    writeStore(ownStorePath(dir, 'copyright'), [])
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
 
     const byChinese = await tool.execute({ query: '博丽灵梦' })
@@ -195,7 +199,9 @@ test('查询工具：缓存失效后能读到新数据', async () => {
     const after = await tool.execute({ query: '甘雨' })
     assert.equal(after.ok, true)
     assert.equal(after.source, 'local', '写完并失效缓存后应当读本地')
-    assert.deepEqual(after.tags, ['ganyu_(genshin_impact)'])
+    // 只断言 top-1：接上四类之后，general / copyright 里的 `ganyu_*` 变体也会进来（合法结果）。
+    // 这条用例测的是"缓存失效后能读到新数据"，不是结果条数。
+    assert.equal(after.tags[0], 'ganyu_(genshin_impact)', `精确命中要排第一，实际 ${JSON.stringify(after.tags)}`)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -207,6 +213,10 @@ test('查询结果只有 tag，不带冗余字段', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'danbooru-shape-'))
   try {
     writeStore(ownStorePath(dir, 'artist'), [record('dairi', 'artist', 18859, [])])
+    // 封锁 general / copyright 的回退：不写这两个文件的话，storePath 会回退到随包
+    // 20 MB 数据，测试就不再是隔离环境了（查角色会串出随包的 cosplay 变体）。
+    writeStore(ownStorePath(dir, 'general'), [])
+    writeStore(ownStorePath(dir, 'copyright'), [])
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
     const out = await tool.execute({ query: 'dairi' })
     assert.deepEqual(Object.keys(out).sort(), ['ok', 'source', 'tags'])
@@ -577,6 +587,10 @@ test('跨 kind 时档位不丢：tag 名精确压过另一类的别名精确', a
   try {
     writeStore(ownStorePath(dir, 'character'), [record('princess_aeolian', 'character', 999999, ['wlop'])])
     writeStore(ownStorePath(dir, 'artist'), [record('wlop', 'artist', 398, [])])
+    // 封锁 general / copyright 的回退：不写这两个文件的话，storePath 会回退到随包
+    // 20 MB 数据，测试就不再是隔离环境了（查角色会串出随包的 cosplay 变体）。
+    writeStore(ownStorePath(dir, 'general'), [])
+    writeStore(ownStorePath(dir, 'copyright'), [])
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
     const out = await tool.execute({ query: 'wlop' })
     assert.equal(out.tags[0], 'wlop', `tag 名命中必须压过跨类的别名命中，实际：${JSON.stringify(out.tags)}`)
@@ -610,7 +624,9 @@ test('包内自带数据能被正常查询（葱娘 / 米山舞）', async () =>
   try {
     const tool = danbooruLookupTool({ dataDir: dir, cache: createTagCache(dir) })
     const c = await tool.execute({ query: '葱娘' })
-    assert.deepEqual(c.tags, ['hatsune_miku'], `葱娘应当命中初音，实际：${JSON.stringify(c.tags ?? c.error)}`)
+    // 只断言 top-1：接上四类后随包 general 里的 `hatsune_miku_(cosplay)` 等变体也会命中，
+    // 它们按档位排在 exact 之后 —— 这正是"档位优先于热度"该有的表现。
+    assert.equal(c.tags[0], 'hatsune_miku', `葱娘应当命中初音，实际：${JSON.stringify(c.tags ?? c.error)}`)
     assert.equal(c.source, 'local', '不该走网络')
 
     const artist = await tool.execute({ query: '米山舞', kind: 'artist' })

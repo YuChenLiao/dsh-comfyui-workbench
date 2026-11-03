@@ -164,6 +164,14 @@ export {
   writeStore,
   DEFAULT_SYNC,
   DANBOORU_COMPONENT,
+  importUpstream,
+  KIND_OF_CATEGORY,
+  parseCsvLine,
+  rowToRecord,
+  TAG_KINDS,
+  UPSTREAM_BASE,
+  UPSTREAM_FILES,
 } from './components/tool-danbooru/index.js'
+export type { TagKind, UpstreamResult, UpstreamRow } from './components/tool-danbooru/index.js'
 export { registerTools, TOOL_GROUPS } from './components/tool-generate/index.js'
 export { acquire, release, componentStateOf, mergedRoutes } from './runtime.js'

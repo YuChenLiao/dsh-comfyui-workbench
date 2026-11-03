@@ -19,7 +19,7 @@
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/config`、服务托管接口 |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
-| `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师标签库（含中文名）。不碰 ComfyUI 运行时，可单独关 |
+| `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
 | `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务 |
 
 关掉某一条只影响它自己：例如关掉 `gallery`，资产库路由随之 404，工作流管理与工具照常（两个例外：批量导出工作流 ZIP 要读图与 sidecar，依赖相册；关掉 `core` 等于关掉整个插件——HTTP API 与浏览器端都会消失）。
@@ -77,7 +77,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |
 | `comfyui_runs` | 查任务状态：正在跑（`state: running`）、排队中（带 `queuePosition`）、最近完成或失败的。进度只落记录、**不进对话**，所以不打断当前回合。`progress` 字段只在开启 `progressStream` 时出现，而且**只对面板 `/run`、`/rerun` 提交的运行有**（工具提交的没有）——缺这个字段不代表异常；开启后百分比按采样节点重置，会回跳 |
 | `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数，或不同工作流各跑一次）。逐条报结果，**一条失败不影响其它条**；默认全部异步 |
-| `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查角色与画师，**只返回 tag**。写提示词前用它对齐名字，能少跑偏 |
+| `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查**角色、画师、作品、通用**四类标签（`kind` 可限定），**只返回 tag**。写提示词前用它对齐名字，能少跑偏。查「长发」→`long_hair`、「东方Project」→`touhou` |
 | `danbooru_lookup_batch` | 一次查多个名字（上限 50），**只查本地不联网** —— 缺哪个再用单条 `danbooru_lookup` 补（那个会自动走在线） |
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
 
@@ -99,14 +99,28 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 **本地没数据也能查**：库为空或没命中时会自动走 Danbooru 在线接口（`source` 变成 `online`）。中文/日文名走 `search[other_names_match]`（这是 Danbooru 唯一能按别名反查的字段），纯英文名走 `search[name_matches]` 模糊匹配 tag。所以没同步过也能立刻用，只是慢一点、且每次查询都打网络。
 
-**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。实测覆盖：角色 **35384 条**、画师 **24881 条**；上游 CSV 里 99.7% / 95.8% 有中文名或别名，随包这份去掉共用别名（CP 名等）后是 **98.7% / 94.9%**。这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
+**首选数据源**是 [`danbooru-tags-data-zh`](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira）——**数据随插件内聚在 `data/danbooru/`**，装好即可用，不必先联网同步：社区维护的中文翻译库，收录 Danbooru 上图片数 > 50 的标签，含中文名、别名（社区昵称也有，比如初音的「葱娘」）和一句注释（注释只入库、不进查询结果 —— 模型只需要 tag）。
+
+**四类全导，合计 99372 条**：
+
+| 类别 | 条数 | 有中文/别名 | 文件 |
+|---|---|---|---|
+| 角色 character | 35384 | 98.7% | `characters.jsonl` |
+| 画师 artist | 24881 | 94.9% | `artists.jsonl` |
+| 作品 copyright | 8414 | 96.6% | `copyrights.jsonl` |
+| 通用 general | 30693 | 98.9% | `general.jsonl` |
+
+`general` 是动作、服装、外貌、构图这些非角色非画师的标签，`copyright` 是作品名（`touhou` → 东方Project）。四类一起建 2-gram 倒排索引：读取+解析 131ms、建索引 396ms、常驻约 **177 MB**、单次查询 **约 1ms**（线性扫描 57ms，快 54 倍）。
+
+这比自己抓 wiki 强得多 —— 那份方案对画师几乎拿不到中文名（Danbooru 的画师 wiki 不填 `other_names`），而且 400 条就要 100 秒。
 
 想把本地库更新到上游最新，下面几条按需选一条（命令要在 `package.json` 所在目录执行 —— 仓库根，或安装目录里的 `node_modules/dsh-comfyui-workbench/`）：
 
 ```sh
-npm run danbooru:zh                        # 拉上游最新数据到插件数据目录（约 5 秒，视网速；首次要下几 MB CSV，可能 10 秒上下），覆盖本地的旧副本
-npm run danbooru:zh -- --kind character    # 只导入角色
-npm run danbooru:zh -- --dry               # 只看会导入多少条
+npm run danbooru:zh                        # 四类全导，约 25 秒（首次下 9 MB CSV）
+npm run danbooru:zh -- --kind general      # 只导某一类（character / artist / copyright / general）
+npm run danbooru:zh -- --kind character --kind artist   # 可以给多次
+npm run danbooru:zh -- --dry               # 走完整下载与解析，但写到 .dry-run 子目录，不动正式库
 ```
 
 注意它写的是**插件数据目录**（`~/.dsh-comfyui-workbench/danbooru/`），不会动仓库里的 `data/danbooru/` —— 后者是随包分发的快照。想把随包数据也更新，导入完再把它同步过去：

@@ -1,7 +1,7 @@
 import { fetchJson } from '../server/api.js'
-import { readStore, storePath } from '../server/store.js'
+import { readStore, storePath, TAG_KINDS } from '../server/store.js'
 import { TagIndex } from '../server/tag-index.js'
-import type { TagRecord } from '../server/store.js'
+import type { TagKind, TagRecord } from '../server/store.js'
 import type { MatchHow } from '../server/tag-index.js'
 import { asString } from '../../../shared/tools/types.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
@@ -14,31 +14,31 @@ export interface DanbooruDeps {
   logger?: LoggerLike | undefined
 }
 
-/** 带缓存地读两类标签库。 */
+/** 带缓存地读四类标签库（角色 / 画师 / 作品 / 通用）。 */
 export interface TagCache {
   /** 原始记录（诊断与测试用）。 */
-  read: (kind: 'character' | 'artist') => TagRecord[]
+  read: (kind: TagKind) => TagRecord[]
   /**
    * 带索引的搜索。
    *
    * 建索引一次约 87 ms，之后每次查询 0.1 ms 级 —— 比每次全扫 19 ms，
    * 多查几次就回本。索引按 kind 各自缓存，invalidate 时一并丢弃。
    */
-  search: (kind: 'character' | 'artist', query: string, limit?: number) => Array<{ record: TagRecord; how: MatchHow }>
-  invalidate: (kind?: 'character' | 'artist') => void
+  search: (kind: TagKind, query: string, limit?: number) => Array<{ record: TagRecord; how: MatchHow }>
+  invalidate: (kind?: TagKind) => void
 }
 
 /**
  * 建一个简单的内存缓存。
  *
- * 两份 JSONL 加起来几 MB，查询是纯字符串匹配 —— 每轮工具调用都重读磁盘没必要，
+ * 四类 JSONL 加起来约 20 MB，查询是纯字符串匹配 —— 每轮工具调用都重读磁盘没必要，
  * 但同步完必须失效，所以留一个 invalidate。
  *
  * @param dataDir - 插件数据目录。
  */
 export function createTagCache(dataDir: string): TagCache {
   const cache = new Map<string, { records: TagRecord[]; index: TagIndex<TagRecord> }>()
-  const load = (kind: 'character' | 'artist'): { records: TagRecord[]; index: TagIndex<TagRecord> } => {
+  const load = (kind: TagKind): { records: TagRecord[]; index: TagIndex<TagRecord> } => {
     const hit = cache.get(kind)
     if (hit !== undefined) return hit
     const records = readStore(storePath(dataDir, kind))
@@ -57,7 +57,7 @@ export function createTagCache(dataDir: string): TagCache {
 }
 
 const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/
-const CATEGORY = { character: 4, artist: 1 } as const
+const CATEGORY = { character: 4, artist: 1, copyright: 3, general: 0 } as const
 
 interface RawTag { name?: unknown; post_count?: unknown; category?: unknown }
 
@@ -72,12 +72,12 @@ interface RawTag { name?: unknown; post_count?: unknown; category?: unknown }
  *
  * @param query - 用户给的名字。
  * @param limit - 最多几条。
- * @param kind - 限定角色或画师；不传则两类都试。
+ * @param kind - 限定某一类；不传则四类都试。
  */
 export async function searchOnline(
   query: string,
   limit: number,
-  kind?: 'character' | 'artist',
+  kind?: TagKind,
 ): Promise<string[]> {
   return (await searchOnlineDetailed(query, limit, kind)).tags
 }
@@ -94,16 +94,16 @@ export interface OnlineResult {
  *
  * @param query - 用户给的名字。
  * @param limit - 最多几条。
- * @param kind - 限定角色或画师。
+ * @param kind - 限定某一类。
  */
 export async function searchOnlineDetailed(
   query: string,
   limit: number,
-  kind?: 'character' | 'artist',
+  kind?: TagKind,
 ): Promise<OnlineResult> {
   const trimmed = query.trim()
   if (trimmed === '') return { tags: [], throttled: false }
-  const kinds: Array<'character' | 'artist'> = kind === undefined ? ['character', 'artist'] : [kind]
+  const kinds: readonly TagKind[] = kind === undefined ? TAG_KINDS : [kind]
   const out: string[] = []
   const seen = new Set<string>()
   const push = (name: unknown): void => {
@@ -196,8 +196,8 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
         },
         kind: {
           type: 'string',
-          enum: ['character', 'artist', 'all'],
-          description: '查角色还是画师，默认 all。',
+          enum: ['character', 'artist', 'copyright', 'general', 'all'],
+          description: '限定类别：角色 / 画师 / 作品 / 通用（动作、服装、外貌等）。默认 all 查全部四类。',
         },
         limit: { type: 'integer', description: '最多返回几个 tag，默认 5，上限 20。' },
       },
@@ -214,7 +214,7 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
       const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 20)
       if (query === '') return { ok: false, error: 'query 不能为空' }
 
-      const kinds: Array<'character' | 'artist'> = kindArg === 'character' ? ['character'] : kindArg === 'artist' ? ['artist'] : ['character', 'artist']
+      const kinds: readonly TagKind[] = TAG_KINDS.includes(kindArg as TagKind) ? [kindArg as TagKind] : TAG_KINDS
       const rank = { tag: 0, exact: 1, prefix: 2, contains: 3 } as Record<string, number>
       // 收集时带上档位：跨 kind 要统一排序，只留 tag 名会把档位信息丢掉 ——
       // 查 `wlop` 时角色库里某个"别名含 wlop"的会压过画师库里 tag 名就叫 wlop 的那个。
@@ -236,7 +236,7 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
       let throttled = false
       if (found.length === 0) {
         source = 'online'
-        const only = kindArg === 'character' ? 'character' : kindArg === 'artist' ? 'artist' : undefined
+        const only = TAG_KINDS.includes(kindArg as TagKind) ? (kindArg as TagKind) : undefined
         const online = await searchOnlineDetailed(query, limit, only)
         throttled = online.throttled
         found.push(...online.tags)
