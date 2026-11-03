@@ -13,6 +13,7 @@
  */
 import { WorkflowAdmin } from '../components/panel-workflow/client/WorkflowAdmin.js'
 import { TagsPanel } from '../components/panel-tags/client/TagsPanel.js'
+import { PromptRefs } from '../components/panel-tags/client/PromptRefs.js'
 import { TAGS_CSS } from '../components/panel-tags/client/styles.js'
 import { Card } from '../components/panel-gallery/client/Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from '../components/panel-gallery/client/Confirm.js'
@@ -154,6 +155,7 @@ export const __test = {
   Workbench,
   WorkflowAdmin,
   TagsPanel,
+  PromptRefs,
   TAGS_CSS,
   metaLine,
   planPage,

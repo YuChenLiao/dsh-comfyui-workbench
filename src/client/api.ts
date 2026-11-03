@@ -204,6 +204,88 @@ async function readSyncState(res: Response): Promise<TagSyncState> {
   }
 }
 
+/** 一条参考提示词。 */
+export interface PromptHit {
+  text: string
+  source: number
+}
+
+/** 提示词池的状态。 */
+export interface PromptPoolInfo {
+  size: number
+  builtAt: number
+}
+
+/** 取参考提示词：`mode=random` 走 HF 随机抽，`mode=search` 在本地池里过滤。 */
+export async function fetchPromptRefs(options: {
+  mode: 'random' | 'search'
+  query?: string
+  limit?: number
+}): Promise<{ items: PromptHit[]; pool: PromptPoolInfo }> {
+  const params = new URLSearchParams({ mode: options.mode })
+  if (options.query !== undefined && options.query !== '') params.set('q', options.query)
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const res = await fetch(`${API}/tags/prompts?${params.toString()}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; items?: unknown; pool?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取提示词失败：HTTP ${res.status}`)
+  }
+  const pool = bag.pool !== null && typeof bag.pool === 'object'
+    ? (bag.pool as { size?: unknown; builtAt?: unknown })
+    : {}
+  return {
+    items: Array.isArray(bag.items) ? (bag.items as PromptHit[]) : [],
+    pool: {
+      size: typeof pool.size === 'number' ? pool.size : 0,
+      builtAt: typeof pool.builtAt === 'number' ? pool.builtAt : 0,
+    },
+  }
+}
+
+/** 「建提示词池」任务的状态。 */
+export interface PoolSyncState {
+  state: 'idle' | 'running' | 'done' | 'failed'
+  stage: string
+  message: string
+  size: number
+  target: number
+  lastSuccessAt: number
+}
+
+/** 开始建池。 */
+export async function startPoolSync(): Promise<PoolSyncState> {
+  const res = await fetch(`${API}/tags/prompts/sync`, { method: 'POST' })
+  const data: unknown = await res.json().catch(() => null)
+  return readPoolState(res, data)
+}
+
+/** 查建池进度。 */
+export async function fetchPoolSync(): Promise<PoolSyncState> {
+  const res = await fetch(`${API}/tags/prompts/sync`)
+  const data: unknown = await res.json().catch(() => null)
+  return readPoolState(res, data)
+}
+
+function readPoolState(res: Response, data: unknown): PoolSyncState {
+  const bag = data !== null && typeof data === 'object'
+    ? (data as Partial<PoolSyncState> & { ok?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `建池失败：HTTP ${res.status}`)
+  }
+  return {
+    state: (bag.state ?? 'idle') as PoolSyncState['state'],
+    stage: typeof bag.stage === 'string' ? bag.stage : '',
+    message: typeof bag.message === 'string' ? bag.message : '',
+    size: typeof bag.size === 'number' ? bag.size : 0,
+    target: typeof bag.target === 'number' ? bag.target : 0,
+    lastSuccessAt: typeof bag.lastSuccessAt === 'number' ? bag.lastSuccessAt : 0,
+  }
+}
+
 /**
  * 同名工作流已存在，需要显式确认覆盖。
  *

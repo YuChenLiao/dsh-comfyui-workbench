@@ -27,6 +27,15 @@ export const TAGS_CSS = `
 .ctg-sync:disabled{opacity:.6;cursor:default}
 .ctg-syncbar{font-size:.8em;color:var(--w-muted);border-left:2px solid var(--w-accent);padding-left:8px}
 .ctg-syncbar.bad{color:var(--w-danger);border-left-color:var(--w-danger)}
+.ctg-seg{display:inline-flex;border:1px solid var(--w-line);border-radius:99px;overflow:hidden}
+.ctg-seg-item{border:0;background:var(--w-surface);color:var(--w-text);font-size:.8em;padding:5px 14px;cursor:pointer}
+.ctg-seg-item.on{background:var(--w-accent);color:var(--w-bg)}
+.ctg-refs{display:flex;flex-direction:column;gap:10px;min-height:0}
+.ctg-refs-bar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ctg-refs-pool{display:flex;align-items:center;gap:10px;font-size:.8em;color:var(--w-muted)}
+.ctg-ref{display:flex;flex-direction:column;gap:6px;border:1px solid var(--w-line);border-radius:10px;background:var(--w-surface);padding:9px 11px}
+.ctg-ref-text{margin:0;font-size:.86em;line-height:1.55;word-break:break-word}
+.ctg-ref-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:.76em;color:var(--w-muted)}
 .ctg-list{display:flex;flex-direction:column;gap:6px;min-height:0}
 .ctg-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;border:1px solid var(--w-line);border-radius:10px;background:var(--w-surface);padding:7px 10px}
 .ctg-row-main{display:flex;align-items:baseline;gap:8px;min-width:0}

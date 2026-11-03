@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchTags, fetchTagStats, fetchTagSync, startTagSync } from '../../../client/api.js'
 import type { TagHit, TagStats, TagSyncState } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
+import { PromptRefs } from './PromptRefs.js'
 
 /** 一页多少条。 */
 const PAGE = 50
@@ -44,6 +45,8 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
   const [notice, setNotice] = useState('')
   /** 「更新标签」的后台任务状态（`null` 表示还没问过）。 */
   const [sync, setSync] = useState<TagSyncState | null>(null)
+  /** 子页签：标签 / 参考。 */
+  const [view, setView] = useState<'tags' | 'refs'>('tags')
   /** 已加载多少条（用作下一页的 offset）。 */
   const [loaded, setLoaded] = useState(PAGE)
   /** 防抖与竞态：只认最后一次请求的结果。 */
@@ -174,12 +177,34 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
         <div>
           <div className="ctg-title">{t('tagsTitle')}</div>
           <div className="ctg-sub">
-            {stats === null
-              ? t('tagsLoading')
-              : t('tagsSub').replace('{total}', String(stats.total)).replace('{shown}', String(total))}
+            {view === 'refs'
+              ? t('refsSub')
+              : stats === null
+                ? t('tagsLoading')
+                : t('tagsSub').replace('{total}', String(stats.total)).replace('{shown}', String(total))}
           </div>
         </div>
         <div className="ctg-head-actions">
+          <div className="ctg-seg" role="tablist" aria-label={t('tagsTitle')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === 'tags'}
+              className={`ctg-seg-item${view === 'tags' ? ' on' : ''}`}
+              onClick={() => setView('tags')}
+            >
+              {t('refsTabTags')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === 'refs'}
+              className={`ctg-seg-item${view === 'refs' ? ' on' : ''}`}
+              onClick={() => setView('refs')}
+            >
+              {t('refsTabRefs')}
+            </button>
+          </div>
           <button
             type="button"
             className="ctg-sync"
@@ -191,6 +216,9 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
           </button>
         </div>
       </header>
+
+      {view === 'refs' ? <PromptRefs t={t} visible={visible} /> : null}
+      {view === 'refs' ? null : <>
 
       {sync !== null && sync.state !== 'idle' ? (
         <div className={`ctg-syncbar${sync.state === 'failed' ? ' bad' : ''}`}>
@@ -277,6 +305,7 @@ export function TagsPanel({ t, visible }: TagsPanelProps): React.ReactElement {
           {t('tagsMore').replace('{left}', String(total - items.length))}
         </button>
       ) : null}
+      </>}
     </div>
   )
 }

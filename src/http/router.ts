@@ -62,17 +62,18 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       }
 
       // 同一路径有不同方法语义的，由组件自己判断（通用方法校验不管它）：
-      // /workflows —— GET 列表 / POST 批量导出
-      // /terminal  —— GET 拉增量 / POST 清屏或启动
-      // /config    —— GET 读配置 / POST 切面板开关（progressStream 等）
-      // /tags/sync —— POST 开始更新 / GET 轮进度（两条都要放行）
+      // /workflows     —— GET 列表 / POST 批量导出
+      // /terminal      —— GET 拉增量 / POST 清屏或启动
+      // /config        —— GET 读配置 / POST 切面板开关（progressStream 等）
+      // /tags/…        —— 面板的写操作（/tags/sync 更新数据、/tags/prompts/sync 建池）
+      //                   用**前缀**判断而不是逐条列举：子路径以后还会加，列举就会漏，
+      //                   而漏的后果是"单测全绿、真机 405"。
       // 注意不能把这类路径塞进 WRITABLE：那个集合的语义是"整条路径只接受 POST/DELETE"，
       // 塞进去会把 GET 也一起拦成 405（终端面板因此整整瞎掉一轮）。
-      // 这个坑踩过四次了 —— 而且前三次的测试都是直接调组件 handler，绕过了这一层，
-      // 于是"单测全绿、真机 405"。新加这类路径请顺手在 tests/api.test.mjs 里补一条
-      // 走真实 boot() 的用例。
+      // 这个坑踩过四次了 —— 前三次的测试都是直接调组件 handler，绕过了这一层。
+      // 新加这类路径请顺手在 tests/api.test.mjs 里补一条走真实 boot() 的用例。
       const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/')
-        || sub === '/terminal' || sub === '/config' || sub === '/tags/sync'
+        || sub === '/terminal' || sub === '/config' || sub.startsWith('/tags/')
       const writable = WRITABLE.has(sub)
       const methodOk = POST_ONLY.has(sub)
         ? req.method === 'POST'

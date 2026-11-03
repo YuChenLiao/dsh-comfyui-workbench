@@ -197,3 +197,39 @@ test('数据文件变了会自动重建索引（面板常驻，不能等重启�
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('GET /tags/prompts?mode=search：本地池没建时返回空列表 + pool 信息，不联网', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-refs-'))
+  try {
+    const routes = createTagsRoutes(createTagsIndex(dir), undefined, undefined, dir)
+    const empty = await call(routes, '/tags/prompts', '/tags/prompts?mode=search&q=cyberpunk&limit=5')
+    assert.equal(empty.status, 200, JSON.stringify(empty.body))
+    assert.deepEqual(empty.body.items, [], '没建池就该是空的')
+    assert.equal(empty.body.pool.size, 0)
+    assert.equal(empty.body.mode, 'search')
+
+    // 写一份池子进去，再搜就能命中（全程不联网）
+    fs.mkdirSync(path.join(dir, 'prompts'), { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'prompts', 'stable-diffusion-prompts-2.47M.jsonl'),
+      `${JSON.stringify({ text: 'cyberpunk city at night, neon', source: 42 })}\n`,
+    )
+    const hit = await call(routes, '/tags/prompts', '/tags/prompts?mode=search&q=cyberpunk&limit=5')
+    assert.equal(hit.body.items.length, 1, JSON.stringify(hit.body))
+    assert.equal(hit.body.items[0].source, 42)
+    assert.equal(hit.body.pool.size, 1)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('GET /tags/prompts 只接受 GET（建池走 POST /tags/prompts/sync）', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwf-refs-m-'))
+  try {
+    const routes = createTagsRoutes(createTagsIndex(dir), undefined, undefined, dir)
+    const res = await call(routes, '/tags/prompts', '/tags/prompts', 'POST')
+    assert.equal(res.status, 405)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
