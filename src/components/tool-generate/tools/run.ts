@@ -337,7 +337,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
               promptId: submitted.promptId,
               message: `提交成功，但查询状态时出错（${code}）：${error instanceof Error ? error.message : String(error)}`,
               hint: '任务可能还在 ComfyUI 那边跑。稍后用 comfyui_run 传这个 promptId 续查。',
-              notes: preNotes,
+              notes: [...preNotes, ...submitted.notes],
             }
           }
           throw error
@@ -359,7 +359,12 @@ export function runTool(deps: ToolDeps): ToolSpec {
           })
           // pending 分支走 formatOutcome，它不认识 preNotes —— 在这里补上，
           // 否则 wait 超时时"已应用覆盖"这句会消失（异步与完成分支都有）。
-          return { ...formatOutcome(outcome, deps), ...(preNotes.length > 0 ? { notes: preNotes } : {}) }
+          // `submitted.notes` 里有 200 响应带出的 node_errors 警告：而"参数被判非法
+          // → 那条链不产出"的典型后果正是等到超时，这句最该在这里出现。
+          return {
+            ...formatOutcome(outcome, deps),
+            ...((preNotes.length + submitted.notes.length) > 0 ? { notes: [...preNotes, ...submitted.notes] } : {}),
+          }
         }
 
         // 登记索引：索引是派生（真源是 sidecar），登记失败不该让本次运行算失败。
@@ -400,7 +405,9 @@ export function runTool(deps: ToolDeps): ToolSpec {
           })),
         })
 
-        const notes = [...preNotes, ...outcome.notes]
+        // `outcome.notes` 是产物收集阶段的备注；提交时那条 `node_errors` 警告在
+        // `submitted.notes` 里 —— 不合并就会在**最主路径**（wait 同步出图）上丢掉。
+        const notes = [...preNotes, ...submitted.notes, ...outcome.notes]
 
 
         return {

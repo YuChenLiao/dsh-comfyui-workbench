@@ -53,6 +53,13 @@ export interface PendingRun {
   promptId: string
   waitedMs: number
   hint: string
+  /**
+   * 提交阶段就已经知道的备注（含 200 响应里 `node_errors` 翻出来的警告）。
+   *
+   * "参数被判非法 → 那条链不产出"的典型后果就是一直等到超时，所以 pending
+   * 出口也必须带上它，否则最需要这句话的时刻恰好没有。
+   */
+  notes?: string[]
 }
 
 /** 运行参数。 */
@@ -316,7 +323,11 @@ export async function submitWorkflow(
     }
   }
 
-  const promptId = await client.queuePrompt(applied.workflow)
+  const submitted = await client.queuePrompt(applied.workflow)
+  const promptId = submitted.promptId
+  // 200 响应里可能带 node_errors：提交被接受、但某些输出链不会产出文件。
+  // 当场说出来，别让用户等十几秒从「没有产物」倒推。
+  notes.push(...submitted.warnings)
   options.onStage?.('queued')
 
   rememberRun(promptId, {
@@ -604,7 +615,12 @@ export async function runWorkflow(options: RunOptions): Promise<RunOutcome | Pen
     },
     ...(options.onStage === undefined ? {} : { onStage: (stage) => options.onStage?.(stage) }),
   })
-  return 'pending' in outcome ? outcome : { ...outcome, notes: [...submitted.notes, ...outcome.notes] }
+  // pending 出口也要带上提交阶段的备注 —— 上一行 `'pending' in outcome` 直接返回的话，
+  // 200 响应里的 `node_errors` 警告就丢了，而那正是"等超时"最需要它的时候。
+  if ('pending' in outcome) {
+    return submitted.notes.length === 0 ? outcome : { ...outcome, notes: submitted.notes }
+  }
+  return { ...outcome, notes: [...submitted.notes, ...outcome.notes] }
 }
 
 /** 续查一次运行：完成就取产物，没完成返回 pending。 */

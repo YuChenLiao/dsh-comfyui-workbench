@@ -38,7 +38,7 @@ function makeDeps(options = {}) {
       },
       async queuePrompt() {
         if (options.rejectSubmit === true) throw new Error('ComfyUI 拒收')
-        return 'pid-1'
+        return { promptId: 'pid-1', warnings: [] }
       },
       async history() {
         return options.neverDone === true ? undefined : {}

@@ -107,7 +107,7 @@ test('端到端：comfyui_run 的覆盖真的到达提交的工作流（单次�
       },
       async queuePrompt(workflow) {
         captured = workflow
-        return 'pid-1'
+        return { promptId: 'pid-1', warnings: [] }
       },
       async history() { return {} },
       async view() { return Buffer.alloc(0) },

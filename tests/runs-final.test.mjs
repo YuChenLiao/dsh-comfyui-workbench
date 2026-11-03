@@ -38,7 +38,7 @@ function makeDeps(options = {}) {
         for (const node of Object.values(WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { return 'pid-1' },
+      async queuePrompt() { return { promptId: 'pid-1', warnings: [] } },
       async queue() { return { running: ['pid-1'], pending: [] } },
       async history() {
         if (options.neverDone === true) return undefined

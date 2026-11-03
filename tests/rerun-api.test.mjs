@@ -84,7 +84,7 @@ function makeEnv(wf, sidecar) {
         for (const node of Object.values(wf)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { return 'pid-rr' },
+      async queuePrompt() { return { promptId: 'pid-rr', warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history() { return { status: { status_str: 'success', completed: true }, outputs: {} } },
       async view() { return PNG },

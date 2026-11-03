@@ -40,7 +40,7 @@ function makeDeps(options = {}) {
         for (const node of Object.values(WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { submitted += 1; return `pid-${process.pid}-${submitted}` },
+      async queuePrompt() { submitted += 1; return { promptId: `pid-${process.pid}-${submitted}`, warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history() {
         historyCalls += 1

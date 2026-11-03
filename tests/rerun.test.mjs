@@ -46,7 +46,7 @@ function makeDeps(options = {}) {
       async queuePrompt(workflow) {
         submitted += 1
         captured.push(workflow)
-        return `pid-${submitted}`
+        return { promptId: `pid-${submitted}`, warnings: [] }
       },
       async queue() { return { running: [], pending: [] } },
       async history() { return options.neverDone === true ? undefined : {} },
@@ -321,7 +321,7 @@ test('seed 槽位叫 noise_seed 的工作流也能跑（不能硬编码 seed）'
       async queuePrompt(workflow) {
         submitted += 1
         captured.push(workflow)
-        return `pid-ns-${submitted}`
+        return { promptId: `pid-ns-${submitted}`, warnings: [] }
       },
       async queue() { return { running: [], pending: [] } },
       async history() { return {} },
@@ -376,7 +376,7 @@ test('显式给 seed 时也写到正确的槽位上（noise_seed）', async () =
         for (const node of Object.values(NS_WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt(workflow) { submitted += 1; captured.push(workflow); return `pid-x-${submitted}` },
+      async queuePrompt(workflow) { submitted += 1; captured.push(workflow); return { promptId: `pid-x-${submitted}`, warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history() { return {} },
       async view() { return Buffer.alloc(0) },
@@ -484,7 +484,7 @@ test('没有 seed 槽位的工作流：不注入 seed，且在返回里说明被
         for (const node of Object.values(NS)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt(workflow) { submitted += 1; captured.push(workflow); return `pid-n-${submitted}` },
+      async queuePrompt(workflow) { submitted += 1; captured.push(workflow); return { promptId: `pid-n-${submitted}`, warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history() { return {} },
       async view() { return Buffer.alloc(0) },
@@ -536,7 +536,7 @@ test('count>1 时第 2 条提交失败，不能把第 1 条记成 failed（作�
       error.code = 'queue_full'
       throw error
     }
-    return 'pid-1'
+    return { promptId: 'pid-1', warnings: [] }
   }
   const tool = rerunTool(deps)
   const result = await tool.execute({ from: sidecar, count: 2 })
@@ -560,7 +560,7 @@ test('count>1 时第 1 条成功、第 2 条执行失败：各自记各自的状
   let submitted = 0
   deps.client.queuePrompt = async () => {
     submitted += 1
-    return `pid-${submitted}`
+    return { promptId: `pid-${submitted}`, warnings: [] }
   }
   // 第 1 条成功、第 2 条执行报错
   deps.client.history = async (promptId) => {

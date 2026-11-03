@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 
 import type { ApiWorkflow } from '../workflow/types.js'
-import { authFailed, comfyUnreachable, RunError, submitRejected } from './errors.js'
+import { authFailed, comfyUnreachable, describeNodeErrors, RunError, submitRejected } from './errors.js'
 import type { FileRef, HistoryEntry, ObjectInfo } from './types.js'
 
 /** 客户端配置。 */
@@ -167,8 +167,15 @@ export class ComfyClient {
     }
   }
 
-  /** 提交一份工作流，返回 prompt_id。 */
-  async queuePrompt(workflow: ApiWorkflow): Promise<string> {
+  /**
+   * 提交一份工作流，返回 prompt_id 与**提交时就能看到的警告**。
+   *
+   * `POST /prompt` 的 **200** 响应里可能带 `node_errors`：ComfyUI 接受了这次提交
+   * （有 `prompt_id`、会执行），但某些输出链的参数被判非法，那部分不会产出文件。
+   * 早期版本把整个 `node_errors` 扔了，于是只能等十几秒后从"没有产物"倒推原因 ——
+   * 现在当场就能说出「节点 6 的 sampler_name 不在候选里」。
+   */
+  async queuePrompt(workflow: ApiWorkflow): Promise<{ promptId: string; warnings: string[] }> {
     const res = await this.request('/prompt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -188,11 +195,15 @@ export class ComfyClient {
       throw new RunError('submit_rejected', `提交失败：HTTP ${res.status}`, '检查 ComfyUI 日志里的拒绝原因。')
     }
     const parsed: unknown = await res.json()
-    const promptId = parsed !== null && typeof parsed === 'object' ? (parsed as { prompt_id?: unknown }).prompt_id : undefined
+    const bag = parsed !== null && typeof parsed === 'object'
+      ? (parsed as { prompt_id?: unknown; node_errors?: unknown })
+      : {}
+    const promptId = bag.prompt_id
     if (typeof promptId !== 'string' || promptId === '') {
       throw new RunError('submit_rejected', 'ComfyUI 没有返回 prompt_id。', '确认 ComfyUI 版本支持 POST /prompt。')
     }
-    return promptId
+    const warnings = describeNodeErrors(bag.node_errors)
+    return { promptId, warnings }
   }
 
   /** 查一次 history：没完成时返回 undefined。 */

@@ -50,7 +50,7 @@ function fakeClient(options = {}) {
         throw new Error('模拟提交失败')
       }
       // 真实 ComfyClient.queuePrompt 返回字符串，不是 {prompt_id}
-      return `pid-${submitted}`
+      return { promptId: `pid-${submitted}`, warnings: [] }
     },
     async history() {
       historyCalls += 1

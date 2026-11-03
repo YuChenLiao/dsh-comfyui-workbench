@@ -10,6 +10,16 @@
 
   `sanitizeId` 顺带修了一处：截断从 UTF-16 码元改按**码位**，否则名字里带星平面字符时可能切出孤代理，那个 id 回前端再 `encodeURIComponent` 会抛 `URIError`。
 
+### 功能优化
+
+- **200 响应里的 `node_errors` 不再被丢掉**：`POST /prompt` 有两条拒绝路径 —— 400（整份提交被拒，早就转成 `submitRejected`）和 **200 + `node_errors`**（提交被接受、会执行，但某些输出链的参数非法，那条链不产出文件）。后者以前被整份扔了，只能等十几秒后从「没有产物」倒推原因。
+
+  现在 `queuePrompt` 返回 `{ promptId, warnings }`，`warnings` 里直接写清「节点 6（KSampler，参数 sampler_name）：Value not in list，收到 euler_ancestral_x。这条输出链不会产出文件。」，并进到 `notes` 里回给调用方。这是 0.5.0 那个 `no_output` 文案缺陷留下的尾巴 —— 当时只能事后猜原因，现在提交当场就能说。
+
+  几条细节：多条警告会加一行「提交已被接受，其余输出链照常执行」的汇总头并**截断到 3 条**（10 个非法节点会拼成近千字单行，把产物路径淹掉）；`received_value` 不论类型都要说出来（`true`、`[3,1]`、`null`、空字符串以前会被静默丢掉）；**pending 出口也带 warnings** —— 「参数被判非法 → 那条链不产出」的典型后果就是等到超时，那是最需要这句话的时刻。
+
+  `ComfyClient.queuePrompt` 的返回形状从 `string` 变成 `{ promptId, warnings }`，是破坏性变更。
+
 ### 功能扩充
 
 - **通用标签有了语义分类**：Danbooru 的 tag 分组（`tag_groups` 是一篇 wiki，不是 API）抓下来——**91 个组、15064 个 tag、其中 1478 个跨组**——再归并成八个大类：动作 / 服装 / 外貌 / 构图 / 物件 / 主题 / 性相关 / 其它。`danbooru_lookup` 新增 `category` 参数，可以「只在服装里找 skirt」这种筛法。

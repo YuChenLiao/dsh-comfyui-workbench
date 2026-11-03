@@ -176,7 +176,7 @@ test('端到端：提交后注册表从 queued 走到 done，且产物登记进�
         for (const node of Object.values(WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { return 'p1' },
+      async queuePrompt() { return { promptId: 'p1', warnings: [] } },
       async queue() { return { running: ['p1'], pending: [] } },
       async history() {
         histCalls += 1

@@ -39,7 +39,7 @@ function makeDeps(options = {}) {
       },
       async queuePrompt(workflow) {
         captured = workflow
-        return 'pid-1'
+        return { promptId: 'pid-1', warnings: [] }
       },
       async history() {
         // 让 wait 路径永远等不到完成，走到 pending

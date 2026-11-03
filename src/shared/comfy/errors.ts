@@ -108,6 +108,76 @@ export function submitRejected(body: unknown): RunError {
   )
 }
 
+/** 警告最多列几条（其余合并成一句，避免把 notes 淹掉）。 */
+const MAX_WARNINGS = 3
+
+/** 把收到的值渲染成短文本：任何类型都要能说，不能静默吞。 */
+function renderReceived(value: unknown): string {
+  if (value === undefined) return ''
+  if (value === null) return '，收到 null'
+  if (typeof value === 'string') return value === '' ? '，收到空字符串' : `，收到 ${value.length > 80 ? `${value.slice(0, 80)}…` : value}`
+  if (typeof value === 'number' || typeof value === 'boolean') return `，收到 ${String(value)}`
+  // 数组 / 对象：`received_value: [3,1]` 这类（`return_type_mismatch`）以前被整份丢掉
+  try {
+    const text = JSON.stringify(value)
+    return `，收到 ${text.length > 80 ? `${text.slice(0, 80)}…` : text}`
+  } catch {
+    return '，收到一个无法序列化的值'
+  }
+}
+
+/**
+ * 把**被接受但部分输出链非法**的 `node_errors` 翻成给人看的警告。
+ *
+ * 来源是 `POST /prompt` 的 **200** 响应：ComfyUI 给了 `prompt_id`（会执行），
+ * 但有些输出链的参数被判非法，那条链不会产出文件。这种"半成功"以前只能等
+ * 十几秒后从"没有产物"倒推，现在提交当场就能说清是哪个节点、哪个参数。
+ *
+ * 跟 400 那条路（{@link submitRejected}）的措辞要能对上：那边是"整份被拒"，
+ * 这边是"已进队、部分链不产出"，所以开头先点明这一点。
+ *
+ * @param nodeErrors - 200 响应里的 `node_errors`。
+ * @returns 警告；没有就是空数组。
+ */
+export function describeNodeErrors(nodeErrors: unknown): string[] {
+  if (nodeErrors === null || typeof nodeErrors !== 'object' || Array.isArray(nodeErrors)) return []
+  const details: string[] = []
+  for (const [nodeId, value] of Object.entries(nodeErrors as Record<string, unknown>)) {
+    const bag = value !== null && typeof value === 'object'
+      ? (value as { errors?: unknown; class_type?: unknown })
+      : {}
+    const errors = bag.errors
+    if (!Array.isArray(errors) || errors.length === 0) continue
+    const classType = typeof bag.class_type === 'string' ? bag.class_type : ''
+    for (const item of errors) {
+      const error = item !== null && typeof item === 'object'
+        ? (item as { message?: unknown; details?: unknown; extra_info?: unknown })
+        : {}
+      const message = typeof error.message === 'string' ? error.message : ''
+      const text = typeof error.details === 'string' ? error.details : ''
+      const extra = error.extra_info !== null && typeof error.extra_info === 'object'
+        ? (error.extra_info as { input_name?: unknown; received_value?: unknown; received_type?: unknown })
+        : {}
+      const input = typeof extra.input_name === 'string' ? `参数 ${extra.input_name}` : ''
+      const receivedType = typeof extra.received_type === 'string' ? `类型 ${extra.received_type}` : ''
+      const head = [classType, input, receivedType].filter(part => part !== '').join('，')
+      const body = [message, text].filter(part => part !== '').join('，')
+      details.push(
+        `节点 ${nodeId}${head === '' ? '' : `（${head}）`}：${body === '' ? '参数被判非法' : body}${renderReceived(extra.received_value)}。这条输出链不会产出文件。`,
+      )
+    }
+  }
+  if (details.length === 0) return []
+  if (details.length === 1) return details
+  const shown = details.slice(0, MAX_WARNINGS)
+  const rest = details.length - shown.length
+  return [
+    `提交已被接受，其余输出链照常执行；以下 ${details.length} 处参数被判非法：`,
+    ...shown,
+    ...(rest > 0 ? [`另有 ${rest} 条同类警告已省略。`] : []),
+  ]
+}
+
 /** 把 `node_errors` 压成一句话。 */
 function formatNodeErrors(nodeErrors: unknown): string {
   if (nodeErrors === null || typeof nodeErrors !== 'object') return ''

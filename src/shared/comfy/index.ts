@@ -6,6 +6,7 @@
  */
 export { ComfyClient } from './client.js'
 export type { ComfyClientOptions } from './client.js'
+export { describeNodeErrors } from './errors.js'
 export {
   asRunError,
   authFailed,

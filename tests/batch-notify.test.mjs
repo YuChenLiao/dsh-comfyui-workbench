@@ -39,7 +39,7 @@ function makeDeps(historyFor) {
         for (const node of Object.values(WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { submitted += 1; return `pid-${submitted}` },
+      async queuePrompt() { submitted += 1; return { promptId: `pid-${submitted}`, warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history(promptId) { return historyFor(promptId) },
       // 真 1×1 PNG：宽高能被 readPng 解出来，汇总里才有 WxH

@@ -38,7 +38,7 @@ function makeDeps(historyFor = () => ({ status: { status_str: 'success', complet
         for (const node of Object.values(WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { submitted += 1; return `pid-${submitted}` },
+      async queuePrompt() { submitted += 1; return { promptId: `pid-${submitted}`, warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history(promptId) { return historyFor(promptId) },
       async view() { return Buffer.from([0x89, 0x50, 0x4e, 0x47]) },

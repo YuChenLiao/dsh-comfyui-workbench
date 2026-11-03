@@ -128,6 +128,72 @@ test('正常链路：预检 → 提交 → 轮询 → 取图 → 落盘 + sideca
   }
 })
 
+test('200 响应带 node_errors 时，警告要进 notes（完成与 pending 两条出口都不能丢）', async () => {
+  const wf = workflow()
+  const slots = await slotsOf(wf)
+  const nodeErrors = {
+    3: {
+      class_type: 'KSampler',
+      errors: [{
+        message: 'Value not in list',
+        details: 'sampler_name: not in []',
+        extra_info: { input_name: 'sampler_name', received_value: 'euler_ancestral_x' },
+      }],
+    },
+  }
+
+  // 1) 完成路径：history 给出产物
+  const done = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    onPrompt: (_res, json) => json(200, { prompt_id: 'p1', node_errors: nodeErrors }),
+    onHistory: () => ({ status: { completed: true }, outputs: { 9: { images: [{ filename: 'out.png', subfolder: '', type: 'output' }] } } }),
+  })
+  try {
+    const outcome = await runWorkflow({
+      client: new ComfyClient({ baseUrl: done.baseUrl }),
+      workflow: wf,
+      slots,
+      vars: { prompt: 'a cat', seed: 1 },
+      outputDir: tmpOut(),
+      timeoutMs: 5_000,
+      pollIntervalMs: 10,
+      workflowId: 't',
+      workflowHash: 'h1',
+    })
+    assert.ok(!('pending' in outcome), '这条该跑完')
+    const joined = (outcome.notes ?? []).join(' | ')
+    assert.match(joined, /sampler_name/, `完成路径丢了警告：${joined}`)
+    assert.match(joined, /euler_ancestral_x/)
+  } finally {
+    await done.close()
+  }
+
+  // 2) pending 路径：history 永远不完成 —— "参数被判非法 → 不产出 → 等到超时"的典型场景
+  const stuck = await fakeComfy({
+    nodes: { KSampler: {}, CheckpointLoaderSimple: {}, EmptyLatentImage: {}, CLIPTextEncode: {}, SaveImage: {} },
+    onPrompt: (_res, json) => json(200, { prompt_id: 'p1', node_errors: nodeErrors }),
+    onHistory: () => undefined,
+  })
+  try {
+    const outcome = await runWorkflow({
+      client: new ComfyClient({ baseUrl: stuck.baseUrl }),
+      workflow: wf,
+      slots,
+      vars: { prompt: 'a cat', seed: 1 },
+      outputDir: tmpOut(),
+      timeoutMs: 300,
+      pollIntervalMs: 10,
+      workflowId: 't',
+      workflowHash: 'h1',
+    })
+    assert.ok('pending' in outcome, '超时该是 pending')
+    const joined = (outcome.notes ?? []).join(' | ')
+    assert.match(joined, /sampler_name/, `pending 路径丢了警告——而这正是最需要它的时刻：${joined}`)
+  } finally {
+    await stuck.close()
+  }
+})
+
 test('预览节点的输出不算产物（SaveImage 优先）', async () => {
   const wf = workflow()
   // MOSS 图生图就有一个预览节点接在"对齐到 1MP"后面，收下来会把参考图当产物

@@ -38,7 +38,7 @@ function makeDeps(historyEntry) {
         for (const node of Object.values(WF)) info[node.class_type] = { input: {}, output: [], output_node: false }
         return info
       },
-      async queuePrompt() { return 'pid-1' },
+      async queuePrompt() { return { promptId: 'pid-1', warnings: [] } },
       async queue() { return { running: [], pending: [] } },
       async history() { return historyEntry },
       async view() { return Buffer.alloc(0) },
