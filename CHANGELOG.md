@@ -2,6 +2,28 @@
 
 ## 未发布
 
+### 已停用：提示词参考（代码保留）
+
+标签库面板的「提示词参考」子页签**已从 UI 摘掉**。理由：它把工具拖进了第二个数据源的维护——外部站点的可用性、拒绝浏览器 UA 的防盗链（为此还加了一层图片代理）、限流与重试、以及「落盘 vs 只接入」的取舍。而它只是「看别人怎么写 tag」的辅助功能，收益撑不起这份重量。
+
+**代码完整保留，不要删。** 四个文件的文件头都写了停用原因与恢复方法：
+
+| 文件 | 是什么 |
+| --- | --- |
+| `panel-tags/client/PromptRefs.tsx` | 子面板 UI（Danbooru posts 版，带图） |
+| `panel-tags/server/danbooru-posts.ts` | 数据源：图 + tag 串，零落盘 + 图片代理 |
+| `panel-tags/server/prompts.ts` | 旧数据源：HF 247 万条纯文本 + 本地池 |
+| `panel-tags/server/pool-job.ts` | 「建提示词池」的后台任务 |
+
+路由 `/tags/refs`、`/tags/refs/image`、`/tags/prompts*` 全部保留。要恢复只需在 `TagsPanel` 里把子页签加回来（看 git 历史）。
+
+停用前那一轮的实测结论也留在这里，免得以后重走：
+
+- **CDN 拒绝浏览器 UA**：`Mozilla/5.0 …` → 403，`dsh-comfyui-workbench` / curl → 200。所以图片必须走后端代理，前端直连一定加载不出来。
+- **`order:random` 在匿名请求下让 Danbooru 返回 500**，随机只能靠翻页。
+- **限流不是主要问题**：12 次连打（200ms 间隔）0 次 429，失败的 3 次是网络抖动（响应 400ms–4.2s）。
+- **HF 那套的成本**：2 万条要 200 次请求、一路 429；`DiffusionDB` 有图但是 zip 分片，单片 **527 MB**。
+
 ### 变更：参考面板换成 Danbooru 的 posts（带图、不落盘）
 
 用户要「每条参考带参考图」，并建议「数据量过大就只接入、不落盘」。原方案是
@@ -26,12 +48,15 @@ posts 自己发请求：单主站、单独超时、单独重试。
 默认只看 `rating:general`（面板是学"tag 怎么写"，不是图库）；工具条右侧加了「全分级」
 开关，勾上之后 g/s/q/e 全来。
 
-### 待清理
+### 保留而非删除
 
 旧的 HF 那套（`prompts.ts` 的本地池、`pool-job.ts`、`GET /tags/prompts`、
 `POST /tags/prompts/sync`、`client/api.ts` 的 `PromptHit`/`PoolSyncState` 系列、
-8 个 `refsPool*` 文案键、`tests/prompts.test.mjs`）已经从 UI 摘掉但代码还在 ——
-与「只接入、不落盘」直接冲突，下一笔删干净。
+`refsPool*` 文案键、`tests/prompts.test.mjs`）**按用户决定保留**，不做删除：
+等后续调查或想到更轻的方案再说。四个核心文件（`PromptRefs.tsx`、
+`danbooru-posts.ts`、`prompts.ts`、`pool-job.ts`）的文件头都加了停用告示，
+`docs/design.md` 的 §7.0 也登记了。`refsPool*` 那批文案键随 UI 一起闲置，
+但恢复子页签时还要用，同样留着。
 
 ### 功能优化
 
