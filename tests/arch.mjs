@@ -160,5 +160,30 @@ assert.ok(Array.isArray(terminalMod.inject) && terminalMod.inject.includes('webS
 const coreMod = await import(pathToFileURL(path.join(root, 'lib', 'index.js')).href)
 assert.ok(coreMod.inject.includes('workspaceRegistry'), '包根 entry 的 inject 必须含 workspaceRegistry')
 
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备）`)
+// ── 页签与组件诊断表必须一一对应 ──
+// 这个坑踩过三次（workflow、tags、poses）：新加一个面板组件、忘了在 `componentStateOf`
+// 里补一行，于是 `/config` 的 components 里没有这个键，前端 `enabled[x] !== false` 恒真
+// → 用户关掉该组件，页签还照样显示、点进去 404。
+// 比对 `Workbench.tsx` 的 TABS（页面上的真页签）与 `runtime.ts` 的 componentStateOf
+// （配置诊断），两边键集必须一致，否则就是漏了一处。
+const workbenchText = fs.readFileSync(path.join(root, 'src', 'client', 'components', 'Workbench.tsx'), 'utf8')
+const tabComponents = [...workbenchText.matchAll(/component:\s*'([^']+)'/g)].map(match => match[1])
+const runtimeText = fs.readFileSync(path.join(root, 'src', 'runtime.ts'), 'utf8')
+const stateStart = runtimeText.indexOf('export function componentStateOf')
+assert.ok(stateStart >= 0, '找不到 componentStateOf')
+const stateBody = runtimeText.slice(stateStart, runtimeText.indexOf('\n}', stateStart))
+const stateKeys = [...stateBody.matchAll(/^\s*'([^']+)':/gm)].map(match => match[1])
+
+assert.deepEqual(
+  tabComponents.filter(item => !stateKeys.includes(item)),
+  [],
+  '这些页签在 Workbench 的 TABS 里，但 componentStateOf 没有对应的键 —— 关掉组件时页签不会消失',
+)
+assert.deepEqual(
+  stateKeys.filter(item => item.startsWith('panel.') && !tabComponents.includes(item)),
+  [],
+  '这些 panel.* 在 componentStateOf 里，但 TABS 里没有 —— 要么页签被漏了，要么诊断表残留',
+)
+
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐）`)
 
