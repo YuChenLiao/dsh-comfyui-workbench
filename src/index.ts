@@ -16,6 +16,7 @@ import { apply as applyGenerate } from './entries/generate.js'
 import { apply as applyTerminal } from './entries/terminal.js'
 import { apply as applyTags } from './entries/tags.js'
 import { apply as applyPoses } from './entries/poses.js'
+import { apply as applyCostumes } from './entries/costumes.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
 import { readToggles, writeToggles } from './shared/host/toggles.js'
@@ -106,6 +107,7 @@ export function applyAll(ctx: HostContext, config: unknown): Runtime {
   applyWorkflow(ctx, config)
   applyTags(ctx, config)
   applyPoses(ctx, config)
+  applyCostumes(ctx, config)
   applyGenerate(ctx, config)
   applyEdit(ctx, config)
   applyDanbooru(ctx, config)
@@ -202,9 +204,13 @@ export { createSyncJob } from './components/panel-tags/server/sync-job.js'
 export { createPoolJob } from './components/panel-tags/server/pool-job.js'
 export { createPosesIndex, bundledCatalogPath } from './components/panel-poses/server/catalog.js'
 export type { PoseHit, PoseCatalog, PosesIndex, PoseStats } from './components/panel-poses/server/catalog.js'
-export { createPoseImages } from './components/panel-poses/server/images.js'
+export { createImageCache, createPoseImages } from './components/panel-poses/server/images.js'
 export type { PoseImage, PoseImages, PoseImageStats } from './components/panel-poses/server/images.js'
 export { createPosesRoutes } from './components/panel-poses/server/routes.js'
+export { createCostumesIndex, bundledCostumePath } from './components/panel-costumes/server/catalog.js'
+export type { CostumeItem, CostumeCatalog, CostumesIndex, CostumeStats } from './components/panel-costumes/server/catalog.js'
+export { createCostumeRoutes } from './components/panel-costumes/server/routes.js'
+export { costumeFetchTool, costumeSearchTool } from './components/panel-costumes/server/tools.js'
 export { poseFetchTool, poseSearchTool } from './components/panel-poses/server/tools.js'
 export { fetchPostRefs, toRef } from './components/panel-tags/server/danbooru-posts.js'
 export type { PostQuery, PostRef } from './components/panel-tags/server/danbooru-posts.js'

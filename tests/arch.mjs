@@ -144,7 +144,7 @@ const units = new Set(files.map(file => unitOf(path.relative(root, file).split(p
 // 组件 entry 的 inject 必须有守护：漏了 workspaceRegistry 会让探测静默失效（踩过一次）。
 // 只有创建共享 runtime 的 entry 需要注入 workspaceRegistry（产物目录探测要用）。
 // danbooru 不碰 runtime，单独校验它的注入。
-const entryFiles = ['gallery', 'workflow', 'tags', 'poses', 'generate', 'edit', 'terminal']
+const entryFiles = ['gallery', 'workflow', 'tags', 'poses', 'costumes', 'generate', 'edit', 'terminal']
 for (const entry of entryFiles) {
   const mod = await import(pathToFileURL(path.join(root, 'lib', 'entries', `${entry}.js`)).href)
   assert.ok(Array.isArray(mod.inject) && mod.inject.includes('workspaceRegistry'), `entries/${entry}.js 的 inject 必须含 workspaceRegistry，实际：${JSON.stringify(mod.inject)}`)
@@ -185,5 +185,34 @@ assert.deepEqual(
   '这些 panel.* 在 componentStateOf 里，但 TABS 里没有 —— 要么页签被漏了，要么诊断表残留',
 )
 
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐）`)
+// ── 图路径白名单：生产与导入脚本必须逐字一致 ──
+// 这条闸是服务端代理唯一的路径校验（挡住 SSRF 与任意文件读取）。它天生会被写成多份：
+// 生产一份、导入脚本一份（用来校验上游数据）。两份漂了就会一边放行、一边拒绝，
+// 而"放行"的那份没人发现。姿势库与服装库各一对。
+function regexLiteralOf(file, constName) {
+  const text = fs.readFileSync(path.join(root, file), 'utf8')
+  const at = text.indexOf(constName)
+  if (at < 0) return ''
+  const line = text.slice(at, text.indexOf(String.fromCharCode(10), at))
+  const open = line.indexOf('/^')
+  const close = line.lastIndexOf('/')
+  return open < 0 || close <= open ? '' : line.slice(open, close + 1)
+}
+
+for (const [label, prodFile, prodName, scriptFile] of [
+  ['姿势库', 'src/components/panel-poses/server/images.ts', 'SAFE_PATH', 'scripts/import-poses.mjs'],
+  ['服装库', 'src/entries/costumes.ts', 'COSTUME_PATH', 'scripts/import-costumes.mjs'],
+]) {
+  const prod = regexLiteralOf(prodFile, prodName)
+  const script = regexLiteralOf(scriptFile, 'SAFE_PATH')
+  assert.ok(prod !== '', `${label}：${prodFile} 里找不到 ${prodName}（白名单没了？）`)
+  assert.ok(script !== '', `${label}：${scriptFile} 里找不到 SAFE_PATH`)
+  assert.equal(
+    script,
+    prod,
+    `${label}的图路径白名单两份不一致：生产 ${prod} / 导入脚本 ${script} —— 必须逐字相同`,
+  )
+}
+
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，2 组白名单与导入脚本一致）`)
 

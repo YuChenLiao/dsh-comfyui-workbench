@@ -601,3 +601,95 @@ export async function fetchPoseFile(viewId: string, size: 'thumb' | 'full' = 'fu
   }
   return { file: bag.file }
 }
+
+// ── 服装库 ──
+
+/** 一套服装。字段与 `panel-costumes/server/catalog.ts` 的 `CostumeItem` 对齐。 */
+export interface CostumeItem {
+  id: string
+  category: string
+  name: string
+  tags: string[]
+  /** 英文关键词，可直接拼进提示词。 */
+  keywords: string
+  adult: boolean
+  thumb: string
+  preview: string
+  full: string
+}
+
+export interface CostumeStats {
+  total: number
+  adultCount: number
+  safeCount: number
+  categories: Record<string, number>
+  attribution: string
+  source: string
+  origin: string
+}
+
+/** 查服装（面板用）。默认全给，`safe` 才收窄。 */
+export async function fetchCostumes(
+  options: { query?: string; category?: string; safe?: boolean; offset?: number; limit?: number },
+): Promise<{ items: CostumeItem[]; total: number }> {
+  const params = new URLSearchParams()
+  if (options.query !== undefined && options.query !== '') params.set('q', options.query)
+  if (options.category !== undefined && options.category !== '') params.set('category', options.category)
+  if (options.safe === true) params.set('safe', '1')
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const res = await fetch(`${API}/costumes?${params.toString()}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; items?: unknown; total?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取服装失败：HTTP ${res.status}`)
+  }
+  return {
+    items: Array.isArray(bag.items) ? (bag.items as CostumeItem[]) : [],
+    total: typeof bag.total === 'number' ? bag.total : 0,
+  }
+}
+
+/** 取服装库统计。 */
+export async function fetchCostumeStats(): Promise<CostumeStats> {
+  const res = await fetch(`${API}/costumes/stats`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取服装统计失败：HTTP ${res.status}`)
+  }
+  return {
+    total: typeof bag.total === 'number' ? bag.total : 0,
+    adultCount: typeof bag.adultCount === 'number' ? bag.adultCount : 0,
+    safeCount: typeof bag.safeCount === 'number' ? bag.safeCount : 0,
+    categories: (bag.categories !== null && typeof bag.categories === 'object' ? bag.categories : {}) as Record<string, number>,
+    attribution: typeof bag.attribution === 'string' ? bag.attribution : '',
+    source: typeof bag.source === 'string' ? bag.source : '',
+    origin: typeof bag.origin === 'string' ? bag.origin : '',
+  }
+}
+
+/** 服装图的字节地址（服务端代理，浏览器不直连第三方图床）。 */
+export function costumeImageUrl(id: string, size: 'thumb' | 'preview' | 'full' = 'thumb'): string {
+  return `${API}/costumes/image?id=${encodeURIComponent(id)}&size=${size}`
+}
+
+/** 把某套服装的图落盘到 uploads，返回本机路径。 */
+export async function fetchCostumeFile(id: string, size: 'thumb' | 'preview' | 'full' = 'full'): Promise<{ file: string; keywords: string }> {
+  const res = await fetch(`${API}/costumes/fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, size }),
+  })
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; file?: unknown; message?: unknown; costume?: { keywords?: unknown } })
+    : null
+  if (bag?.ok !== true || typeof bag.file !== 'string') {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取服装图失败：HTTP ${res.status}`)
+  }
+  const keywords = bag.costume !== undefined && typeof bag.costume.keywords === 'string' ? bag.costume.keywords : ''
+  return { file: bag.file, keywords }
+}

@@ -4,11 +4,11 @@
 
 A ComfyUI workbench for [DSH](https://github.com/deepseek-ai): **hand your local ComfyUI workflows to the model**, and manage which workflows the model is allowed to use.
 
-There are five user-facing panels — Assets, Workflows, Tags, Poses, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
+There are six user-facing panels — Assets, Workflows, Tags, Poses, Costumes, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
 
 > This plugin is the successor to [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album); asset browsing is inherited from it (shared code lineage). Running both gives you two entry points and two delete buttons — we recommend uninstalling the album plugin. `scripts/migrate-album.mjs` ships only in the repository: if you installed from a package you'll need to clone the repo and run it there.
 
-## Eight components
+## Nine components
 
 Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — visible in the host's Settings → Plugins, and individually toggleable.
 
@@ -19,6 +19,7 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
 | `comfyui-workbench:tags` | panel | Tag library: search four tag categories, filter by semantic category, copy a tag. Browsing is read-only; the "update tags" button refreshes the data from upstream |
 | `comfyui-workbench:poses` | panel + tools | Pose library: 288 poses / 1,439 angles of human reference sketches — search, filter by system and category, save a sketch into uploads as a workflow image input; also registers the `comfyui_pose_search` and `comfyui_pose_fetch` tools |
+| `comfyui-workbench:costumes` | panel + tools | Costume library: 1,407 real-world outfits (no people in frame) — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers `comfyui_costume_search` and `comfyui_costume_fetch` |
 | `comfyui-workbench:generate` | tools | `comfyui_workflow_list`, `comfyui_workflow_inspect`, `comfyui_run`, `comfyui_run_batch`, `comfyui_rerun`, `comfyui_runs`, `comfyui_node_search` |
 | `comfyui-workbench:edit` | tools | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | tools | `danbooru_lookup`, `danbooru_lookup_batch`, `danbooru_sync`: character / artist / copyright / general tag library with Chinese names (99,372 tags). Does not touch the ComfyUI runtime, so it can be disabled on its own |
@@ -36,7 +37,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-Restart DSH afterwards. Nine entries get inserted into `cordis.patch.yml` (the root `core` plus eight components); their config is shared through a YAML anchor so you write it once:
+Restart DSH afterwards. Ten entries get inserted into `cordis.patch.yml` (the root `core` plus nine components); their config is shared through a YAML anchor so you write it once:
 
 ```yaml
 - insert:
@@ -49,7 +50,7 @@ Restart DSH afterwards. Nine entries get inserted into `cordis.patch.yml` (the r
     - id: comfyui-workbench:gallery
       name: dsh-comfyui-workbench/gallery
       config: *cwf
-    # :workflow / :tags / :poses / :generate / :edit / :danbooru / :terminal follow the same pattern
+    # :workflow / :tags / :poses / :costumes / :generate / :edit / :danbooru / :terminal follow the same pattern
 ```
 
 ## Configuration
@@ -82,8 +83,10 @@ Restart DSH afterwards. Nine entries get inserted into `cordis.patch.yml` (the r
 | `danbooru_lookup` | Looks up **character, artist, copyright and general** tags by Chinese name / Japanese name / Danbooru tag (`kind` narrows it) and **returns tags only**. Aligning names before writing a prompt keeps generations on-model. `长发` → `long_hair`, `东方Project` → `touhou` |
 | `danbooru_lookup_batch` | Looks up many names at once (up to 50), **local only, no network** — fill the gaps with single `danbooru_lookup` calls (those go online automatically) |
 | `danbooru_sync` | Pulls character / artist tags (including Chinese names) into the local library. Thousands of requests — call it only when the user asks |
-| `comfyui_pose_search` | Finds human poses in the reference library (288 poses / 1,439 angles): search by Chinese name, code or category; returns the `id` and angle count, **no images**. Adult poses are excluded by default |
+| `comfyui_pose_search` | Finds human poses in the reference library (288 poses / 1,439 angles): search by Chinese name, code or category; returns the `id` and angle count, **no images**. Everything is listed by default — `onlySafe` narrows it to the 98 regular poses |
 | `comfyui_pose_fetch` | Downloads one angle's sketch (or a pose's front view) into the local uploads directory and returns the path, ready to use as a workflow image input (ControlNet / img2img) |
+| `comfyui_costume_search` | Finds outfits in the costume library (1,407): search by Chinese description, tag, English keyword or code; returns the `id` plus **`keywords`**, which can go straight into a prompt |
+| `comfyui_costume_fetch` | Downloads one outfit's image into the local uploads directory and returns the path plus keywords, for use as a costume reference |
 
 A workflow's "available" flag lives in `<id>.meta.json` under `enabled` (default `true`); the panel and `comfyui_workflow_edit` write the same file.
 
@@ -217,9 +220,21 @@ The fourth panel: **288 poses / 1,439 angles** of human reference sketches (a Ch
 - Search is a linear scan over 288 poses (microseconds). **No inverted index here**: 99,372 tags justify a 2-gram index, 288 poses do not — building one would be a net loss.
 - Disable it with `disabledComponents: ["panel.poses"]`. Refresh data with `npm run poses:import`.
 
+## Costume library
+
+The fifth panel: **1,407 real-world outfits** (no people in frame), for finding costume references. The integration is identical to the pose library — metadata ships with the plugin, images are pulled through the server proxy on demand.
+
+- **Every entry carries English keywords** — that is what makes this dataset more directly useful than the pose one. Each outfit has a string like `ivory frill knit denim mini skirt coat socks white sneakers`, shown on the card and copyable in one click, ready to paste into a prompt. Coverage across all 1,407 is 100%.
+- **Images do not ship**: `data/costumes/catalog.json` (560 KB) holds only codes, Chinese descriptions, Chinese tags, English keywords and image addresses. Images live under `thumbs/costume/` and `img/costume/` on `ai-pose-gallery.anhao.app` in **webp** (the pose library uses jpg/png), so the two path allow-lists are separate and do not accept each other's shapes.
+- **Eight categories**: spring 215 / summer 254 / autumn 244 / winter 253 / lingerie & sleepwear 199 / sexy 140 / swimwear 54 / party 48.
+- **All 1,407 are listed by default** — no content filtering. The 393 flagged adult (lingerie, swimwear, sexy) only carry a small badge; tick "Safe only" to narrow down to 1,014.
+- **Caching and short-circuiting** share one implementation with the pose library (`createImageCache`), differing only in cache directory (`cache/costumes/`) and path allow-list — duplicating that logic would drift.
+- Licensing differs from the pose library: upstream allows using these images **as creative reference** (including in edited and commercial works) but forbids redistributing the image data itself. See [data/costumes/NOTICE.md](data/costumes/NOTICE.md).
+- Disable it with `disabledComponents: ["panel.costumes"]`. Refresh data with `npm run costumes:import`.
+
 ## Terminal panel
 
-The fifth panel (after Assets, Workflows, Tags and Poses) shows ComfyUI's **command-line output**. What the service is doing, where it is stuck, how far a model has loaded — that only exists in the terminal, not in the GUI.
+The sixth panel (after Assets, Workflows, Tags, Poses and Costumes) shows ComfyUI's **command-line output**. What the service is doing, where it is stuck, how far a model has loaded — that only exists in the terminal, not in the GUI.
 
 - **Externally started instances work too**: a process the plugin launched has its stdout/stderr piped in; an external instance (one Desktop started itself) has no accessible stdout, so the panel reads the `user/comfyui.log` it writes. Only one path is active at a time — ComfyUI's logger attaches both a Stream handler and a File handler, so reading both would duplicate every line.
 - When the service isn't running the panel offers a Start button, launching it directly instead of making you go generate an image first.
@@ -243,6 +258,7 @@ src/components/panel-gallery/      assets: server/(routes/scan/index/thumbs) + c
 src/components/panel-workflow/     workflow admin: server/(routes/run/import/config) + client/
 src/components/panel-tags/         tag library: server/(index/search/sync job) + client/
 src/components/panel-poses/        pose library: server/(catalog/image proxy/tools) + client/
+src/components/panel-costumes/     costume library: server/(catalog/routes/tools) + client/
 src/components/panel-terminal/     terminal: server/(log tail) + client/
 src/components/tool-generate/      generation tools
 src/components/tool-workflow-edit/ workflow editing tool
@@ -251,7 +267,7 @@ src/shared/                        shared logic: host / comfy / workflow / run /
 src/http/                          HTTP prefix and dispatch (router)
 src/client/                        UI shell: tabs, api, i18n, icons
 src/index.ts                       package-root entry (browser bundle + shared runtime init)
-src/entries/                       eight component entries (core is src/index.ts)
+src/entries/                       nine component entries (core is src/index.ts)
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 

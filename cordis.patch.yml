@@ -9,7 +9,7 @@
 # 全部字段都可省略。下面的 config 只是把默认值写出来，方便对照修改。
 # 优先级：profile 配置 > 环境变量（COMFYUI_URL / COMFYUI_BASE_URL / COMFYUI_TIMEOUT_MS）> 内置默认。
 - insert:
-    # 九条 entry：包根 core（承载浏览器端 + 共享运行时）+ 八个组件。
+    # 十条 entry：包根 core（承载浏览器端 + 共享运行时）+ 九个组件。
     # 宿主「设置 → 插件」里能看到并单独开关。
     # 配置用 YAML 锚点共享 —— 只写一次，改的时候也只改一处。
     # 包根 entry：只为让宿主装配 exports["./client"]（侧栏图标与 better-sidebar 页签）。
@@ -45,11 +45,12 @@
         uploadsDir: null
         # 资产索引文件；不写则用 ~/.dsh-comfyui-workbench/assets.jsonl。
         indexFile: null
-        # 关掉的组件（默认全开）。八个组件互相独立，某个出问题可以只关它：
+        # 关掉的组件（默认全开）。九个组件互相独立，某个出问题可以只关它：
         #   panel.workflow     用户面板 · 工作流
         #   panel.gallery      用户面板 · 相册
         #   panel.tags         用户面板 · 标签库（只读浏览 / 搜索 / 复制 tag）
         #   panel.poses        用户面板 · 姿势库（浏览 / 搜索 / 取线稿）+ 姿势工具
+        #   panel.costumes     用户面板 · 衣装库（浏览 / 搜索 / 取服装图）+ 服装工具
         #   panel.terminal     用户面板 · ComfyUI 终端（命令行输出）
         #   tool.generate      模型工具 · 生图（含列出/查看工作流）
         #   tool.workflow-edit 模型工具 · 工作流编辑
@@ -112,6 +113,9 @@
       config: *cwf
     - id: comfyui-workbench:poses
       name: dsh-comfyui-workbench/poses
+      config: *cwf
+    - id: comfyui-workbench:costumes
+      name: dsh-comfyui-workbench/costumes
       config: *cwf
     - id: comfyui-workbench:generate
       name: dsh-comfyui-workbench/generate

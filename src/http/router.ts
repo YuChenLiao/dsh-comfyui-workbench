@@ -67,6 +67,7 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       // /config        —— GET 读配置 / POST 切面板开关（progressStream 等）
       // /tags/…        —— 面板的写操作（/tags/sync 更新数据、/tags/prompts/sync 建池）
       // /poses/…       —— 姿势库的写操作（/poses/fetch 把线稿落盘给工作流当输入图）
+      // /costumes/…    —— 服装库的写操作（同上）
       //                   用**前缀**判断而不是逐条列举：子路径以后还会加，列举就会漏，
       //                   而漏的后果是"单测全绿、真机 405"。
       // 注意不能把这类路径塞进 WRITABLE：那个集合的语义是"整条路径只接受 POST/DELETE"，
@@ -75,7 +76,7 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       // 新加这类路径请顺手在 tests/api.test.mjs 里补一条走真实 boot() 的用例。
       const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/')
         || sub === '/terminal' || sub === '/config'
-        || sub.startsWith('/tags/') || sub.startsWith('/poses/')
+        || sub.startsWith('/tags/') || sub.startsWith('/poses/') || sub.startsWith('/costumes/')
       const writable = WRITABLE.has(sub)
       const methodOk = POST_ONLY.has(sub)
         ? req.method === 'POST'

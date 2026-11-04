@@ -16,7 +16,8 @@
     "./client": "./lib/client.js",
     "./icon": "./icon.svg",
     "./package.json": "./package.json",
-    "./terminal": "./lib/entries/terminal.js"
+    "./terminal": "./lib/entries/terminal.js",
+    "./costumes": "./lib/entries/costumes.js"
   },
   "files": [
     "data",
@@ -31,13 +32,14 @@
     "scripts/sync-tag-groups.mjs",
     "scripts/import-poses.mjs",
     "CHANGELOG.md",
-    "README.en.md"
+    "README.en.md",
+    "scripts/import-costumes.mjs"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node tests/arch.mjs && node tests/arch-write-routes.mjs && node tests/classes.mjs && node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs && node --test tests/gallery-nsfw.test.mjs tests/node-search.test.mjs tests/node-search-tool.test.mjs tests/tag-index.test.mjs tests/batch-tools.test.mjs tests/run-batch.test.mjs tests/run-batch-order.test.mjs tests/runs.test.mjs tests/runs-wiring.test.mjs tests/runs-final.test.mjs tests/sweep.test.mjs tests/rerun.test.mjs tests/rerun-api.test.mjs tests/failure-kind.test.mjs tests/failure-wiring.test.mjs tests/history-status.test.mjs tests/transient.test.mjs tests/policy-dimensions.test.mjs tests/wait-outcome.test.mjs tests/final-state.test.mjs tests/batch-notify.test.mjs tests/workflow-list-inputs.test.mjs tests/workflows-api-inputs.test.mjs tests/run-api-settled.test.mjs tests/run-route-wiring.test.mjs tests/progress.test.mjs tests/progress-positive.test.mjs tests/overrides.test.mjs tests/overrides-lifecycle.test.mjs tests/overrides-visible.test.mjs tests/workflow.test.mjs tests/store.test.mjs tests/runner.test.mjs tests/workspace.test.mjs tests/components.test.mjs tests/api.test.mjs tests/notify.test.mjs tests/supervisor.test.mjs tests/danbooru.test.mjs tests/terminal.test.mjs tests/toggles.test.mjs tests/upstream.test.mjs tests/danbooru-kinds.test.mjs tests/groups.test.mjs tests/node-errors.test.mjs tests/panel-tags.test.mjs tests/poses.test.mjs tests/prompts.test.mjs tests/post-refs.test.mjs tests/queue-singleflight.test.mjs tests/workflow-list-shape.test.mjs",
+    "test": "node tests/arch.mjs && node tests/arch-write-routes.mjs && node tests/classes.mjs && node tests/lint.mjs && node tests/smoke.mjs && node tests/render.mjs && node --test tests/gallery-nsfw.test.mjs tests/node-search.test.mjs tests/node-search-tool.test.mjs tests/tag-index.test.mjs tests/batch-tools.test.mjs tests/run-batch.test.mjs tests/run-batch-order.test.mjs tests/runs.test.mjs tests/runs-wiring.test.mjs tests/runs-final.test.mjs tests/sweep.test.mjs tests/rerun.test.mjs tests/rerun-api.test.mjs tests/failure-kind.test.mjs tests/failure-wiring.test.mjs tests/history-status.test.mjs tests/transient.test.mjs tests/policy-dimensions.test.mjs tests/wait-outcome.test.mjs tests/final-state.test.mjs tests/batch-notify.test.mjs tests/workflow-list-inputs.test.mjs tests/workflows-api-inputs.test.mjs tests/run-api-settled.test.mjs tests/run-route-wiring.test.mjs tests/progress.test.mjs tests/progress-positive.test.mjs tests/overrides.test.mjs tests/overrides-lifecycle.test.mjs tests/overrides-visible.test.mjs tests/workflow.test.mjs tests/store.test.mjs tests/runner.test.mjs tests/workspace.test.mjs tests/components.test.mjs tests/api.test.mjs tests/notify.test.mjs tests/supervisor.test.mjs tests/danbooru.test.mjs tests/terminal.test.mjs tests/toggles.test.mjs tests/upstream.test.mjs tests/danbooru-kinds.test.mjs tests/groups.test.mjs tests/node-errors.test.mjs tests/panel-tags.test.mjs tests/poses.test.mjs tests/costumes.test.mjs tests/prompts.test.mjs tests/post-refs.test.mjs tests/queue-singleflight.test.mjs tests/workflow-list-shape.test.mjs",
     "check": "npm run typecheck && npm test",
     "import": "node scripts/import.mjs",
     "migrate": "node scripts/migrate-album.mjs",
@@ -52,7 +54,10 @@
     "preposes:import": "node scripts/build.mjs",
     "predanbooru:groups": "node scripts/build.mjs",
     "pretest": "node scripts/build.mjs",
-    "prepublishOnly": "node scripts/build.mjs"
+    "prepublishOnly": "node scripts/build.mjs",
+    "costumes:import": "node scripts/import-costumes.mjs",
+    "costumes:check": "node scripts/import-costumes.mjs --check",
+    "precostumes:import": "node scripts/build.mjs"
   },
   "engines": {
     "node": ">=20"

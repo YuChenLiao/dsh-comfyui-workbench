@@ -75,6 +75,21 @@ export interface PoseImagesOptions {
   now?: () => number
   memoryLimit?: number
   diskLimitBytes?: number
+  /**
+   * 路径白名单。**默认是姿势库那条**（`thumbs|img` 下一层、jpg/png）。
+   *
+   * 服装库传自己那条（多一层 `costume/`、格式是 webp）—— 这不是把校验放宽成"能配就行"，
+   * 而是两个数据源本来就有两种目录结构，各自钉住自己的形状。
+   */
+  pathPattern?: RegExp
+  /**
+   * 缓存目录下的哪些子目录要计入「磁盘占用」与 LRU 清理。
+   *
+   * **默认 `['thumbs', 'img']` 是姿势库的形状**（一级）。服装图在 `thumbs/costume/`
+   * 与 `img/costume/`（两级），不传这个就会扫到目录本身、`isFile()` 为 false，
+   * 于是上限与统计双双失效 —— 1407 套的缓存会无上限增长，`/costumes/cache` 恒报 0。
+   */
+  cacheSubdirs?: string[]
 }
 
 function mediaTypeOf(buffer: Buffer): string | undefined {
@@ -82,20 +97,29 @@ function mediaTypeOf(buffer: Buffer): string | undefined {
   if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return 'image/png'
   // JPEG: FF D8 FF
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  // WebP: "RIFF" .... "WEBP"（服装库全是 webp）
+  if (buffer.length >= 12
+    && buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46
+    && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) return 'image/webp'
   return undefined
 }
 
 /**
  * 建一个取图器。
  *
+ * 名字里的 `Pose` 是历史（先有姿势库）。服装库复用同一个实现，只是换了路径白名单与缓存目录，
+ * 所以别再写第二份 —— 缓存、单飞、冷却、字节头校验这些逻辑复制一遍必然漂移。
+ *
  * @param options - 缓存目录、上游根地址、可注入的 fetch 与时钟（测试要能把时间和网络都钉住）。
  */
-export function createPoseImages(options: PoseImagesOptions): PoseImages {
+export function createImageCache(options: PoseImagesOptions): PoseImages {
   const { cacheDir, origin, fetchImpl = fetch, now = Date.now } = options
   const memoryLimit = options.memoryLimit ?? MEMORY_LIMIT
   const diskLimitBytes = options.diskLimitBytes ?? DISK_LIMIT_BYTES
+  const pathPattern = options.pathPattern ?? SAFE_PATH
+  const cacheSubdirs = options.cacheSubdirs ?? ['thumbs', 'img']
 
-  if (!/^https:\/\//.test(origin)) throw new Error(`姿势图上游必须是 https：${origin}`)
+  if (!/^https:\/\//.test(origin)) throw new Error(`图床地址必须是 https：${origin}`)
 
   /** 内存 LRU：Map 的插入顺序即使用顺序，命中时重新插入即"提到最新"。 */
   const memory = new Map<string, PoseImage>()
@@ -140,11 +164,15 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
   /**
    * 清理磁盘缓存。**在写入之后异步跑**，不阻塞这次请求。
    *
-   * 用同步的文件操作而不是流：姿势图规模小、数量有限，简单胜过并发安全上的花样。
+   * 用同步的文件操作而不是流：图规模小、数量有限，简单胜过并发安全上的花样。
+   *
+   * 扫的目录由 `cacheSubdirs` 给，**不能写死**：姿势图在 `thumbs/`、`img/` 一级，
+   * 服装在 `thumbs/costume/`、`img/costume/` 两级。写死一级的话，服装这边 `readdir`
+   * 拿到的是目录、`isFile()` 为 false —— 既不计数也不清理，上限形同虚设。
    */
   const pruneDisk = (): void => {
     const files: Array<{ file: string; size: number; at: number }> = []
-    for (const sub of ['thumbs', 'img']) {
+    for (const sub of cacheSubdirs) {
       const dir = path.join(cacheDir, sub)
       let names: string[] = []
       try {
@@ -178,7 +206,7 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
   }
 
   const download = async (relativePath: string): Promise<PoseImage> => {
-    if (!SAFE_PATH.test(relativePath)) throw new Error('姿势图路径无效')
+    if (!pathPattern.test(relativePath)) throw new Error('图片路径无效')
 
     // **磁盘优先于冷却**：冷却说的是"上游现在不行"，磁盘上的图跟上游没关系。
     // 顺序反过来的话，上游一挂，连已经下过的图都打不开 —— 缓存等于白建。
@@ -190,7 +218,7 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
 
     const stampNow = now()
     if (cooldownUntil > stampNow) {
-      throw new Error(`姿势图上游暂时读不到（冷却 ${Math.ceil((cooldownUntil - stampNow) / 1000)} 秒）`)
+      throw new Error(`图床暂时读不到（冷却 ${Math.ceil((cooldownUntil - stampNow) / 1000)} 秒）`)
     }
 
     const noteFailure = (): void => {
@@ -216,14 +244,14 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
     }
     if (!response.ok) {
       noteFailure()
-      throw new Error(`姿势图暂时读不到（${response.status}）`)
+      throw new Error(`图片暂时读不到（${response.status}）`)
     }
 
     // 先看声明长度：能提前拒绝就别把 9 MB 读进内存再说"太大了"
     const declared = Number(response.headers.get('content-length') ?? '')
     if (Number.isFinite(declared) && declared > MAX_BYTES) {
       noteFailure()
-      throw new Error(`姿势图大小异常（声明 ${declared} 字节）`)
+      throw new Error(`图片大小异常（声明 ${declared} 字节）`)
     }
 
     // 流式读并逐块累计：Content-Length 可以缺席或撒谎，上界必须靠实际字节数兜住。
@@ -241,7 +269,7 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
           total += value.byteLength
           if (total > MAX_BYTES) {
             await reader.cancel()
-            throw new Error('姿势图大小异常')
+            throw new Error('图片大小异常')
           }
           chunks.push(Buffer.from(value))
         }
@@ -251,10 +279,10 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
 
     if (buffer.length < MIN_BYTES) {
       noteFailure()
-      throw new Error('姿势图大小异常')
+      throw new Error('图片大小异常')
     }
     const mediaType = mediaTypeOf(buffer)
-    if (mediaType === undefined) throw new Error('姿势图不是 PNG/JPEG')
+    if (mediaType === undefined) throw new Error('图片不是 PNG/JPEG/WebP')
 
     // 成功一次就把失败计数清零：偶发失败不该攒成"远端挂了"
     failures = 0
@@ -310,7 +338,7 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
     stats: () => {
       let diskFiles = 0
       let diskBytes = 0
-      for (const sub of ['thumbs', 'img']) {
+      for (const sub of cacheSubdirs) {
         const dir = path.join(cacheDir, sub)
         let names: string[] = []
         try {
@@ -339,3 +367,10 @@ export function createPoseImages(options: PoseImagesOptions): PoseImages {
     },
   }
 }
+
+/**
+ * 兼容别名：姿势库那边一直叫这个名字（含测试与 `src/index.ts` 的导出）。
+ *
+ * 实现只有 `createImageCache` 一份；服装库用同一个函数、换一套路径白名单与缓存目录。
+ */
+export const createPoseImages = createImageCache

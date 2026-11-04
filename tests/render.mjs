@@ -273,6 +273,7 @@ assert.match(shell, />tabAssets</, '应当有资产库页签')
 assert.match(shell, />tabWorkflowAdmin</, '应当有工作流管理页签')
 assert.match(shell, />tabTags</, '应当有标签库页签')
 assert.match(shell, />tabPoses</, '应当有姿势库页签')
+assert.match(shell, />tabCostumes</, '应当有衣装库页签')
 assert.match(shell, /class="cfa-root"/, '默认停在资产库')
 
 // 标签面板：SSR 不跑 useEffect，首帧应当是"正在建索引"而不是空列表
@@ -294,6 +295,18 @@ const poses = renderToStaticMarkup(React.createElement(PosesPanel, { t, visible:
 assert.match(poses, /cps-root/, '该渲染出面板根节点')
 assert.match(poses, /cps-title/, '该有标题')
 assert.match(poses, /cps-search/, '该有搜索与筛选条')
+
+// 衣装库面板：同样的首帧要求（它比姿势库多一行英文关键词）
+const { CostumesPanel, COSTUMES_CSS } = mod.__test
+assert.ok(CostumesPanel !== undefined, '应当导出 CostumesPanel（衣装库面板）')
+assert.match(COSTUMES_CSS, /\.cct-root/, 'COSTUMES_CSS 该有根类')
+const costumes = renderToStaticMarkup(React.createElement(CostumesPanel, { t, visible: true, goToConversation() {} }))
+assert.match(costumes, /cct-root/, '该渲染出面板根节点')
+assert.match(costumes, /cct-title/, '该有标题')
+assert.match(costumes, /cct-search/, '该有搜索与筛选条')
+assert.match(costumes, /cct-toggle/, '该有「只看常规」开关')
+assert.match(costumes, /costumesLoading|costumesSub/, '首帧要说明状态，不能空白')
+assert.match(costumes, /costumesEmpty/, '没有数据时给提示而不是一片空白')
 assert.match(poses, /cps-toggle/, '该有「只看常规」开关')
 assert.match(poses, /posesLoading|posesSub/, '首帧要说明状态，不能空白')
 assert.match(poses, /posesEmpty/, '没有数据时给提示而不是一片空白')

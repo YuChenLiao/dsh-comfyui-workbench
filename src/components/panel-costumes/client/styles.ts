@@ -1,0 +1,42 @@
+/**
+ * 服装库面板的样式。
+ *
+ * 沿用工作台那套 `--w-*` 变量。类名前缀 `cct-`（comfyui costume），与 `cps-`（姿势）、
+ * `ctg-`（标签）、`cwb-`（相册）区分。
+ *
+ * 服装图是竖构图平铺照，同样用 3:4，让网格整齐。
+ */
+export const COSTUMES_CSS = `
+.cct-root{display:flex;flex-direction:column;gap:10px;padding:14px 20px 24px;min-height:0;height:100%;overflow:auto}
+.cct-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.cct-title{font-size:1.02em;font-weight:600}
+.cct-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
+.cct-search{display:flex;flex-wrap:wrap;gap:8px}
+.cct-input{flex:1;min-width:180px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.9em;padding:8px 10px}
+.cct-input:focus{border-color:var(--w-accent);outline:none}
+.cct-input::placeholder{color:var(--w-muted)}
+.cct-select{border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.86em;padding:8px 6px}
+.cct-toggle{display:inline-flex;align-items:center;gap:6px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.82em;padding:7px 10px;cursor:pointer}
+.cct-toggle input{accent-color:var(--w-accent)}
+.cct-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.cct-card{display:flex;flex-direction:column;gap:6px;border:1px solid var(--w-line);border-radius:11px;background:var(--w-surface);overflow:hidden}
+.cct-card:hover{border-color:var(--w-accent)}
+.cct-shot{position:relative;aspect-ratio:3/4;background:var(--w-bg);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cct-shot img{width:100%;height:100%;object-fit:contain;display:block}
+.cct-shot-fail{font-size:.72em;color:var(--w-muted);text-align:center;padding:8px}
+.cct-meta{padding:0 8px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.cct-name{font-size:.8em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cct-badge{display:inline-block;margin-right:5px;border-radius:5px;background:var(--w-line);color:var(--w-muted);font-size:.66em;padding:0 4px;vertical-align:1px}
+.cct-tagline{font-size:.72em;color:var(--w-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cct-keywords{font-size:.7em;color:var(--w-muted);padding:0 8px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cct-actions{display:flex;gap:6px;padding:0 8px 8px}
+.cct-btn{flex:1;border-radius:8px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.74em;padding:5px 6px;cursor:pointer}
+.cct-btn:hover{border-color:var(--w-accent)}
+.cct-btn[disabled]{opacity:.55;cursor:default}
+.cct-note{font-size:.76em;color:var(--w-muted);padding:0 8px 8px}
+.cct-note.bad{color:#d97757}
+.cct-empty{font-size:.82em;color:var(--w-muted);padding:18px 4px}
+.cct-more-hint{align-self:center;color:var(--w-muted);font-size:.78em;padding:6px 0 2px}
+.cct-attr{font-size:.72em;color:var(--w-muted);line-height:1.5;border-top:1px solid var(--w-line);padding-top:8px}
+.cct-attr a{color:inherit}
+`

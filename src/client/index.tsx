@@ -17,6 +17,8 @@ import { PromptRefs } from '../components/panel-tags/client/PromptRefs.js'
 import { TAGS_CSS } from '../components/panel-tags/client/styles.js'
 import { PosesPanel } from '../components/panel-poses/client/PosesPanel.js'
 import { POSES_CSS } from '../components/panel-poses/client/styles.js'
+import { CostumesPanel } from '../components/panel-costumes/client/CostumesPanel.js'
+import { COSTUMES_CSS } from '../components/panel-costumes/client/styles.js'
 import { Card } from '../components/panel-gallery/client/Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from '../components/panel-gallery/client/Confirm.js'
 import { Gallery } from '../components/panel-gallery/client/Gallery.js'
@@ -162,6 +164,8 @@ export const __test = {
   TAGS_CSS,
   PosesPanel,
   POSES_CSS,
+  CostumesPanel,
+  COSTUMES_CSS,
   metaLine,
   planPage,
   shouldLoadMore,

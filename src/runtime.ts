@@ -76,13 +76,14 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
   const disabled = new Set(rt.settings.disabledComponents)
   // 加组件时**必须**在这里补一行：漏了的话 `/config` 的 components 里没有这个键，
   // 前端 `enabled[x] !== false` 恒真 → 被关掉的页签照样显示，点进去 404。
-  // 这个坑踩过三次（先是 workflow，再是 tags，第三次是 poses）。
+  // 这个坑踩过三次（先是 workflow，再是 tags，第三次是 poses；第四次是 costumes —— 被下面那条检查当场抓住）。
   // `tests/arch.mjs` 现在会拿 Workbench 的 TABS 与本函数的键做比对，漏了直接红。
   return {
     'panel.gallery': !disabled.has('panel.gallery'),
     'panel.workflow': !disabled.has('panel.workflow'),
     'panel.tags': !disabled.has('panel.tags'),
     'panel.poses': !disabled.has('panel.poses'),
+    'panel.costumes': !disabled.has('panel.costumes'),
     'panel.terminal': !disabled.has('panel.terminal'),
     'tool.generate': !disabled.has('tool.generate'),
     'tool.workflow-edit': !disabled.has('tool.workflow-edit'),

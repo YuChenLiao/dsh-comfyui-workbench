@@ -2,6 +2,39 @@
 
 ## 未发布
 
+### 新功能：衣装库（第九个组件）
+
+工作台多一个「衣装库」页签：**1407 套现实风格衣装**（图里没有人物），八类
+（春 215 / 夏 254 / 秋 244 / 冬 253 / 内衣・睡衣 199 / 性感 140 / 泳装 54 / 派对 48），
+按中文描述、标签、英文关键词或编号搜，取图存进 uploads 当工作流参考图。
+模型侧多两个工具：`comfyui_costume_search`、`comfyui_costume_fetch`。
+
+**接入方式与姿势库完全一样**（元数据随包、图经服务端代理按需取），而且**共用同一个取图实现**：
+`createImageCache` 只多了一个 `pathPattern` 参数。缓存、单飞、失败冷却、字节头校验一行没复制 ——
+那些逻辑抄第二遍必然漂移。两处差别只有三样：多一层 `costume/` 目录、id 带连字符、格式是 webp。
+
+**它比姿势库多一样东西：英文关键词。** 每套都有
+`ivory frill knit denim mini skirt coat socks white sneakers` 这样的英文串，覆盖率 100%，
+卡片上一行、一键复制，直接能拼进提示词 —— 这正好补上"姿势库只有中文名、没有提示词"的遗憾
+（那一轮实测过：拿 Danbooru 中文名反查姿势名几乎全打空，两套词汇体系不一样；服装的关键词是上游直接给的，不用猜）。
+
+**默认全给 1407 套**，不做内容筛选；393 套标了成人向（内衣/泳装/性感三类）只加徽标，
+勾「只看常规」才收窄到 1014 —— 与姿势库同一套规矩。
+
+数据来自 ギア 的 COSTUME-DB-01，中文名与关键词来自 Anhao 的中文版镜像；
+`data/costumes/catalog.json` 只含编号/描述/标签/关键词/图地址，**一张图都不在仓库里**，
+授权与限制见 `data/costumes/NOTICE.md`（允许用作创作参考，禁止再分发图像数据本身）。
+
+接线：第十条 entry `comfyui-workbench:costumes`（`panel.costumes` 可单独关）、第六个页签、
+`applyAll` 里调了 `applyCostumes`、`/costumes/` 加进 router 的 `selfManaged` 前缀。
+
+**上一轮新加的结构性检查当场抓住了我这次的漏项**：`componentStateOf` 里忘了补
+`panel.costumes`，`arch.mjs` 直接报「这些页签在 Workbench 的 TABS 里，但 componentStateOf
+没有对应的键」—— 同一个坑第四次踩，这次是被检查拦住而不是被用户发现。
+
+`npm test` **487/487**（新增 10 条：`tests/costumes.test.mjs` 9 条 + `api/costumes` 真实入口 1 条）；
+`arch.mjs` 150 文件 / 28 单元 / **10 条 entry / 6 个页签与诊断表对齐**。
+
 ### 新功能：姿势库（第八个组件）
 
 工作台多一个「姿势库」页签：**288 组人体姿势、1439 个角度**的线稿，按中文名 / 编号 / 分类搜，

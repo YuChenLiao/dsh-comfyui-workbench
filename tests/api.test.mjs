@@ -550,12 +550,14 @@ test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）
   }
 })
 
-test('工具注册：13 个工具都带必要字段', async () => {
+test('工具注册：15 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
     assert.deepEqual(names, [
+      'comfyui_costume_fetch',
+      'comfyui_costume_search',
       'comfyui_node_search',
       'comfyui_pose_fetch',
       'comfyui_pose_search',
@@ -671,6 +673,63 @@ test('api/poses：搜索、统计、以及 /poses/fetch 的写方法真的被放
     // 7) 同一条路径不接受 GET —— 证明上一步的 404 不是"什么都放行"
     const fetchWithGet = await fetch(`${base}/poses/fetch`)
     assert.equal(fetchWithGet.status, 405, '/poses/fetch 只有 POST 语义')
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 服装库走真实入口。与 `api/poses` 同构：
+ * `POST /costumes/fetch` 必须被 `selfManaged` 放行（要 404 而不是 405），
+ * 同一条路径的 GET 必须被拦（405）—— 两个码合起来才说明分派层按方法分流。
+ */
+test('api/costumes：搜索、统计，以及 /costumes/fetch 的写方法真的被放行', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    // 1) 默认全给 1407 套，不做内容筛选
+    const all = await (await fetch(`${base}/costumes?limit=3`)).json()
+    assert.equal(all.ok, true)
+    assert.equal(all.items.length, 3)
+    assert.equal(all.total, 1407, '默认该给全部，不藏任何一套')
+    assert.ok(typeof all.items[0].keywords === 'string' && all.items[0].keywords !== '', '每条都要带英文关键词')
+
+    // 2) safe=1 收窄到 1014 套（排除内衣/泳装/性感三个分类共 393）
+    const safeOnly = await (await fetch(`${base}/costumes?safe=1&limit=1`)).json()
+    assert.equal(safeOnly.total, 1014)
+
+    // 3) 统计
+    const stats = await (await fetch(`${base}/costumes/stats`)).json()
+    assert.equal(stats.total, 1407)
+    assert.equal(stats.adultCount, 393)
+    assert.equal(stats.safeCount, 1014)
+    assert.equal(Object.keys(stats.categories).length, 8)
+    assert.ok(stats.attribution.includes('ギア'), '版权人要进统计，面板底部直接显示')
+
+    // 4) 分类筛选与 safe 独立
+    const winter = await (await fetch(`${base}/costumes?category=${encodeURIComponent('冬季穿搭')}`)).json()
+    assert.equal(winter.total, 253, '冬季 253 套，默认可见')
+    const lingerie = await (await fetch(`${base}/costumes?category=${encodeURIComponent('内衣・睡衣')}`)).json()
+    assert.equal(lingerie.total, 199, '内衣也是默认可见（不做内容过滤）')
+
+    // 5) 写接口：POST 放行到 handler（id 不存在 → 404，而不是 405）
+    const fetchMissing = await fetch(`${app.origin}/comfyui-workbench/api/costumes/fetch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'NO-SUCH-0001' }),
+    })
+    assert.equal(fetchMissing.status, 404, '405 就说明 router 的 selfManaged 漏了 /costumes/')
+    assert.equal((await fetchMissing.json()).error, 'unknown-costume')
+
+    // 6) 代理图同样先过索引
+    assert.equal((await fetch(`${base}/costumes/image?id=NO-SUCH-0001`)).status, 404)
+    // 7) 同一路径不接受 GET
+    assert.equal((await fetch(`${base}/costumes/fetch`)).status, 405, '/costumes/fetch 只有 POST 语义')
   } finally {
     await app.close()
   }
