@@ -2,6 +2,29 @@
 
 ## 未发布
 
+### 修复：外壳的四份样式在 SSR 里整段丢失（既存缺陷）
+
+`Workbench.tsx` 一直写的是 `<style>{WORKBENCH_CSS}{TAGS_CSS}{POSES_CSS}{COSTUMES_CSS}</style>`
+（四个相邻 child）。React 19 的 SSR 对 `<style>` 的 children **只接受单个字符串**：
+长度 ≥2 的数组被整段静默丢弃，于是渲染成空的 `<style></style>`。
+
+**根因不是"`<style>` 被当成可提升资源"**（我第一版注释就写错了，被审查实测纠正）：
+不带 href/precedence 的写法照样中招，带 href + precedence 的可提升路径也一样丢 —— 是
+React 19 在 children 序列化里加了 `Array.isArray(children) ? (length < 2 ? children[0] : null)`
+那道长度判断。React 18 没有这个行为（对照实测多 child 完全正常）。
+
+**影响范围要说准**：宿主 Web 前端是 Vite SPA，生产走 CSR，浏览器端从来不受影响
+（DOM 追加多个 text node 是合法的）。真正中招的是 `tests/render.mjs` 这条 SSR 链路 ——
+而它此前从没断言过这段注入，所以"样式在 SSR 里是空的"这件事两边都没人看。
+顺带修掉一个 hydration 隐患：改前 SSR 输出 0 个 text node、客户端 2 个，现在两边一致。
+
+修法：先 `join('\n')` 拼成一个字符串再交给 `<style>`。四份 CSS 都以 `}` + 换行结尾、
+以块注释开头，拼起来不会粘连（审查逐份核对过末尾/开头字符与产物边界）。
+
+测试同时收紧：`tests/render.mjs` 改成遍历**所有** `<style>` 断言非空（不止外壳那一处），
+正则放宽到 `<style[^>]*>`（免得宿主将来加 nonce 误报）。三组变异都能打红：改回四相邻 child
+（外壳空）、只拼三份（缺 `.cct-root`）、把 Gallery 的单 child 改成两个相同 child（第 2 个 style 空）。
+
 ### 重构：样式从 TS 字符串搬进独立的 `.css` 文件
 
 用户指出一个长期存在的坏习惯：**我把 CSS 写成 TS 里的模板字符串常量**

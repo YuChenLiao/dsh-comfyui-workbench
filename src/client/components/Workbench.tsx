@@ -67,7 +67,17 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
 
   return (
     <div className="cwb-root">
-      <style>{WORKBENCH_CSS}{TAGS_CSS}{POSES_CSS}{COSTUMES_CSS}</style>
+      {/*
+        四份样式必须先拼成**一个**字符串再交给 `<style>`。
+        React 19 的 SSR 对 `<style>` 的 children 只接受单个字符串：**长度 ≥2 的数组被整段
+        静默丢弃**（实测 19.2.8；`<style>{A}{B}{C}{D}</style>` 渲染成空的 `<style></style>`，
+        用 Fragment 包起来更糟，是 `[object Object]`）。React 18 没有这个行为。
+        这与"`<style>` 被当成可提升资源"**无关**：不带 href/precedence 的写法照样中招，
+        带 href + precedence 的可提升路径也一样丢 —— 是 children 序列化那里的数组长度判断。
+        浏览器端不受影响（DOM 追加多个 text node 是合法的），所以只在 SSR 里现形；
+        顺带一提，拼成一个之后 SSR 与客户端的 text node 数也一致了（改前是 0 vs 2）。
+      */}
+      <style>{[WORKBENCH_CSS, TAGS_CSS, POSES_CSS, COSTUMES_CSS].join('\n')}</style>
       {available.length === 0 ? (
         <div className="cwf-empty">
           <div className="cwf-empty-title">{t('allPanelsOff')}</div>

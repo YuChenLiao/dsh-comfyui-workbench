@@ -276,6 +276,31 @@ assert.match(shell, />tabPoses</, '应当有姿势库页签')
 assert.match(shell, />tabCostumes</, '应当有衣装库页签')
 assert.match(shell, /class="cfa-root"/, '默认停在资产库')
 
+// 内联样式必须真的注入了 —— **每一个** `<style>` 都要非空。
+// 守的是一个只在 SSR 里现形的洞：React 19 的 SSR 对 `<style>` 的 children 只接受单个字符串，
+// **长度 ≥2 的数组被整段静默丢弃**（写成 `<style>{A}{B}{C}{D}</style>` → 空的 `<style></style>`；
+// Fragment 包起来是 `[object Object]`）。跟"可提升资源"无关：不带 href 的照样中招。
+// 浏览器端不受影响，所以肉眼与手测都发现不了。
+// 正则放宽到 `<style[^>]*>`：宿主将来若往 style 上加 nonce / data- 属性，不该误报。
+const styleBlocks = [...shell.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(match => match[1])
+assert.ok(styleBlocks.length > 0, '外壳应当至少渲染出一个内联 <style>')
+for (const [index, css] of styleBlocks.entries()) {
+  assert.ok(
+    css.trim() !== '',
+    `第 ${index + 1} 个内联 <style> 是空的 —— 多半又把多个 CSS 字符串当成了多个 child`,
+  )
+}
+// 第一个 <style> 就是外壳那份（它紧跟在 `<div class="cwb-root">` 之后）
+const shellStyle = styleBlocks[0]
+for (const [label, marker] of [
+  ['外壳', '.cwb-root'],
+  ['标签库', '.ctg-root'],
+  ['姿势库', '.cps-root'],
+  ['衣装库', '.cct-root'],
+]) {
+  assert.ok(shellStyle.includes(marker), `外壳注入的样式里缺 ${label}的 ${marker}`)
+}
+
 // 标签面板：SSR 不跑 useEffect，首帧应当是"正在建索引"而不是空列表
 const { TagsPanel, TAGS_CSS, PromptRefs } = mod.__test
 assert.ok(TagsPanel !== undefined, '应当导出 TagsPanel（标签库面板）')
