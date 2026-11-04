@@ -4,7 +4,7 @@
  * 沿用工作台那套 `--w-*` 变量，不另起一套主题 —— 面板是同一个壳里的一个页签，
  * 换配色会让它看起来像另一个应用。
  */
-export const TAGS_CSS = `
+
 .ctg-root{display:flex;flex-direction:column;gap:10px;padding:14px 20px 24px;min-height:0;height:100%;overflow:auto}
 .ctg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .ctg-title{font-size:1.02em;font-weight:600}
@@ -54,4 +54,3 @@ export const TAGS_CSS = `
 .ctg-copy:hover{border-color:var(--w-accent)}
 .ctg-empty{font-size:.86em;color:var(--w-muted);padding:18px 0;text-align:center}
 .ctg-more-hint{align-self:center;color:var(--w-muted);font-size:.78em;padding:6px 0 2px}
-`.trim()

@@ -254,6 +254,7 @@ Disabling it affects only this panel (`panel.terminal`); everything else keeps w
 ## Layout
 
 ```
+src/client/styles.css              shell styles (each panel keeps its own .css next to the component)
 src/components/panel-gallery/      assets: server/(routes/scan/index/thumbs) + client/
 src/components/panel-workflow/     workflow admin: server/(routes/run/import/config) + client/
 src/components/panel-tags/         tag library: server/(index/search/sync job) + client/

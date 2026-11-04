@@ -214,5 +214,24 @@ for (const [label, prodFile, prodName, scriptFile] of [
   )
 }
 
+// ── 样式必须写在 `.css` 里，不许写成 TS 字符串常量 ──
+// 每个组件几十 KB 的 CSS 塞进 `.ts` 的后果：编辑器没有语法高亮、没有工具能校验、
+// 逻辑文件被样式淹掉。构建时按文本导入（`loader: { '.css': 'text' }`），
+// 运行时照样 `<style>` 注入 —— 分离的是**源码**，不是运行方式。
+const cssInTs = files
+  .filter(file => /\.tsx?$/.test(file))
+  .filter(file => {
+    const text = fs.readFileSync(file, 'utf8')
+    // `export const X_CSS = \`...\`` / `const CSS = [ '...', ... ]` 这两种都算
+    return /\bconst\s+[A-Za-z_$][\w$]*(?:CSS|Css|css)\s*(?::[^=]+)?=\s*[`'[]/.test(text)
+  })
+  .map(file => path.relative(root, file).split(path.sep).join('/'))
+
+assert.deepEqual(
+  cssInTs,
+  [],
+  `这些文件把样式写成了 TS 字符串常量，应改成独立的 .css 文件（构建时按文本导入）：${cssInTs.join(' / ')}`,
+)
+
 console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，2 组白名单与导入脚本一致）`)
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Translate } from '../../../client/i18n.js'
-import { TERMINAL_CSS } from './styles.js'
+import TERMINAL_CSS from './styles.css'
 
 /** 一条终端输出（与后端 TerminalLine 对应）。 */
 interface Line {

@@ -5,7 +5,7 @@ import type { TogglesView } from '../../../client/api.js'
 import type { WorkflowListItem } from '../../../client/types.js'
 import type { Translate } from '../../../client/i18n.js'
 import { Icon } from '../../../client/icons.js'
-import { WORKBENCH_CSS } from '../../../client/styles-workbench.js'
+import WORKBENCH_CSS from '../../../client/styles.css'
 
 export interface WorkflowAdminProps {
   t: Translate

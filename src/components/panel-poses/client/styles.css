@@ -6,7 +6,7 @@
  *
  * 卡片是固定的 3:4 比例：姿势线稿全是竖构图，让它按内容撑高会让网格高低不平。
  */
-export const POSES_CSS = `
+
 .cps-root{display:flex;flex-direction:column;gap:10px;padding:14px 20px 24px;min-height:0;height:100%;overflow:auto}
 .cps-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .cps-title{font-size:1.02em;font-weight:600}
@@ -45,4 +45,3 @@ export const POSES_CSS = `
 .cps-empty{font-size:.82em;color:var(--w-muted);padding:18px 4px}
 .cps-attr{font-size:.72em;color:var(--w-muted);line-height:1.5;border-top:1px solid var(--w-line);padding-top:8px}
 .cps-attr a{color:inherit}
-`

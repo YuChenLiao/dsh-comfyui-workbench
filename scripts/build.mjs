@@ -41,6 +41,10 @@ const clientJob = {
     js: 'window.__ModuleLoader__.load({ id: "dsh-comfyui-workbench", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
   },
   footer: { js: 'return module.exports; } });' },
+  // 样式文件是独立的 `.css`，这里按**文本**导入：拿到原始 CSS 字符串，
+  // 运行时由面板 `<style>` 注入。不把 CSS 写成 TS 字符串常量 —— 那样编辑器没有
+  // 语法高亮、没有工具能校验，逻辑文件里还会混进几十 KB 样式。
+  loader: { '.css': 'text' },
   sourcemap: false,
   logLevel: 'info',
 }

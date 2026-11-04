@@ -29,28 +29,37 @@ function sources(dir) {
 }
 
 /** 样式表文件（它们定义类名）。 */
-// 相册与工作台外壳各有自己的样式表
+// 每个组件一个独立 .css（构建时按文本导入），外加工作台外壳那份。
+// **新增面板时必须在这里补一行**，否则它用的类名会被判成"没定义"。
 const STYLE_FILES = [
-  path.join(root, 'src', 'components', 'panel-gallery', 'client', 'styles.ts'),
-  path.join(root, 'src', 'components', 'panel-tags', 'client', 'styles.ts'),
-  path.join(root, 'src', 'components', 'panel-poses', 'client', 'styles.ts'),
-  path.join(root, 'src', 'components', 'panel-costumes', 'client', 'styles.ts'),
-  path.join(clientDir, 'styles-workbench.ts'),
+  path.join(root, 'src', 'components', 'panel-gallery', 'client', 'styles.css'),
+  path.join(root, 'src', 'components', 'panel-tags', 'client', 'styles.css'),
+  path.join(root, 'src', 'components', 'panel-poses', 'client', 'styles.css'),
+  path.join(root, 'src', 'components', 'panel-costumes', 'client', 'styles.css'),
+  path.join(root, 'src', 'components', 'panel-terminal', 'client', 'styles.css'),
+  path.join(clientDir, 'styles.css'),
 ]
+
+/**
+ * 类名前缀表。**新增面板必须在这里补自己的前缀**，否则它的类名既不进 defined
+ * 也不进 used —— 检查看起来全绿，实际那个面板完全没被校验（终端面板漏了整整一轮，
+ * 直到样式迁移时才被发现：加了它的 .css 却没加 `cwt`，校验是空转的）。
+ */
+const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt'
 
 /** 样式表里定义过的类名。 */
 const defined = new Set()
 for (const file of STYLE_FILES) {
   const text = fs.readFileSync(file, 'utf8')
-  for (const match of text.matchAll(/\.((?:cwb|cwf|cfa|cwa|ctg|cps|cct)-[a-z0-9-]+)/g)) defined.add(match[1])
+  for (const match of text.matchAll(new RegExp(`\\.((?:${PREFIXES})-[a-z0-9-]+)`, 'g'))) defined.add(match[1])
 }
 
 /** 组件源码里引用过的类名（含模板字符串里的静态片段）。 */
 const used = new Map()
 for (const file of sources(srcDir)) {
-  if (STYLE_FILES.includes(file)) continue
+  // 只扫源码（.ts/.tsx）；样式表在 STYLE_FILES 里，本来就不在这个集合中
   const text = fs.readFileSync(file, 'utf8')
-  for (const match of text.matchAll(/\b((?:cwb|cwf|cfa|cwa|ctg|cps|cct)-[a-z0-9-]+)/g)) {
+  for (const match of text.matchAll(new RegExp(`\\b((?:${PREFIXES})-[a-z0-9-]+)`, 'g'))) {
     const name = match[1]
     // `cwf-field-${type}` 这种动态拼接只会命中前缀，跳过
     if (name.endsWith('-')) continue

@@ -258,6 +258,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 ## 目录结构
 
 ```
+src/client/styles.css             工作台外壳样式（面板的样式各自一份 .css，与组件同目录）
 src/components/panel-gallery/     资产库：server/(路由/扫描/索引/缩略图) + client/
 src/components/panel-workflow/    工作流管理：server/(路由/运行/导入/配置) + client/
 src/components/panel-tags/        标签库：server/(索引/搜索/更新任务) + client/

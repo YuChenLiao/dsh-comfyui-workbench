@@ -1,10 +1,15 @@
-/**
+/*
  * 终端面板的样式。
  *
  * 刻意用「终端」的视觉语言而不是卡片：深底、等宽、无圆角、行高紧。
  * 这不是装饰偏好 —— 日志要能被扫读，行距和字体比配色重要得多。
+ *
+ * 注入方式：构建时按文本导入（`loader: { '.css': 'text' }`），运行时由面板
+ * `<style>{TERMINAL_CSS}</style>` 插进页面。客户端是 esbuild 打成的单文件、
+ * 经 `__ModuleLoader__` 加载，没有 HTML 入口，所以只能运行时注入 —— 但**样式内容本身
+ * 留在独立的 .css 文件里**，不写成 TS 字符串常量。
  */
-export const TERMINAL_CSS = `
+
 .cwt-root{display:flex;flex-direction:column;height:100%;min-height:0;background:#11151a;color:#cfd6de;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
 .cwt-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #232a32;flex-shrink:0;flex-wrap:wrap}
 .cwt-state{font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border:1px solid #2c353f;border-radius:3px;color:#8b98a6}
@@ -30,4 +35,3 @@ export const TERMINAL_CSS = `
 .cwt-box::-webkit-scrollbar{width:10px}
 .cwt-box::-webkit-scrollbar-thumb{background:#2a333d;border-radius:5px}
 .cwt-box::-webkit-scrollbar-track{background:transparent}
-`
