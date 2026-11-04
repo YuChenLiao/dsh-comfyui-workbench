@@ -19,6 +19,18 @@ const num = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined
 
 /**
+ * sidecar 里的 `comfy.promptId` —— 那次运行的唯一标识。
+ *
+ * 列表去重要靠它：同一 seed、同一提示词跑两次是**两张不同的图**，
+ * 只有同一次运行产生的多份副本才算重复（见 `dedupe.ts`）。
+ */
+function promptIdOf(meta: MetaRecord): string | undefined {
+  const comfy = meta.comfy
+  if (comfy === null || typeof comfy !== 'object') return undefined
+  return text((comfy as Record<string, unknown>).promptId)
+}
+
+/**
  * 把 sidecar 压成列表条目需要的字段。
  *
  * @param meta - sidecar 内容。
@@ -42,6 +54,7 @@ export function metaSummary(meta: MetaRecord | undefined): SummaryFields {
     scheduler: text(meta.scheduler),
     checkpoint: text(meta.checkpoint) ?? modelFromWorkflow(meta.workflow),
     createdAt: text(meta.createdAt),
+    promptId: promptIdOf(meta),
     workflow: meta.workflow !== undefined && meta.workflow !== null,
   }
 }

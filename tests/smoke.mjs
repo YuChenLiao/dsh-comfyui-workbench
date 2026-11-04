@@ -182,13 +182,21 @@ try {
     .filter(candidate => String(candidate).toLowerCase() === nestedInOut.toLowerCase()).length
   assert.equal(occurrences, 1, `同一个路径只能出现一次，实际出现 ${occurrences} 次`)
 
-  // 反向：两个不同路径、同 seed/尺寸/提示词，仍应被合并成「副本 2」——
-  // 修重复问题时最容易矫枉过正，把真正的同图副本也一起吞掉。
+  // 反向：两个不同路径、同 seed/尺寸/提示词、**同一次运行**（同 promptId），
+  // 仍应被合并成「副本 2」—— 修重复问题时最容易矫枉过正，把真正的同图副本也一起吞掉。
+  // 注意 `comfy.promptId` 是必须的：没有它就无法确认"同一次运行"，
+  // 现在的判据会拒绝合并（同一个固定 seed 跑两次是两张不同的图）。
   const twinA = path.join(isoDir, 'comfyui-20260103-000000-twin-a.png')
   const twinB = path.join(isoDir, 'comfyui-20260103-000000-twin-b.png')
   for (const twin of [twinA, twinB]) {
     fs.writeFileSync(twin, png)
-    fs.writeFileSync(`${twin}.json`, JSON.stringify({ prompt: 'twin probe', seed: 99, width: 512, height: 512 }))
+    fs.writeFileSync(`${twin}.json`, JSON.stringify({
+      prompt: 'twin probe',
+      seed: 99,
+      width: 512,
+      height: 512,
+      comfy: { url: 'http://127.0.0.1:8188', promptId: 'twin-run-same' },
+    }))
   }
   const twinProbe = await get('/comfyui-workbench/api/items?limit=20&all=1&dedupe=1')
   // 主项可能是任意一张（sidecar 完整度 / 路径长度 / mtime 决定），所以不能按主项 path 定位
@@ -347,10 +355,36 @@ try {
   }))
 
   const mergedList = await get('/comfyui-workbench/api/items?limit=10&refresh=1')
-  assert.equal(mergedList.body.total, 1, '同签名的两份副本应合并成一条')
-  assert.equal(mergedList.body.items[0].metaSource, 'sidecar', '主项应优先选有 sidecar 的那份')
-  assert.equal(mergedList.body.items[0].duplicateCount, 2)
-  assert.ok(mergedList.body.items[0].duplicates.includes(embeddedPath), '副本路径要能被展开')
+  // 这一对是「PNG 内嵌块一份 + 插件 sidecar 一份」：**内嵌那份没有 promptId**。
+  // 簇内只有一个 promptId → 整簇合并（跨来源副本是原设计的主题，真实数据里占多数）。
+  assert.equal(mergedList.body.total, 1, '跨来源的同一张图仍应合并')
+  assert.equal(mergedList.body.items[0].duplicateCount, 2, '主项要标出合并了几份')
+  assert.equal(mergedList.body.items[0].metaSource, 'sidecar', 'sidecar 优先当主项')
+
+  // 反向：同一个 seed 的**两次不同运行**（不同 promptId）不能被合并掉 ——
+  // 这就是用户报的那个 bug（固定 seed 跑了一组换装的图，全被吞了）。
+  // 两条断言放在一起才有诊断力：链路断了（promptId 拿不到）时上面那条会红，
+  // 判据退回旧逻辑时下面这条会红。
+  const runA = path.join(root, 'same-seed-run-a.png')
+  const runB = path.join(root, 'same-seed-run-b.png')
+  for (const [index, runPath] of [runA, runB].entries()) {
+    fs.writeFileSync(runPath, buildPng(graph, 4, 4))
+    fs.writeFileSync(`${runPath}.json`, JSON.stringify({
+      prompt: 'whale-chan by the window, soft light',
+      seed: 20261115,
+      width: 4,
+      height: 4,
+      comfy: { url: 'http://127.0.0.1:8188', promptId: `run-${index}` },
+    }))
+  }
+  const sameSeed = await get('/comfyui-workbench/api/items?limit=20&refresh=1')
+  const runPaths = new Set([runA.toLowerCase(), runB.toLowerCase()])
+  const bothListed = sameSeed.body.items.filter(item => runPaths.has(String(item.path).toLowerCase()))
+  assert.equal(bothListed.length, 2, '同 seed 的两次运行必须都列出来')
+  for (const runPath of [runA, runB]) {
+    fs.rmSync(runPath)
+    fs.rmSync(`${runPath}.json`)
+  }
 
   const rawList = await get('/comfyui-workbench/api/items?limit=10&refresh=1&dedupe=0')
   assert.equal(rawList.body.total, 2, 'dedupe=0 时两份都应列出')

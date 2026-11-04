@@ -44,6 +44,12 @@ export interface SummaryFields {
   scheduler?: string
   checkpoint?: string
   createdAt?: string
+  /**
+   * 那次运行的标识（sidecar 的 `comfy.promptId`）。
+   *
+   * 列表去重要靠它——同 seed、同提示词跑两次是两张不同的图，不能合并。
+   */
+  promptId?: string
   workflow?: boolean
   [key: string]: unknown
 }
