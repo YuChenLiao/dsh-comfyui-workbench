@@ -6,6 +6,8 @@
 export {
   checkRun,
   collectArtifacts,
+  fileRefsOf,
+  pickArtifacts,
   forgetRun,
   recallRun,
   rememberRun,

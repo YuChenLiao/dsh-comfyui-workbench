@@ -119,6 +119,7 @@ export function applyAll(ctx: HostContext, config: unknown): Runtime {
 export { stripAnsi, TerminalBuffer } from './shared/comfy/output-buffer.js'
 export { TagIndex, searchTagsLinear } from './components/tool-danbooru/server/tag-index.js'
 export { applyOverrides, overrideNotes } from './shared/run/overrides.js'
+export { fileRefsOf, pickArtifacts } from './shared/run/runner.js'
 export { adviceFor, classifyFailure, modelNameIn } from './shared/comfy/failure-kind.js'
 export { describeNodeErrors, executionFailed } from './shared/comfy/errors.js'
 export type { FailureKind } from './shared/comfy/failure-kind.js'

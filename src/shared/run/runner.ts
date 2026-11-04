@@ -146,15 +146,74 @@ function outputKindOf(classType: string): 'save' | 'preview' {
   return /^(preview|image\s*comparer)/i.test(classType) ? 'preview' : 'save'
 }
 
-/** history.outputs → 文件引用。按节点类型标出存盘/预览，遍历所有键。 */
-function fileRefsOf(
+/**
+ * 保存类节点：SaveImage / PreviewImage / ImageComparer。
+ *
+ * `PreviewBridge` 名字带 preview，但它是"把预览图传给下游继续算"的中转节点，不落盘 ——
+ * 把它算成保存节点，会让"某个来源只喂了中转节点"的情况被误判成没有计算下游。
+ */
+function isSavingNode(classType: string): boolean {
+  if (/^preview\s*bridge$/i.test(classType)) return false
+  return /^(save|preview|image\s*comparer)/i.test(classType)
+}
+
+/**
+ * 找出「保存的是中间产物」的那些保存节点。
+ *
+ * 判据是**数据流**，不是文件名：一个 SaveImage 的图片来源如果**还被别的计算节点消费**，
+ * 说明它存的是流程中间结果（后面还要接着算），而不是这次运行的成品。
+ *
+ * 实例（`moss_dual_pose_api`）：
+ * - node 17 存 `VAEDecode(16)` 的结果，16 只被 17 消费 → 成品
+ * - node 18 存 `ImageScaleToTotalPixels(9)` 的结果，而 9 还被 `ControlNet(12.depth_map)` 消费
+ *   → node 18 存的是 depth 中间图，不该算这次运行的产物
+ *
+ * 只看"还会继续计算"的消费者：同一张图被两个 SaveImage 各存一遍不算中间产物。
+ * 另有一条兜底 —— 若一个工作流的保存节点**全是**中间产物，调用方会退回全收，
+ * 不会因为过滤把整个运行判成"没产物"。
+ */
+function intermediateSaves(workflow?: ApiWorkflow | undefined): Set<string> {
+  const out = new Set<string>()
+  if (workflow === undefined) return out
+
+  /** 谁消费了谁：来源节点 → 消费者节点 id 列表。 */
+  const consumers = new Map<string, string[]>()
+  for (const [id, node] of Object.entries(workflow)) {
+    for (const value of Object.values((node.inputs ?? {}) as Record<string, unknown>)) {
+      if (!Array.isArray(value) || typeof value[0] !== 'string') continue
+      const list = consumers.get(value[0]) ?? []
+      list.push(id)
+      consumers.set(value[0], list)
+    }
+  }
+
+  for (const [id, node] of Object.entries(workflow)) {
+    if (!isSavingNode(String(node.class_type ?? ''))) continue
+    const images = (node.inputs as { images?: unknown } | undefined)?.images
+    if (!Array.isArray(images) || typeof images[0] !== 'string') continue
+    const source = images[0]
+    const downstream = (consumers.get(source) ?? []).filter(other => {
+      const otherType = String(workflow[other]?.class_type ?? '')
+      // 只算"还要继续计算"的消费者；别的保存节点不算
+      return !isSavingNode(otherType)
+    })
+    if (downstream.length > 0) out.add(id)
+  }
+  return out
+}
+
+/** history.outputs → 文件引用。按节点类型标出存盘/预览/中间产物，遍历所有键。 */
+export function fileRefsOf(
   outputs: Record<string, Record<string, unknown>> | undefined,
   workflow?: ApiWorkflow | undefined,
-): Array<{ filename: string; subfolder: string; type: string; nodeId: string; kind: 'save' | 'preview' }> {
-  const found: Array<{ filename: string; subfolder: string; type: string; nodeId: string; kind: 'save' | 'preview' }> = []
+): Array<{ filename: string; subfolder: string; type: string; nodeId: string; kind: 'save' | 'preview' | 'intermediate' }> {
+  const found: Array<{ filename: string; subfolder: string; type: string; nodeId: string; kind: 'save' | 'preview' | 'intermediate' }> = []
   if (outputs === undefined) return found
+  const intermediate = intermediateSaves(workflow)
   for (const [nodeId, bag] of Object.entries(outputs)) {
-    const kind = outputKindOf(String(workflow?.[nodeId]?.class_type ?? ''))
+    const classType = String(workflow?.[nodeId]?.class_type ?? '')
+    // 中间产物优先：它也是 SaveImage，只看 class_type 分不出来
+    const kind = intermediate.has(nodeId) ? 'intermediate' : outputKindOf(classType)
     if (bag === null || typeof bag !== 'object') continue
     for (const value of Object.values(bag)) {
       const list = Array.isArray(value) ? value : [value]
@@ -364,6 +423,44 @@ export async function checkRun(client: ComfyClient, promptId: string): Promise<{
 }
 
 /**
+ * 从 history 的全部文件引用里挑出「这次的产物」。
+ *
+ * 四档，从最像成品往后退：
+ *
+ * 1. **正式产物**：SaveImage 存的、不是中间产物、不是 temp
+ * 2. **正式产物（含 temp）**：只剩 temp 时也认 —— ComfyUI 会清 temp 目录、下载常 404，
+ *    但"有一个能拿的"比"报没有产物"强
+ * 3. **只要中间产物**：这一档不能省。缺了它，一个"唯一保存节点被判成中间产物"的工作流
+ *    会直接掉到第 4 档，把 PreviewImage 的临时预览一起收进来（实测某模板 1 张变 8 张）
+ * 4. **全都要**：兜底，至少让用户看到点什么
+ *
+ * 抽成纯函数是为了能被测：这条链错一档就会静默多收或漏收文件，
+ * 而它原来埋在 `collectArtifacts` 里（要起假 ComfyUI 才能碰到）。
+ *
+ * @param all - `fileRefsOf` 的结果。
+ */
+export function pickArtifacts<T extends { kind: 'save' | 'preview' | 'intermediate'; type: string }>(
+  all: readonly T[],
+): { refs: T[]; dropped: T[]; skippedPreview: number } {
+  const durable = all.filter(ref => ref.kind === 'save' && ref.type !== 'temp')
+  const durableWithTemp = all.filter(ref => ref.kind === 'save')
+  const intermediateOnly = all.filter(ref => ref.kind === 'intermediate' && ref.type !== 'temp')
+  const refs = durable.length > 0
+    ? durable
+    : durableWithTemp.length > 0
+      ? durableWithTemp
+      : intermediateOnly.length > 0
+        ? intermediateOnly
+        : [...all]
+
+  const chosen = new Set<T>(refs)
+  const dropped = all.filter(ref => ref.kind === 'intermediate' && !chosen.has(ref))
+  // `skipped` 里混着两种完全不同的东西：中间产物与预览图。分开说，别笼统写成"预览图"
+  const skippedPreview = all.length - refs.length - dropped.length
+  return { refs, dropped, skippedPreview }
+}
+
+/**
  * 取产物并落盘，顺带写 sidecar。
  *
  * @param client - ComfyUI 客户端。
@@ -401,13 +498,26 @@ async function collectArtifactsOnce(
   context: PendingContext,
 ): Promise<RunOutcome> {
   const all = fileRefsOf(entry.outputs, context.workflow)
+  const { refs, dropped: droppedIntermediate, skippedPreview } = pickArtifacts(all)
 
-  // 两类都要排掉：预览节点的产物，以及 type=temp 的文件（ComfyUI 会把 temp 清掉，
-  // 拿去下载经常 404）。只有工作流一个正式产物都没有时，才退回来用它们。
-  const durable = all.filter(ref => ref.kind === 'save' && ref.type !== 'temp')
-  const fallback = all.filter(ref => ref.kind === 'save')
-  const refs = durable.length > 0 ? durable : (fallback.length > 0 ? fallback : all)
-  const skipped = all.length - refs.length
+  /**
+   * 被判成中间产物而没下载的那些，要**说出来**。
+   *
+   * 这个判据是启发式：它认为"保存的图还被别的计算节点消费"就是中间结果。对
+   * `depth → ControlNet + SaveImage` 这种是准的，但对**两段式工作流**（先放大/精修存一张，
+   * 再拿同一份往上做）会把前一段那张也排掉，而那张往往正是用户想看的。
+   * 所以：不静默丢，列出来并给出出路（去 ComfyUI 自己的 output 目录找，或加进 assetRoots）。
+   */
+  const notes: string[] = []
+  if (droppedIntermediate.length > 0) {
+    const names = droppedIntermediate.slice(0, 3).map(ref => ref.filename).join('、')
+    notes.push(
+      `跳过了 ${droppedIntermediate.length} 张中间产物（${names}${droppedIntermediate.length > 3 ? '…' : ''}）：`
+      + '它们的来源还被别的节点继续计算，按"存的是流程中间结果"处理。'
+      + '若那张其实是你要的（例如两段式放大/精修的前一段），去 ComfyUI 自己的输出目录取，'
+      + '或把那个目录加进 assetRoots。',
+    )
+  }
   if (refs.length === 0) throw noOutput()
 
   ensureDir(context.outputDir)
@@ -493,7 +603,10 @@ async function collectArtifactsOnce(
     durationMs,
     effective: context.effective,
     notes: [
-      ...(skipped > 0 ? [`已跳过 ${skipped} 张预览图：它们来自 PreviewImage 之类的节点，是 ComfyUI 的临时输出，不是产物。`] : []),
+      ...(skippedPreview > 0
+        ? [`已跳过 ${skippedPreview} 张预览图：它们来自 PreviewImage 之类的节点，是 ComfyUI 的临时输出，不是产物。`]
+        : []),
+      ...notes,
       ...(unreadable.length > 0 ? [`有 ${unreadable.length} 个产物取不回，已跳过：${unreadable.join('；')}`] : []),
     ],
     ...(metadataPath === undefined ? {} : { metadataPath }),

@@ -2,6 +2,39 @@
 
 ## 未发布
 
+### 修复：中间产物不再混进资产库
+
+用户测动作控制工作流时发现：depth 中间图和成品一起进了资产库。
+
+根因：那个工作流（`moss_dual_pose_api`）有两个 SaveImage ——
+node 17 存 `VAEDecode` 的结果（成品），node 18 存 `ImageScaleToTotalPixels` 的结果
+（depth）。而 depth 那个节点的输出**同时**喂给 `ControlNet` 和这个 SaveImage。
+原来的过滤只排 preview 节点与 `type=temp`，两个都是 `SaveImage` + `type=output`，
+于是两个都当产物下载、都进了资产库。
+
+修法：`intermediateSaves(workflow)` —— 一个 SaveImage 的**图片来源如果还被别的计算节点
+消费**，它存的就是流程中间结果，标成 `kind='intermediate'`。判据取自数据流，不猜文件名。
+
+审查用本机 40 个工作流模板做了改前/改后差异对比，抓出 3 条必修，都修了：
+
+1. **兜底链缺一档**：只有「正式产物 → 含 temp 的正式产物 → 全都要」三档时，一个"唯一
+   保存节点被判成中间产物"的工作流会掉到最后一档，把 `PreviewImage` 的临时预览一起收进来
+   （某个模板实测 1 张变 8 张）。补上「仅中间产物」这一档，抽成纯函数 `pickArtifacts` 并
+   用四条断言钉住（这一层原来埋在 `collectArtifacts` 里，零覆盖）。
+2. **文案把中间产物说成预览图**：跳过计数里混着两种东西，笼统写成"已跳过 N 张预览图"
+   是在撒谎。拆成 `skippedPreview` 与 `dropped` 两个数，分两句话说。
+3. **误伤是静默的**：两段式放大/精修工作流的"前一段 SaveImage"也会被这个判据排掉
+   （本机 `civitai-wai-nsfw-v13` 少了 `223:SaveImage←118`、`civitai_img2img-facedetailer`
+   少了 `284:SaveImage←50`），而那张往往正是用户想看的。现在把被跳过的中间产物写进
+   `notes`，并给出出路（去 ComfyUI 自己的输出目录取，或加进 `assetRoots`）。
+
+顺带：`PreviewBridge` 不再算保存节点 —— 它是"把预览图传给下游继续算"的中转节点、不落盘。
+
+**只治未来不治过去**：这次改动不影响已经下载到 outputDir 的中间产物，目录里既有的
+`*_depth_*.png` 仍在，资产库照旧显示，需要手动删（或删掉重跑）。
+
+`npm test` **496/496**（新增 9 条：`tests/artifact-kind.test.mjs`）。
+
 ### 修复：外壳的四份样式在 SSR 里整段丢失（既存缺陷）
 
 `Workbench.tsx` 一直写的是 `<style>{WORKBENCH_CSS}{TAGS_CSS}{POSES_CSS}{COSTUMES_CSS}</style>`
