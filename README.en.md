@@ -210,7 +210,7 @@ The third tab: search the four Danbooru tag categories (99,372 tags), grab a `ta
 
 ## Pose library
 
-The fourth panel: **288 poses / 1,439 angles** of human reference sketches (a Chinese-language Danbooru community gallery), for when a workflow needs a "how does the body stand / sit / lie" reference.
+The fourth panel: **288 poses / 1,439 angles** of human reference sketches, for when a workflow needs a "how does the body stand / sit / lie" reference. The sketches come from **ギア**'s ([@giaaibusi](https://x.com/giaaibusi)) [AI Pose Gallery](https://ai-pose-gallery.pages.dev/); the Chinese names, action categories and the four-system split come from **Anhao**'s [Chinese mirror](https://github.com/anhao/ai-pose-gallery-zh). This plugin only aggregates — not a single sketch is redrawn here. See [data sources and credits](#data-sources-and-credits).
 
 - **Images do not ship with the plugin.** The repo only carries names, categories and image addresses (`data/poses/catalog.json`, 253 KB). Sketches are fetched on demand through a **server-side proxy** and cached to `<plugin data dir>/cache/poses/`. The browser never talks to the third-party image host — that would hand out the user's egress IP for a thumbnail and also bypass our cache and failure short-circuit. Licensing is in [data/poses/NOTICE.md](data/poses/NOTICE.md): the source material **may not be used commercially**, and this project's MIT license covers none of the sketches.
 - **Fetch once, then it is local**: 32 entries in memory plus a disk cache (256 MB cap, evicting least-recently-used), with concurrent requests for the same view collapsed into one upstream call. A few consecutive upstream failures short-circuit for 30 seconds, so the panel says "sketch unavailable" instead of letting forty thumbnails each sit through a 20 s timeout.
@@ -222,7 +222,7 @@ The fourth panel: **288 poses / 1,439 angles** of human reference sketches (a Ch
 
 ## Costume library
 
-The fifth panel: **1,407 real-world outfits** (no people in frame), for finding costume references. The integration is identical to the pose library — metadata ships with the plugin, images are pulled through the server proxy on demand.
+The fifth panel: **1,407 real-world outfits** (no people in frame), for finding costume references. The outfit set **COSTUME-DB-01** comes from **ギア**'s ([@giaaibusi](https://x.com/giaaibusi)) [AI Costume Gallery](https://ai-costume-gallery.pages.dev); the Chinese names, Chinese tags and English keywords come from **Anhao**'s mirror. The integration is identical to the pose library — metadata ships with the plugin, images are pulled through the server proxy on demand.
 
 - **Every entry carries English keywords** — that is what makes this dataset more directly useful than the pose one. Each outfit has a string like `ivory frill knit denim mini skirt coat socks white sneakers`, shown on the card and copyable in one click, ready to paste into a prompt. Coverage across all 1,407 is 100%.
 - **Images do not ship**: `data/costumes/catalog.json` (560 KB) holds only codes, Chinese descriptions, Chinese tags, English keywords and image addresses. Images live under `thumbs/costume/` and `img/costume/` on `ai-pose-gallery.anhao.app` in **webp** (the pose library uses jpg/png), so the two path allow-lists are separate and do not accept each other's shapes.
@@ -302,11 +302,64 @@ Importing a workflow: use the import button at the top right of the panel and pa
 - Design: [docs/design.md](docs/design.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 
-## Credits
+## Data sources and credits
 
-Tag data comes from [amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh) (MIT, © 2026 amenorira), which covers Danbooru tags with more than 50 posts along with their Chinese names, aliases and notes. The data ships with the plugin under `data/danbooru/`, and the upstream license is included verbatim (see [data/danbooru/LICENSE](data/danbooru/LICENSE) and [NOTICE.md](data/danbooru/NOTICE.md)).
+**None of these datasets are this project's work.** The plugin does aggregation, field
+normalisation and indexing; not a single image ships with it (metadata ships, images are pulled by
+the consumer through a server-side proxy on demand). The licences differ from dataset to dataset and
+are spelled out in each `NOTICE.md`; this section just names the authors.
 
-This plugin performs only these transformations: field-name mapping (CSV → JSONL), row filtering by `category`, `names` normalization (Chinese name first, drop entries identical to the tag, drop empty strings, deduplicate within a record) and shared-alias removal (aliases used by several records are kept only on the hottest one). Tag, Chinese name and note text are untouched. Re-import with `danbooru:zh` above when upstream updates.
+### Tag library: Danbooru and its Chinese translation set
+
+`data/danbooru/{characters,artists,copyrights,general}.jsonl` (99,372 rows in total) comes from
+[amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh)
+(MIT, © 2026 amenorira), which covers Danbooru tags with more than 50 posts along with their
+Chinese names, aliases and notes. The data ships with the plugin under `data/danbooru/`, and the
+upstream license is included verbatim (see [data/danbooru/LICENSE](data/danbooru/LICENSE) and
+[NOTICE.md](data/danbooru/NOTICE.md)).
+
+This plugin performs only these transformations: field-name mapping (CSV → JSONL), row filtering by
+`category`, `names` normalization (Chinese name first, drop entries identical to the tag, drop empty
+strings, deduplicate within a record) and shared-alias removal (aliases used by several records are
+kept only on the hottest one). Tag, Chinese name and note text are untouched. Re-import with
+`danbooru:zh` above when upstream updates.
+
+### Tag groups: Danbooru's wiki
+
+`data/danbooru/groups.jsonl` (91 groups / 15,064 tags) comes from Danbooru's
+[`tag_groups`](https://danbooru.donmai.us/wiki_pages/tag_groups) wiki article — that grouping exists
+only as a wiki page, not as an API, so it is parsed from the article (`npm run danbooru:groups`).
+Group names and membership belong to Danbooru and its contributors; this plugin only merges the 91
+groups into the eight categories the UI shows, and indexes them.
+
+### Pose library: ギア's AI Pose Gallery
+
+| | |
+|---|---|
+| 288 pose groups (1,439 angles) and the original Japanese data | **ギア** ([@giaaibusi](https://x.com/giaaibusi)), [AI Pose Gallery](https://ai-pose-gallery.pages.dev/) |
+| Chinese names, action categories and the four-system split | **Anhao** ([anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)), mirror at <https://ai-pose-gallery.anhao.app> |
+
+Only the **mannequin set** is used here (depth maps, the portrait library and the anime costume set
+are not). The plugin aggregates and indexes them and nothing more. The source material
+**may not be used commercially**, and this project's MIT license covers none of the sketches — see
+[data/poses/NOTICE.md](data/poses/NOTICE.md).
+
+### Costume library: ギア's COSTUME-DB-01
+
+| | |
+|---|---|
+| 1,407 outfits and the original data (COSTUME-DB-01) | **ギア** ([@giaaibusi](https://x.com/giaaibusi)), [AI Costume Gallery](https://ai-costume-gallery.pages.dev) |
+| Chinese names, Chinese tags, English keywords | **Anhao** ([anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)), mirror at <https://ai-pose-gallery.anhao.app> |
+
+The licence differs from the pose library: upstream allows using these images **as creative
+reference** (including in edited and commercial works) but forbids redistributing the image data
+itself, at original size or processed. See [data/costumes/NOTICE.md](data/costumes/NOTICE.md).
+
+### Design reference
+
+The server-side image proxy approach started from 澜资's gen-ai-pose-image plugin ("metadata ships,
+images on demand"); this plugin added a disk cache cap, request coalescing, failure cooldown and
+magic-byte validation on top. The code is a rewrite and reuses none of its source.
 
 ## License
 

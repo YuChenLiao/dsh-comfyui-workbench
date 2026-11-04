@@ -214,7 +214,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 ## 姿势库
 
-第四块：**288 组人体姿势、1439 个角度**的人体线稿（来自 Danbooru 社区的中文图库），用来给工作流找一个"人要怎么站/坐/躺"的参考图。
+第四块：**288 组人体姿势、1439 个角度**的人体线稿，用来给工作流找一个"人要怎么站/坐/躺"的参考图。素材出自 **ギア**（[@giaaibusi](https://x.com/giaaibusi)）的 [AI Pose Gallery](https://ai-pose-gallery.pages.dev/)；中文译名、分类体系与四体系划分来自 **Anhao** 的 [中文版镜像](https://github.com/anhao/ai-pose-gallery-zh)。本插件只做聚合，没有重画任何一张线稿 —— 详见[致谢](#数据来源与致谢)。
 
 - **图不随包**。仓库里只有名称、分类与图地址（`data/poses/catalog.json`，253 KB）；线稿在用到时经**服务端代理**读取并落盘缓存到 `<插件数据目录>/cache/poses/`。浏览器不直连第三方图床 —— 既不为一张缩略图把出口 IP 交出去，也绕不开我们自己的缓存与失败短路。版权与使用限制见 [data/poses/NOTICE.md](data/poses/NOTICE.md)：素材**不得用于商业用途**，本项目的 MIT 不覆盖任何一张线稿。
 - **取一次就算数**：内存 32 张 + 磁盘缓存（上限 256 MB，按最久未用清理），同一个视角的并发请求只打一次上游。上游连着失败几次会短路 30 秒，面板显示「线稿暂时取不到」而不是让几十个缩略图各自挂 20 秒超时。
@@ -226,7 +226,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 ## 衣装库
 
-第五块：**1407 套现实风格衣装**（图里没有人物），用来给工作流找服装参考。接入方式与姿势库完全一样 —— 元数据随包、图经服务端代理按需取。
+第五块：**1407 套现实风格衣装**（图里没有人物），用来给工作流找服装参考。衣装集 **COSTUME-DB-01** 出自 **ギア**（[@giaaibusi](https://x.com/giaaibusi)）的 [AI Costume Gallery](https://ai-costume-gallery.pages.dev)；中文名称、中文标签与英文关键词来自 **Anhao** 的镜像。接入方式与姿势库完全一样 —— 元数据随包、图经服务端代理按需取。
 
 - **自带英文关键词**，这是它比姿势库更有用的地方：每套都有一条 `ivory frill knit denim mini skirt coat socks white sneakers` 这样的英文串，卡片上一行、一键复制，直接能拼进提示词。1407 套覆盖率 100%。
 - **图不随包**：`data/costumes/catalog.json`（560 KB）只有编号、中文描述、中文标签、英文关键词与图地址。图在 `ai-pose-gallery.anhao.app` 的 `thumbs/costume/` 与 `img/costume/`，格式是 **webp**（姿势库是 jpg/png，所以两条路径白名单是分开的，互不接受对方的形状）。
@@ -306,11 +306,56 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 - 设计方案：[docs/design.md](docs/design.md)
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)
 
-## 致谢
+## 数据来源与致谢
 
-标签数据来自 [amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh)（MIT，© 2026 amenorira），收录 Danbooru 上图片数 > 50 的标签及其中文名、别名与注释。数据随插件分发在 `data/danbooru/`，上游的许可原文一并保留（见 [data/danbooru/LICENSE](data/danbooru/LICENSE) 与 [NOTICE.md](data/danbooru/NOTICE.md)）。
+**这几个数据集都不是本项目的产出。** 本插件做的是聚合、字段规范与索引；图片一张都不随包分发
+（元数据随包，图由使用方经服务端代理按需读取）。各数据集的授权彼此不同，逐条写在各自的
+`NOTICE.md` 里，这里只点名作者。
 
-本插件只做了这些转换：字段名映射（CSV → JSONL）、按 `category` 过滤行、`names` 规范化（中文名前置、丢弃与 tag 同名的项、丢弃空串、记录内去重）、以及共用别名去重（去掉被多条记录共用的 CP 名等，同一别名只保留在热度最高的那条记录上）。tag、中文名与注释文本本身未改动。上游更新后按上文的 `danbooru:zh` 重新导入。
+### 标签库：Danbooru 与它的中文译名库
+
+`data/danbooru/{characters,artists,copyrights,general}.jsonl`（共 99372 条）来自
+[amenorira/danbooru-tags-data-zh](https://github.com/amenorira/danbooru-tags-data-zh)
+（MIT，© 2026 amenorira），收录 Danbooru 上图片数 > 50 的标签及其中文名、别名与注释。
+数据随插件分发在 `data/danbooru/`，上游的许可原文一并保留（见 [data/danbooru/LICENSE](data/danbooru/LICENSE)
+与 [NOTICE.md](data/danbooru/NOTICE.md)）。
+
+本插件只做了这些转换：字段名映射（CSV → JSONL）、按 `category` 过滤行、`names` 规范化
+（中文名前置、丢弃与 tag 同名的项、丢弃空串、记录内去重）、以及共用别名去重（去掉被多条记录
+共用的 CP 名等，同一别名只保留在热度最高的那条记录上）。tag、中文名与注释文本本身未改动。
+上游更新后按上文的 `danbooru:zh` 重新导入。
+
+### 标签分组：Danbooru 的 wiki
+
+`data/danbooru/groups.jsonl`（91 组 / 15064 个 tag）来自 **Danbooru** 的
+[`tag_groups`](https://danbooru.donmai.us/wiki_pages/tag_groups) wiki 文章 —— 这套分组只有
+wiki 而没有 API，所以是把那篇文章解析下来的（`npm run danbooru:groups`）。分组名与成员关系归
+Danbooru 及其贡献者所有；本插件只做了归并（把 91 组映射到界面上的八类）与索引。
+
+### 姿势库：ギア 的 AI Pose Gallery
+
+| | |
+|---|---|
+| 288 组姿势线稿（1439 个角度）与原始日文数据 | **ギア**（[@giaaibusi](https://x.com/giaaibusi)），[AI Pose Gallery](https://ai-pose-gallery.pages.dev/) |
+| 中文译名、分类体系与四体系划分 | **Anhao**（[anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)），镜像站 <https://ai-pose-gallery.anhao.app> |
+
+本插件只取了**白模那一套**（深度图、人像库、二次元服装都没取），只做聚合与索引。
+素材**不得用于商业用途**，本项目的 MIT 不覆盖任何一张线稿 —— 详见 [data/poses/NOTICE.md](data/poses/NOTICE.md)。
+
+### 衣装库：ギア 的 COSTUME-DB-01
+
+| | |
+|---|---|
+| 1407 套衣装图与原始数据（COSTUME-DB-01） | **ギア**（[@giaaibusi](https://x.com/giaaibusi)），[AI Costume Gallery](https://ai-costume-gallery.pages.dev) |
+| 中文名称、中文标签、英文关键词 | **Anhao**（[anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)），镜像站 <https://ai-pose-gallery.anhao.app> |
+
+授权与姿势库**不同**：上游允许把服装图用作创作参考（含编辑与商业作品中的参考），但禁止再分发
+图像数据本身（原尺寸与加工后的都一样）。详见 [data/costumes/NOTICE.md](data/costumes/NOTICE.md)。
+
+### 设计上的参考
+
+服务端代理取图这套做法的起点是澜资的 gen-ai-pose-image 插件（"元数据随包、图按需取"）；
+本插件在此基础上补了磁盘缓存上限、单飞、失败冷却与字节头校验。代码是重写的，没有复用其源码。
 
 ## License
 
