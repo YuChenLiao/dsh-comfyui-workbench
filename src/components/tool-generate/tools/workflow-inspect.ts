@@ -88,7 +88,9 @@ export function workflowInspectTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_workflow_inspect',
     description:
-      '查看工作流细节。不传 nodeId：返回输入输出面 + 节点清单（id/classType/title）+ 缺失节点预检。传 nodeId：返回该节点的完整配置（含连线来源）。改参数前先用它确认现状。',
+      '查看工作流细节。不传 nodeId：返回输入输出面 + 节点清单（id/classType/title）+ 缺失节点预检。'
+      + '传 nodeId：返回该节点的完整配置（含连线来源）。改参数前先用它确认现状。'
+      + '它要读 ComfyUI 的节点清单，所以**服务没在跑时也会先自动拉起**（最多 3 分钟），慢是正常的。',
     parameters: {
       type: 'object',
       additionalProperties: false,

@@ -164,7 +164,10 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     autoStart: raw.autoStart !== false,
     startCommand: listOf(raw.startCommand),
     readyTimeoutMs: int(raw.readyTimeoutMs, 180_000, 5_000, 900_000),
-    idleShutdownMs: int(raw.idleShutdownMs, 300_000, 0, 3_600_000),
+    // 默认**不回收**：`/queue` 只能看到 prompt 队列，看不到模型下载/安装。用户拉一个大模型
+    // 超过 5 分钟、期间没有工具调用，实例就会被判成"空闲"杀掉 —— 那正是"下到一半被打断、
+    // 卡在下载状态"的经典事故。想省显存自己设成 300000；开着时回收前会先问 `/queue`。
+    idleShutdownMs: int(raw.idleShutdownMs, 0, 0, 3_600_000),
     timeoutMs: int(pick('timeoutMs'), 120_000, 1_000, 3_600_000),
     pollIntervalMs: int(raw.pollIntervalMs, 1_000, 100, 10_000),
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),

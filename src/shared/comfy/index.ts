@@ -20,7 +20,9 @@ export {
   timedOut,
 } from './errors.js'
 export type { RunErrorCode } from './errors.js'
-export { ComfySupervisor, detectInstallation } from './supervisor.js'
+export { ComfySupervisor, detectInstallation, queueBusy, shouldReclaim } from './supervisor.js'
+export { isQueueBusy, parseQueue } from './queue.js'
+export type { QueueSnapshot } from './queue.js'
 export { ensureComfyImage, materializeImages } from './upload.js'
 export { availableModels, missingModels, suggestModels } from './models.js'
 export type { UploadedImage } from './upload.js'

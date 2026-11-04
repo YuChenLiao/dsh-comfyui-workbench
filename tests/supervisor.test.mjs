@@ -12,7 +12,66 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { listenSafe } from './helpers.mjs'
 
-import { ComfySupervisor, detectInstallation } from '../lib/comfy.js'
+import { ComfySupervisor, detectInstallation, queueBusy, shouldReclaim } from '../lib/comfy.js'
+
+/**
+ * 空闲回收的三条语义。主路径要 spawn 真进程，端到端测不划算，
+ * 但判定错了就是误杀实例，必须逐条钉住。
+ */
+test('shouldReclaim：关掉回收 / 没到点 / 忙 三种情况都不回收', () => {
+  assert.equal(shouldReclaim({ idledMs: 999_999, idleShutdownMs: 0, busy: false }), false, 'idleShutdownMs=0 等于关掉回收')
+  assert.equal(shouldReclaim({ idledMs: 100, idleShutdownMs: 300_000, busy: false }), false, '没到点不回收')
+  assert.equal(shouldReclaim({ idledMs: 300_000, idleShutdownMs: 300_000, busy: true }), false, '有任务在跑就不能回收')
+  assert.equal(shouldReclaim({ idledMs: 300_000, idleShutdownMs: 300_000, busy: false }), true, '真闲了才回收')
+})
+
+/**
+ * 空闲回收前必须问队列。
+ *
+ * 这条守的是一个很隐蔽的事故：异步提交之后模型不再调用任何工具，`lastUsedAt` 停住，
+ * 于是一个**正在跑图**的实例会被判成空闲、到点被插件自己 kill —— 与"用户手动杀进程"
+ * 是同一个后果，但界面上只说"已停止本插件拉起的进程"。
+ */
+async function queueServer(body) {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/queue') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(body))
+      return
+    }
+    res.writeHead(404)
+    res.end()
+  })
+  const port = await listenSafe(server)
+  return { url: `http://127.0.0.1:${port}`, close: () => new Promise(resolve => server.close(resolve)) }
+}
+
+test('queueBusy：有任务在跑或在排队就算忙，读不到算闲', async () => {
+  const running = await queueServer({ queue_running: [[0, 'pid-1']], queue_pending: [] })
+  const pending = await queueServer({ queue_running: [], queue_pending: [[1, 'pid-2']] })
+  const idle = await queueServer({ queue_running: [], queue_pending: [] })
+  // 上游改过键名：旧的 `running` / `pending` 也要认，否则会静默判成"没活"去杀进程
+  const legacy = await queueServer({ running: [[0, 'pid-3']], pending: [] })
+  // 元素形状认不出来，但数组非空本身就是"有活"
+  const odd = await queueServer({ queue_running: [{ weird: true }], queue_pending: [] })
+  const broken = await queueServer(null)
+  try {
+    assert.equal(await queueBusy(running.url), true, '正在跑 = 忙，回收必须让路')
+    assert.equal(await queueBusy(pending.url), true, '排队中 = 忙，回收必须让路')
+    assert.equal(await queueBusy(legacy.url), true, '旧键名 running 也要认')
+    assert.equal(await queueBusy(odd.url), true, '元素形状认不出但数组非空，仍算忙')
+    assert.equal(await queueBusy(idle.url), false, '队列空了才算真的闲')
+    assert.equal(await queueBusy(broken.url), false, '响应不是对象时不崩，算闲')
+    assert.equal(await queueBusy('http://127.0.0.1:9'), false, '连不上算闲：回收才是对的')
+  } finally {
+    await running.close()
+    await pending.close()
+    await idle.close()
+    await legacy.close()
+    await odd.close()
+    await broken.close()
+  }
+})
 
 /** 造一个像 ComfyUI 的目录（main.py + models/）。 */
 function fakeInstall() {

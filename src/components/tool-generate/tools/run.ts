@@ -95,7 +95,12 @@ export function runTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_run',
     description:
-      '执行一个 ComfyUI 工作流。参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow_list / inspect 查）。返回值包含产物路径与原始像素尺寸；宿主不回传图片本身，需要看图时按返回的路径读取原图。',
+      '执行一个 ComfyUI 工作流。'
+      + '**服务没在跑时会自动拉起**：提交会等到服务就绪再发出去（默认最多等 3 分钟），'
+      + '所以不用先手动启动 ComfyUI；也**不要**去 kill 或重启它 —— 它可能正在下载/加载模型，'
+      + '打断会让它卡在自己的下载状态里。'
+      + '参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow_list / inspect 查）。'
+      + '返回值包含产物路径与原始像素尺寸；宿主不回传图片本身，需要看图时按返回的路径读取原图。',
     parameters: {
       type: 'object',
       additionalProperties: false,

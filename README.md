@@ -59,7 +59,8 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `baseUrl` | ComfyUI 地址，默认 `http://127.0.0.1:8188` |
 | `outputDir` | 产物目录。**留空则落在 `<当前工作区>/comfyui-output`**；探测不到工作区时回退到 `<插件数据目录>/outputs`（`GET /config` 的 `outputSource` 会显示 `data`，`workspaceProbe` 给出探测过程：`cwd` 是否被判为宿主内部目录、`workspaceRegistry` 服务取到几个路径）。要钉死位置就显式配置这一项 |
 | `workflowsDir` | 工作流仓库，默认 `~/.dsh-comfyui-workbench/workflows` |
-| `autoStart` | 探测到本机安装时是否自动拉起 ComfyUI；只停自己拉起的进程 |
+| `autoStart` | 探测到本机安装时是否自动拉起 ComfyUI。**提交任务、列工作流、看工作流详情都会触发这一步**（等到 `/system_stats` 通为止，上限 `readyTimeoutMs`），所以不用先手动启动；只停自己拉起的进程 |
+| `idleShutdownMs` | 空闲多久后停止「自己拉起的」进程。**默认 `0`（不回收）**——`/queue` 只能看到 prompt 队列、看不到模型下载，回收容易在你拉大模型时把进程打断；想省显存再设成 `300000`。开着时回收前会先问 `/queue`，**有任务在跑或在排队就顺延**；外部实例永不被停 |
 | `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开 |
 | `timeoutMs` | 单次 HTTP 请求超时。`/run`、`/rerun` 的 `timeoutMs` 另外用来**放宽**后台盯守时长（下限 30 分钟，传更小的值会被抬高，实际预算写在返回的 `notes` 里） |
 | `pollIntervalMs` | 执行状态轮询间隔 |
@@ -73,7 +74,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | --- | --- |
 | `comfyui_workflow_list` | 列出**可用的**工作流：id、标题、用途备注、底模、输入种类、输出形状。被停用的不列出（`hiddenCount` 告知藏了几条）。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
 | `comfyui_workflow_inspect` | 不传 `nodeId` 给 IO 面与节点清单；传了给单节点完整配置。顺带报告缺节点、缺模型与可用的替代 |
-| `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait: true` 同步等、`promptId` 续查。停用的工作流直接拒绝 |
+| `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait: true` 同步等、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
 | `comfyui_node_search` | 按类名 / 显示名 / 别名 / 分类 / 输入输出类型 / 包名搜索本机节点，四档排序。默认只回一行摘要，`detail` 才给输入输出 |
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |

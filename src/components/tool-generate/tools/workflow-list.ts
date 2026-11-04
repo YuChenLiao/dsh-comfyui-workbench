@@ -44,7 +44,10 @@ export function workflowListTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_workflow_list',
     description:
-      '列出本机可用的 ComfyUI 工作流。每项含 id、标题、作用备注、底模名、输入种类（text/image/mask）与输出形状。用户没有指定工作流时用它在其中挑选；用户已指定时不必调用。',
+      '列出本机可用的 ComfyUI 工作流。每项含 id、标题、作用备注、底模名、输入种类（text/image/mask）与输出形状。'
+      + '用户没有指定工作流时用它在其中挑选；用户已指定时不必调用。'
+      + '**服务没在跑时它会先自动拉起再列**（最多等到 3 分钟），所以第一次调用慢是正常的，'
+      + '不要因为慢就以为卡住了、更不要手动去启动或 kill ComfyUI。',
     parameters: {
       type: 'object',
       additionalProperties: false,

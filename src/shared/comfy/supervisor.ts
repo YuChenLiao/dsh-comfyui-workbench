@@ -5,6 +5,7 @@ import path from 'node:path'
 
 import { homeDir } from '../host/paths.js'
 import type { LoggerLike } from '../host/types.js'
+import { isQueueBusy } from './queue.js'
 
 /** 服务当前状态。 */
 export type ServiceState = 'unknown' | 'external' | 'starting' | 'ready' | 'failed'
@@ -56,6 +57,44 @@ async function probe(baseUrl: string, timeoutMs = 3_000): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * 队列里还有没有活（正在跑或排队中）。
+ *
+ * 空闲回收必须问这一句。`lastUsedAt` 只在 `ensureReady()` 时刷新，而**异步提交之后
+ * 模型根本不会再调用任何工具** —— 于是一个正在跑图的实例会被判成"空闲"，到点就被
+ * 插件自己 kill 掉。那和用户手动杀进程是同一个后果，只是更隐蔽：任务丢了，
+ * 而界面上只说"已停止本插件拉起的进程"。
+ *
+ * 读不到的**当作没活**：连不上时回收才是正确动作，卡着不放手反而更糟。
+ *
+ * 导出是为了能被测：它决定"会不会误杀正在跑图的进程"，不该只靠读代码确认。
+ */
+export async function queueBusy(baseUrl: string, timeoutMs = 2_000): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/queue`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) return false
+    // 键名与元素形状交给 `queue.ts`：与 `client.queue()` 共用同一份解析，
+    // 上游改字段名时两边一起跟上，不会一边认得出、一边当成"没活"
+    return isQueueBusy(await res.json())
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 空闲回收的判定（不含"怎么探测队列"那一步）。
+ *
+ * 三条语义分开测：`idleShutdownMs <= 0` 是关掉回收、没到点不回收、**忙就不回收**。
+ * 抽出来是因为主路径依赖 spawn 真进程，端到端测成本太高，而错一条就会误杀实例。
+ *
+ * @param input - 已空闲多久、配置的阈值、队列是否忙。
+ */
+export function shouldReclaim(input: { idledMs: number; idleShutdownMs: number; busy: boolean }): boolean {
+  if (input.idleShutdownMs <= 0) return false
+  if (input.idledMs < input.idleShutdownMs) return false
+  return !input.busy
 }
 
 /** 从 baseUrl 里取端口。 */
@@ -351,15 +390,46 @@ export class ComfySupervisor {
   private armIdleTimer(): void {
     if (this.options.idleShutdownMs <= 0 || this.idleTimer !== null) return
     this.idleTimer = setInterval(() => {
-      if (this.child === null) {
-        this.clearIdleTimer()
-        return
-      }
-      if (Date.now() - this.lastUsedAt < this.options.idleShutdownMs) return
-      this.stop()
+      void this.reclaimIdle()
     }, Math.min(60_000, Math.max(5_000, Math.floor(this.options.idleShutdownMs / 4))))
     // 不阻止进程退出
     this.idleTimer.unref?.()
+  }
+
+  /**
+  * 到点看一眼，真空闲才回收。
+   *
+   * 判"空闲"不能只看 `lastUsedAt`：异步提交之后模型不再发任何调用，正在跑图的实例
+   * 会被当成空闲。所以先问队列，有活就把计时往后推。
+   *
+   * **`await` 之后必须复查**：探测要花最多 2 秒，这期间别的工具可能已经调了
+   * `ensureReady` 刷新 `lastUsedAt`，旧进程也可能退出、`ensureReady` 又拉起了一个新的。
+   * 不复查就会杀掉"刚被用过"或"刚拉起来"的实例 —— 与用户抱怨的症状一模一样。
+   */
+  private async reclaimIdle(): Promise<void> {
+    const child = this.child
+    if (child === null) {
+      this.clearIdleTimer()
+      return
+    }
+    const idled = Date.now() - this.lastUsedAt
+    if (!shouldReclaim({ idledMs: idled, idleShutdownMs: this.options.idleShutdownMs, busy: false })) return
+    const busy = await queueBusy(this.options.baseUrl)
+    if (busy) {
+      // 有任务在跑/在排队：这不是空闲，杀掉会丢任务。顺延一整轮。
+      this.lastUsedAt = Date.now()
+      return
+    }
+    // 探测期间发生了两种情况之一，这次就别动了：
+    // 1. 别的工具调了 ensureReady，刷新了 lastUsedAt（实例刚被用过）
+    // 2. 旧进程退出、ensureReady 又拉起了一个新的（child 换了对象）
+    if (this.child !== child) return
+    if (!shouldReclaim({
+      idledMs: Date.now() - this.lastUsedAt,
+      idleShutdownMs: this.options.idleShutdownMs,
+      busy: false,
+    })) return
+    this.stop()
   }
 
   private clearIdleTimer(): void {

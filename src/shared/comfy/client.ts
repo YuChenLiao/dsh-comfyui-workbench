@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 
 import type { ApiWorkflow } from '../workflow/types.js'
 import { authFailed, comfyUnreachable, describeNodeErrors, RunError, submitRejected } from './errors.js'
+import { parseQueue } from './queue.js'
 import type { FileRef, HistoryEntry, ObjectInfo } from './types.js'
 
 /** 客户端配置。 */
@@ -163,27 +164,8 @@ export class ComfyClient {
       return { running: [], pending: [] }
     }
     if (body === null || typeof body !== 'object') return { running: [], pending: [] }
-    const bag = body as Record<string, unknown>
-    const pick = (keys: string[]): string[] => {
-      for (const key of keys) {
-        const value = bag[key]
-        if (!Array.isArray(value)) continue
-        const out: string[] = []
-        for (const item of value) {
-          // 标准形状是数组，第二项是 prompt_id；也有实现给对象
-          if (Array.isArray(item) && typeof item[1] === 'string') out.push(item[1])
-          else if (item !== null && typeof item === 'object' && typeof (item as { prompt_id?: unknown }).prompt_id === 'string') {
-            out.push((item as { prompt_id: string }).prompt_id)
-          }
-        }
-        return out
-      }
-      return []
-    }
-    return {
-      running: pick(['queue_running', 'running']),
-      pending: pick(['queue_pending', 'pending']),
-    }
+    // 解析在 `queue.ts`：空闲回收那边也要读同一份数据，两套解析迟早会漂
+    return parseQueue(body)
   }
 
   /**

@@ -62,6 +62,8 @@ export function nodeSearchTool(deps: NodeSearchDeps): ToolSpec {
       + '遇到不认识的自定义节点时查它的用途；某个模型文件能被哪些节点加载。'
       + '返回精简列表（类名、显示名、分类、所属包、一句话说明与命中原因）；detail=true 才给输入输出。'
       + '至少要给一个条件 —— 不加筛选地列出全部节点没有意义，也不会被接受。'
+      + '**它不会拉起 ComfyUI**：服务没在跑时只会等 20 秒然后报"搜不到"（连不上通常立刻失败），'
+      + '所以要把服务拉起来得用 comfyui_run（或 comfyui_workflow_list）触发一次。'
       + '注意：节点的元数据（display_name / description / search_aliases）都是英文，用中文查不到结果；'
       + 'hasModel 要给模型文件名的一段（如 "waiNSFWIllustrious"），不要给 "upscale" 这类普通词。',
     parameters: {

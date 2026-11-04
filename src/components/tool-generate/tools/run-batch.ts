@@ -70,6 +70,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
     name: 'comfyui_run_batch',
     description:
       '一次提交多个 ComfyUI 任务（同一工作流跑多组参数，或不同工作流各跑一次）。'
+      + '服务没在跑时会自动拉起，不用先手动启动，也不要 kill / 重启 ComfyUI 进程。'
       + '返回每条的 promptId 或错误；**部分失败不影响其它条目**。'
       + '默认异步：提交完立刻返回，出图后各自推回对话。'
       + `一次最多 ${MAX_RUNS} 条。`

@@ -88,6 +88,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
     description:
       '用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读取，'
       + '不必手工抄 seed / prompt。'
+      + '服务没在跑时会自动拉起，不用先手动启动，也不要 kill / 重启 ComfyUI 进程。'
       + '只覆盖你想改的：给 vars 或 seed 即可，其余沿用原值。'
       + `count > 1 时按 seed 生成变体（上限 ${MAX_COUNT}）。`,
     parameters: {

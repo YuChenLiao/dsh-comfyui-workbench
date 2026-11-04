@@ -45,6 +45,8 @@ export function runsTool(deps: Pick<ToolDeps, 'runs'>): ToolSpec {
     description:
       '查 ComfyUI 任务的运行状态：正在跑、排队中、最近完成或失败的。'
       + '提交之后出图要几分钟，用这个工具确认"那批出完了没"，而不是靠对话里插进来的通知。'
+      + '读的是插件自己的运行记录，**不会拉起 ComfyUI**、也不会等它就绪 —— '
+      + '所以服务没起来时它照样能答（那正是查"为什么没出图"的场景）。'
       + '不传 state 时按时间倒序给最近的。',
     parameters: {
       type: 'object',
