@@ -34,7 +34,7 @@ artifacts 里 —— 但 `/api/items` 的 244 条里没有它们，而同目录�
 （ComfyUI 那份是 PNG 内嵌块，没有 `comfy.promptId`）。资产库里可能看到更多重复条目，
 但不会再吞掉真正不同的图 —— 用户报的就是被吞，这个方向的错更贵。
 
-`npm test` **502/502**（新增 6 条：`tests/dedupe.test.mjs`）。
+`npm test` **503/503**（新增 7 条：`tests/dedupe.test.mjs`）。
 
 ### 修复：中间产物不再混进资产库
 
