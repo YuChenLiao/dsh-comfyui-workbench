@@ -25,7 +25,7 @@ import { Gallery } from '../components/panel-gallery/client/Gallery.js'
 import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import CSS from '../components/panel-gallery/client/styles.css'
 import { Workbench } from './components/Workbench.js'
-import { addImageToConversation, addToConversation, findComposerEditor, pasteFile } from './conversation.js'
+import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
 import { shouldAutoFill, shouldLoadMore } from './scroll.js'
 import { metaLine, planPage } from './format.js'
 import { Icon } from './icons.js'
@@ -174,6 +174,8 @@ export const __test = {
   addImageToConversation,
   pasteFile,
   findComposerEditor,
+  pickComposerEditor,
+  isVisibleElement,
   DICT,
   CSS,
   WORKBENCH_CSS,

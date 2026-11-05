@@ -213,8 +213,75 @@ assert.equal(partial.items.length, 110)
 assert.equal(partial.more, true)
 
 // ── 触底自动加载的判定（两个面板共用）──
-const { shouldLoadMore } = mod.__test
+const { shouldLoadMore, pickComposerEditor, isVisibleElement } = mod.__test
 assert.equal(typeof shouldLoadMore, 'function', '应当导出 shouldLoadMore')
+
+// ── 会话输入框的挑选：只认「真的能收粘贴」的那个 ──
+// 守的是「衣装库点加入对话没反应」那个 bug：宿主在会话 settling 期用
+// `visibility:hidden` 藏输入框（矩形仍在），旧逻辑只看元素存不存在 → 以为找到了 →
+// 不切页签 → 往隐藏元素派发 paste，宿主照收、用户什么都看不到。
+const fakeEditor = ({ visible: shown, scoped = false, lexical = false }) => ({
+  isConnected: true,
+  getClientRects: () => (shown ? [{ width: 10, height: 10 }] : []),
+  closest: () => (scoped ? {} : null),
+  hasAttribute: name => lexical && name === 'data-lexical-editor',
+})
+const visibleOf = element => element.getClientRects().length > 0
+assert.equal(typeof pickComposerEditor, 'function', '应当导出 pickComposerEditor')
+assert.equal(
+  pickComposerEditor([fakeEditor({ visible: false, scoped: true })], visibleOf),
+  null,
+  '不可见的输入框必须被排除（这正是那个 bug 的起因）',
+)
+{
+  // 引用相等，不是"返回了个非 null 就算过"——隐藏的 scoped 曾经照样满足那种弱断言
+  const hiddenScoped = fakeEditor({ visible: false, scoped: true })
+  const plain = fakeEditor({ visible: true })
+  assert.equal(
+    pickComposerEditor([hiddenScoped, plain], visibleOf),
+    plain,
+    '隐藏的 scoped 不能盖过可见的普通编辑器',
+  )
+}
+{
+  const plain = fakeEditor({ visible: true })
+  const lexical = fakeEditor({ visible: true, lexical: true })
+  const scoped = fakeEditor({ visible: true, scoped: true })
+  assert.equal(pickComposerEditor([plain, lexical, scoped], visibleOf), scoped, '优先级：data-input-scroll 内最高')
+  assert.equal(pickComposerEditor([plain, lexical], visibleOf), lexical, '其次 lexical 标记')
+  assert.equal(pickComposerEditor([plain], visibleOf), plain, '最后任意可见的')
+}
+assert.equal(pickComposerEditor([], visibleOf), null, '一个都没有时返回 null，调用方据此切页签再等')
+
+// ── 真实判据（生产用的那个，不是测试自己塞的 isVisible 回调）──
+// 前面几条都注入了可见性判断，所以判据本身的洞它们抓不到。这里直接喂假元素。
+{
+  const mk = (options = {}) => ({
+    isConnected: options.connected ?? true,
+    closest: () => (options.settling === true ? {} : null),
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          display: options.display ?? 'block',
+          visibility: options.visibility ?? 'visible',
+        }),
+      },
+    },
+    getBoundingClientRect: () => ({ width: options.width ?? 600, height: options.height ?? 48 }),
+  })
+  assert.equal(isVisibleElement(mk()), true, '正常可见的编辑器')
+  assert.equal(
+    isVisibleElement(mk({ visibility: 'hidden' })),
+    false,
+    'visibility:hidden 必须算不可见 —— 宿主正是用它藏 settling 期的输入框，而矩形仍然存在',
+  )
+  assert.equal(isVisibleElement(mk({ settling: true })), false, '宿主标记 settling 时不算可见')
+  assert.equal(isVisibleElement(mk({ display: 'none' })), false, 'display:none')
+  assert.equal(isVisibleElement(mk({ width: 0, height: 0 })), false, '零尺寸容器')
+  assert.equal(isVisibleElement(mk({ connected: false })), false, '脱离文档')
+}
+
+
 const scrollBase = { scrollHeight: 4000, scrollTop: 0, clientHeight: 800, shown: 50, total: 99372, loading: false, now: 1000, busyAt: 0 }
 // 顶部：还差得远，不加载
 assert.equal(shouldLoadMore(scrollBase), false, '刚打开时不该预取下一页')

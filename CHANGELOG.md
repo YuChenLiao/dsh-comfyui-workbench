@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 未发布
+
+### 修复：衣装库「加入对话」点了没反应
+
+现象：衣装库卡片上点「加入对话」，没有任何变化——不报错，附件也没进去。
+
+排查过、都不是原因（记下来免得再猜一遍）：宿主确实支持 webp，白名单在
+`dsh-attachment-local` 的 `imageLimits.mediaTypes` = png / jpeg / webp / gif；代理返回的
+`Content-Type: image/webp` 也对；宿主的输入框选择器 `data-input-scroll` 还在。
+
+真正的原因：**`findComposerEditor` 只判断元素"存在"，不判断"能不能收"**。
+插件是侧栏页签、对话在中间列，两者**一直同时挂载** —— 所以输入框几乎总能在 DOM 里找到，
+代码于是从不切页签。而宿主在会话 **settling 期**（`blank` / `loading` / subagent 可用性待定）
+用 `visibility:hidden` 把输入框藏起来：visibility 不销毁布局盒，`getClientRects()` 照样返回矩形，
+旧判据判它"可见"，paste 就派发进了一个看不见的编辑器 —— 宿主那边 `addFiles` 还没就绪，
+直接 return，于是既不报错也没下文。
+
+修法：判据从"有矩形"升级为三条一起查 —— `isConnected`、宿主自己的 `settling` 标记
+（`[data-phase="settling"]` / `[data-content-phase="settling"]`）与 `getComputedStyle` 的
+`display`/`visibility`、以及非零尺寸矩形。只有全部通过才算"能找到输入框"，否则调用方切页签再等。
+挑选逻辑抽成纯函数 `pickComposerEditor`，可见性判据 `isVisibleElement` 单独导出便于覆盖。
+
+测试同时收紧：原来那几条都自己注入可见性回调，判据本身的洞抓不到（审查指出「隐藏的 scoped
+照样能过一条弱断言」）；现在直接喂假元素测生产判据，六种情形（正常 / `visibility:hidden` /
+settling / `display:none` / 零尺寸 / 脱离文档）。变异验证：退回"只看矩形"的旧判据 → 红在
+`visibility:hidden` 那条。
+
+姿势库与资产库走同一个函数，这一修对它们同样生效。
+
+**还有一类静默失败是插件改不了的**：宿主 `intakeFiles` 有五个前置条件，任一不满足就 return
+且不提示 —— 会话被锁（`locked`）、机器忙（`machineBusy`，正在 adjudicating / submitting）、
+当前是 subagent 且不可续、附件控制器未就绪（`addFiles === undefined`）、文件列表为空。
+也就是说「会话正在跑任务」时点「加入对话」会被宿主忽略，这属于宿主行为，写在这里便于自查。
+
+`npm test` **503/503**（`tests/render.mjs` 新增断言覆盖挑选逻辑与生产判据）。
+
 ## 0.6.0 — 2026-11-04
 
 本轮主线：**工作台从四块界面长到六块**，并且把「测试全绿、真机不通」这类问题变成结构性检查。

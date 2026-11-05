@@ -3,18 +3,63 @@ import { copyImageToClipboard } from './clipboard.js'
 import type { GalleryItem } from './types.js'
 
 /**
+ * 元素当前是否**真的能接收粘贴**。
+ *
+ * 三条都要查，少一条就会误判：
+ *
+ * 1. `isConnected` —— 脱离文档的元素不算
+ * 2. 宿主自己的 `settling` 标记 + `visibility` —— 宿主正是在会话 settling 期用
+ *    `visibility:hidden` 藏输入框（`.composerSeat{visibility:hidden}`）。visibility 不销毁
+ *    布局盒，`getClientRects()` 照样返回矩形，只查矩形会把它当成可见
+ * 3. 矩形尺寸 —— 排除 `display:none` 与零尺寸容器
+ *
+ * 刻意不用 `offsetParent !== null`：`position: fixed` 的元素它也是 null。
+ */
+export function isVisibleElement(element: HTMLElement): boolean {
+  if (!element.isConnected) return false
+  // 宿主用这个标记表示"会话还在 settling（blank / loading / subagent 可用性待定）"
+  if (element.closest('[data-phase="settling"], [data-content-phase="settling"]') !== null) return false
+  const view = element.ownerDocument?.defaultView ?? null
+  if (view !== null) {
+    const style = view.getComputedStyle(element)
+    if (style.display === 'none' || style.visibility !== 'visible') return false
+  }
+  const rect = element.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0
+}
+
+/**
+ * 从候选里挑会话输入框：**只认可见的那个**。
+ *
+ * 抽成纯函数是为了能测——优先级是 `data-input-scroll` 内 → lexical 标记 → 任意可见的
+ * contenteditable。抽出来的原因见 `findComposerEditor` 的注释。
+ */
+export function pickComposerEditor<T extends HTMLElement>(
+  candidates: readonly T[],
+  isVisible: (element: T) => boolean = isVisibleElement,
+): T | null {
+  const usable = candidates.filter(element => isVisible(element))
+  const scoped = usable.find(element => element.closest('[data-input-scroll]') !== null)
+  if (scoped !== undefined) return scoped
+  const lexical = usable.find(element => element.hasAttribute('data-lexical-editor'))
+  if (lexical !== undefined) return lexical
+  return usable[0] ?? null
+}
+
+/**
  * 找会话输入框。
  *
  * 宿主给编辑器的滚动容器打了 `data-input-scroll`，比类名稳；再退到 lexical 标记，
  * 最后才用裸的 contenteditable。这是目前唯一可用的"把资产送进对话"的通道，
  * 相册已在生产环境验证。
+ *
+ * **必须要求可见**。对话面板切走时可能只是被 CSS 隐藏、编辑器仍挂在 DOM 里 ——
+ * 那种"找到了但看不见"的元素会让调用方以为一切正常，于是不切页签、直接往里粘贴，
+ * 宿主照收，用户却什么都看不到（表现就是"点了加入对话没反应"）。
  */
 export function findComposerEditor(): HTMLElement | null {
-  const scoped = document.querySelector<HTMLElement>('[data-input-scroll] [contenteditable="true"]')
-  if (scoped !== null) return scoped
-  const lexical = document.querySelector<HTMLElement>('[contenteditable="true"][data-lexical-editor]')
-  if (lexical !== null) return lexical
-  return document.querySelector<HTMLElement>('[contenteditable="true"]')
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>('[contenteditable="true"]'))
+  return pickComposerEditor(candidates)
 }
 
 /** 等输入框出现（切回会话面板后可能要几帧）。 */
