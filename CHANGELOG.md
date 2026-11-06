@@ -21,8 +21,13 @@ adult: hit.adult || undefined,
 而我们自己的测试只断言了 `ok === true` 与字段存在，从没做过 `JSON.parse(JSON.stringify(x))` 往返。
 这是测试缺口，已补。
 
-修法（社区 PR #1，感谢 @jimzyx）：只在为真时带上该字段，其余不动 ——
-`...(hit.adult ? { adult: true } : {})`。补了两条回归测试，对返回值做往返比较。
+修法：这一行直接取布尔值 —— `adult: hit.adult`。问题从来不是"值不是布尔"（`false` 完全可序列化），
+而是 `|| undefined` 这个表达式自己造出了 `undefined`；删掉它，bug 就没了。
+
+社区 PR #1（@jimzyx）先定位到这一处并给出了修复方向，其写法是"为真时才带上字段"
+（`...(x ? { adult: true } : {})`）。思路采纳，实现改成保留显式 `false`：
+模型能明确看到"这套是非成人向"，不必靠"字段缺失"去推断，而两者都不会产生 `undefined`。
+回归测试相应断言该字段必须是布尔，而不是断言字段不存在。
 
 **验证**：issue 里给的两条命令（`{query:"坐姿",limit:5}` / `{query:"连衣裙",limit:3}`）
 以及 `onlySafe`、默认两条路径，返回值现在都能无损往返。

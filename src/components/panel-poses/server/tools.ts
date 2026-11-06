@@ -25,7 +25,7 @@ function brief(hit: PoseHit): Record<string, unknown> {
     category: hit.category,
     system: hit.system,
     views: hit.viewCount,
-    ...(hit.adult ? { adult: true } : {}),
+    adult: hit.adult,
   }
 }
 

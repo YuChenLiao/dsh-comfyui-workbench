@@ -208,5 +208,6 @@ test('工具返回不带 undefined：非成人向服装必须能无损 JSON 往�
   assert.ok(result.costumes.length > 0)
   // 同姿势库：工具返回值里出现 undefined 会被宿主的「无损 JSON」校验整次拒掉。
   assert.deepEqual(JSON.parse(JSON.stringify(result)), result)
-  for (const item of result.costumes) assert.equal('adult' in item, false)
+  // 同姿势库：字段必须是布尔，不能是 undefined
+  for (const item of result.costumes) assert.equal(typeof item.adult, 'boolean')
 })

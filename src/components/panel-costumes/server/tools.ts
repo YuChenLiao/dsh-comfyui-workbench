@@ -21,7 +21,7 @@ function brief(item: CostumeItem): Record<string, unknown> {
     name: item.name,
     category: item.category,
     keywords: item.keywords,
-    ...(item.adult ? { adult: true } : {}),
+    adult: item.adult,
   }
 }
 

@@ -393,5 +393,7 @@ test('工具返回不带 undefined：非成人向结果必须能无损 JSON 往�
   // 宿主按「无损 JSON」校验工具返回值：undefined 这类不可序列化的值会让整次调用作废
   // （"returned invalid output: value is not lossless JSON"）。往返一次就能暴露它。
   assert.deepEqual(JSON.parse(JSON.stringify(result)), result)
-  for (const pose of result.poses) assert.equal('adult' in pose, false)
+  // 字段必须在、且必须是布尔：显式 false 比"字段缺失"更能说明这套是非成人向。
+  // 真正的约束是「不能是 undefined」——那才会让宿主的无损校验拒掉整次调用。
+  for (const pose of result.poses) assert.equal(typeof pose.adult, 'boolean')
 })
