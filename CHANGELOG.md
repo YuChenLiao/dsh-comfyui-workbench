@@ -1,6 +1,31 @@
 # CHANGELOG
 
-## 未发布
+## 0.6.1 — 2026-11-07
+
+### 修复：两个搜索工具在非成人向结果上整次调用失败（#2）
+
+`comfyui_pose_search` 与 `comfyui_costume_search` 的返回值里带着 `adult: undefined`：
+
+```ts
+adult: hit.adult || undefined,
+```
+
+非成人向时 `false || undefined` 得到 `undefined`。宿主对工具返回值做无损 JSON 校验，
+`undefined` 往返后键会消失，于是整次调用被判 `returned invalid output: value is not lossless JSON` ——
+一个结果都拿不到。
+
+**影响面**：288 组姿势里 190 组成人向、1407 套衣装里 393 套成人向，所以绝大多数查询都落在这条路径上，
+两个工具的模型侧入口基本不可用。
+
+**为什么一直没被发现**：面板走 HTTP 路由，根本不经过工具输出校验，所以界面一切正常；
+而我们自己的测试只断言了 `ok === true` 与字段存在，从没做过 `JSON.parse(JSON.stringify(x))` 往返。
+这是测试缺口，已补。
+
+修法（社区 PR #1，感谢 @jimzyx）：只在为真时带上该字段，其余不动 ——
+`...(hit.adult ? { adult: true } : {})`。补了两条回归测试，对返回值做往返比较。
+
+**验证**：issue 里给的两条命令（`{query:"坐姿",limit:5}` / `{query:"连衣裙",limit:3}`）
+以及 `onlySafe`、默认两条路径，返回值现在都能无损往返。
 
 ### 修复：衣装库「加入对话」点了没反应
 
