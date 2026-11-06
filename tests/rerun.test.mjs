@@ -589,3 +589,25 @@ test('count>1 时第 1 条成功、第 2 条执行失败：各自记各自的状
   assert.ok(second?.error !== undefined)
   fs.rmSync(deps._dir, { recursive: true, force: true })
 })
+
+test('没有 seed 槽位的工作流：seeds 里不能有 undefined（否则整次调用被宿主拒掉）', async () => {
+  const deps = makeDeps()
+  // 一份完全没有 seed / noise_seed 槽位的工作流
+  const noSeed = {
+    1: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'x.safetensors' } },
+    3: { class_type: 'CLIPTextEncode', inputs: { text: 'a cat', clip: ['1', 1] } },
+    7: { class_type: 'SaveImage', inputs: { images: ['3', 0], filename_prefix: 'x' } },
+  }
+  fs.writeFileSync(path.join(deps._dir, 'workflows', 'noseed.json'), JSON.stringify(noSeed))
+  fs.writeFileSync(path.join(deps._dir, 'workflows', 'noseed.meta.json'), JSON.stringify({ enabled: true }))
+  const sidecar = writeSidecar(deps._dir, 'n.png.json', { workflowId: 'noseed', vars: {} })
+  const tool = rerunTool(deps)
+  const result = await tool.execute({ from: sidecar, count: 2 })
+
+  assert.equal(result.ok, true)
+  // 曾经是 [undefined, undefined]：数组里的 undefined 会让宿主的无损 JSON 校验拒掉整次调用
+  // （与 #2 完全同一条路径），而这次的 `undefined` 是 map 出来的，不是数据里的。
+  assert.deepEqual(result.seeds, [], '没有 seed 槽位就不该有元素，更不能是 [undefined]')
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), result, '返回值必须能无损往返')
+  fs.rmSync(deps._dir, { recursive: true, force: true })
+})

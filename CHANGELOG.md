@@ -32,6 +32,18 @@ adult: hit.adult || undefined,
 **验证**：issue 里给的两条命令（`{query:"坐姿",limit:5}` / `{query:"连衣裙",limit:3}`）
 以及 `onlySafe`、默认两条路径，返回值现在都能无损往返。
 
+### 修复：`comfyui_rerun` 的 `seeds` 数组里也可能出现 undefined
+
+同一个根因的另一处，发版审查时扫出来的。工作流没有 `seed` / `noise_seed` 槽位时：
+
+```ts
+seeds: submitted.map(item => item.seed),   // → [undefined]
+```
+
+数组元素是 `undefined` 一样会被宿主的无损 JSON 校验整次拒掉 —— 而这里的 `undefined`
+同样是 `map` 造出来的，不是数据里的。改成 `flatMap`：没有 seed 就不放元素，返回 `[]`。
+补了一条"无 seed 槽位的工作流"的测试，变异回 `map` 会红。
+
 ### 修复：衣装库「加入对话」点了没反应
 
 现象：衣装库卡片上点「加入对话」，没有任何变化——不报错，附件也没进去。

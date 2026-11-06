@@ -391,7 +391,9 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
         ...(seedIgnored ? { note: '没有识别到 seed / noise_seed 槽位，seed 参数已忽略（若该工作流的种子槽位用了别的名字，请用 vars 直接传）。' } : {}),
         count: submitted.length,
         promptIds: submitted.map(item => item.promptId),
-        seeds: submitted.map(item => item.seed),
+        // 工作流没有 seed 槽位时 item.seed 是 undefined：数组里的 undefined 会让宿主的
+        // 无损 JSON 校验整次拒掉（与 #2 同一条路径）。没有就干脆不放这个元素。
+        seeds: submitted.flatMap(item => (item.seed === undefined ? [] : [item.seed])),
         ...(wait ? { results: submitted } : {}),
         ...(stale ? {
           staleWorkflow: true,
