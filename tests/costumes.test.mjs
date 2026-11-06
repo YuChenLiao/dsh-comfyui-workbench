@@ -192,3 +192,21 @@ test('工具：fetch 落盘并回关键词，找不到编号时指向 search', a
   assert.ok(typeof ok.costume.keywords === 'string' && ok.costume.keywords !== '')
   assert.equal(hits, 1)
 })
+
+test('工具返回不带 undefined：非成人向服装必须能无损 JSON 往返', async () => {
+  const index = createCostumesIndex(tempDir(), BUNDLED)
+  const images = createImageCache({
+    cacheDir: tempDir(),
+    origin: ORIGIN,
+    pathPattern: COSTUME_PATH,
+    fetchImpl: async () => new Response(tinyWebp(), { status: 200 }),
+  })
+  const tool = costumeSearchTool({ index, images, uploadsDir: () => tempDir() })
+
+  const result = await tool.execute({ query: '针织', limit: 3 })
+  assert.equal(result.ok, true)
+  assert.ok(result.costumes.length > 0)
+  // 同姿势库：工具返回值里出现 undefined 会被宿主的「无损 JSON」校验整次拒掉。
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), result)
+  for (const item of result.costumes) assert.equal('adult' in item, false)
+})

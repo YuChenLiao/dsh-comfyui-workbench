@@ -381,3 +381,17 @@ test('工具：fetch 找不到 id 时给出可执行的下一步', async () => {
   assert.ok(fs.existsSync(ok.file), '该落盘并回绝对路径')
   assert.equal(hits, 1)
 })
+
+test('工具返回不带 undefined：非成人向结果必须能无损 JSON 往返', async () => {
+  const index = createPosesIndex(tempDir(), BUNDLED)
+  const images = createPoseImages({ cacheDir: tempDir(), origin: ORIGIN, fetchImpl: async () => new Response(TINY_PNG) })
+  const tool = poseSearchTool({ index, images, uploadsDir: () => tempDir() })
+
+  const result = await tool.execute({ onlySafe: true, limit: 3 })
+  assert.equal(result.ok, true)
+  assert.equal(result.poses.length, 3)
+  // 宿主按「无损 JSON」校验工具返回值：undefined 这类不可序列化的值会让整次调用作废
+  // （"returned invalid output: value is not lossless JSON"）。往返一次就能暴露它。
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), result)
+  for (const pose of result.poses) assert.equal('adult' in pose, false)
+})
