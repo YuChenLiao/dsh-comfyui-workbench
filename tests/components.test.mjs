@@ -79,7 +79,7 @@ test('默认全开：两组路由与十五个工具都在', async () => {
   try {
     assert.equal((await app.get('/comfyui-workbench/api/items')).status, 200)
     assert.equal((await app.get('/comfyui-workbench/api/workflows')).status, 200)
-    // 八个 comfyui_* 工具（含 node_search / run_batch）+ 两个 pose 工具 + 三个 danbooru_* 工具
+    // 八个 comfyui_*（含 node_search / run_batch）+ 两个 pose + 两个 costume + 三个 danbooru_*
     assert.equal(app.tools.length, 15)
   } finally {
     await app.close()
