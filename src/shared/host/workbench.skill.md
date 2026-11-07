@@ -1,0 +1,48 @@
+# 这套 ComfyUI 工作台怎么用
+
+插件把本机 ComfyUI 接进对话：六个面板给人看，十五个工具给模型用。
+四层东西各管各的，混了就出问题 ——
+
+| 层 | 在哪 | 规矩 |
+|---|---|---|
+| 模板 | `workflows/` 下的 **API 格式** JSON | 只在改**结构**时动，改参数永远用 vars |
+| 变量 | 模板的输入面 | `comfyui_run` 的 `vars`，键名来自 `inputs` |
+| 产物 | `outputDir` + 同名 `.json` sidecar | 只读，sidecar 是复现凭据 |
+| 素材 | 标签 99372 / 姿势 288 组 / 衣装 1407 套 | 只读，能搜、能取图 |
+
+## 跑一次图的标准路径
+
+1. `comfyui_workflow_list` 挑模板 —— 看 `models.primary`（底模）与 `description`（用途）。同名的模板靠这两项区分，别只看 id。
+2. 第一次用某个模板，先 `comfyui_workflow_inspect` 看 `inputs`：那就是 `vars` 能用的键名，连同类型、默认值、取值范围。
+3. `comfyui_run { workflow: { id }, vars: {...} }`。
+4. 按返回的产物路径读原图；要改一点重跑用 `comfyui_rerun` —— sidecar 里存着 workflowId / hash / vars / seed，不用手抄。
+
+## 三种常见误用
+
+**为了改参数去改写工作流 JSON。** 模板 + 变量就是为此存在的。改文件会让这次运行无法追溯（sidecar 记的是模板 hash），也让 `workflows/` 越堆越乱。只有要增删节点、换连线时才碰文件。
+
+**把 UI 格式的 JSON 传给 `workflow.path`。** 带 `nodes` + `links` 的是 ComfyUI 界面工程文件，必须先「Export (API)」重新导出。工作流目录里的模板全是 API 格式，用 `{"id":"..."}` 就能跑，根本不需要 path。`path` 只用于目录之外的临时文件。
+
+**改产物的 sidecar。** 它记着 workflowId / workflowHash / vars / seed，是"再来一张一模一样的"的唯一凭据；改过之后 `comfyui_rerun` 复现不出来。
+
+## 素材三库的用法
+
+- **标签库**（99372 条）：`danbooru_lookup` 把中文想法转成 tag。语义分类只覆盖 26.9%，查不到时先去掉 `category` 再试。
+- **姿势库**（288 组 / 1439 角度）：`comfyui_pose_search` 找人 → `comfyui_pose_fetch` 把线稿落进 uploads → 当 ControlNet / 图生图的输入图。
+- **衣装库**（1407 套）：`comfyui_costume_search` 的结果带 `keywords`（英文串，可直接拼进提示词）→ `comfyui_costume_fetch` 取图当参考。
+
+要找"能吃图的工作流"：`comfyui_workflow_list { inputs: "image" }` 会给出 `imageSlots`，告诉你该往哪个键传图。
+
+## 服务与等待
+
+- 提交时会**自动拉起** ComfyUI，不必先手动启动；也不要 kill 它 —— 它可能正在下载或加载模型，打断会让它卡在自己的下载状态里。
+- 一次出图实测中位 115 秒、最长 336 秒。用 `comfyui_runs` 查状态；`progressStream` 打开才有百分比，否则只有排队位置。
+- 中间产物（保存节点的来源还被别的计算节点继续消费）不会进资产库，只留在 ComfyUI 自己的输出目录里。
+
+## 什么时候用哪个
+
+- 不知道有哪些模板 → `comfyui_workflow_list`
+- 知道模板、要改参数 → `comfyui_workflow_inspect` 查完直接 `comfyui_run`
+- 已有产物、想再来一张或做变体 → `comfyui_rerun`
+- 要批量 → `comfyui_run_batch`（只投一条汇总通知，并按工作流分组提交，避免反复重载底模）
+- 跑失败了 → 看返回的 `failureKind`，五类各有对应改法；节点是否存在用 `comfyui_node_search` 查
