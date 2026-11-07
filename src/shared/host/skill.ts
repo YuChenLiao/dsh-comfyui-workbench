@@ -28,7 +28,7 @@ export const WORKBENCH_SKILL_DESCRIPTION =
 
 /** 宿主 skill 注册面的最小形状（只用到 register）。 */
 interface SkillRegistryLike {
-  register?: (skill: { name: string; description: string; content: string }) => unknown
+  register?: (skill: { name: string; description: string; content: string; source: string }) => unknown
 }
 
 /**
@@ -36,6 +36,11 @@ interface SkillRegistryLike {
  *
  * 拿不到 `skills` 服务不算失败：插件的面板与工具都不依赖它，只是模型少了这份说明。
  * 重载时同名已被注册，宿主会记一条 warning 后忽略这次 —— 不抛错，所以这里不做额外处理。
+ *
+ * **`source` 必须给**。注册时宿主不校验它，但加载时 `validateDefinition` 要求它是字符串，
+ * 缺了会在模型真正加载 skill 的那一刻抛 `loaded skill "…" source must be a string` ——
+ * 现象是"目录里看得见、一点开就报错"，比没注册更糟。`runtime` 是宿主保留给
+ * `ctx.skills.register` 的默认 provider 名，这里显式声明成自己的来源。
  *
  * @param ctx - 宿主上下文。
  */
@@ -47,6 +52,7 @@ export function mountWorkbenchSkill(ctx: HostContext): void {
       name: WORKBENCH_SKILL_NAME,
       description: WORKBENCH_SKILL_DESCRIPTION,
       content: skillBody,
+      source: 'plugin:dsh-comfyui-workbench',
     })
   } catch {
     // 宿主版本不认这个形状（或同名冲突）时，别让它带崩整条 entry

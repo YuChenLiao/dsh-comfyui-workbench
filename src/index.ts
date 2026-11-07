@@ -51,7 +51,8 @@ export const inject = ['webServer', 'workspaceRegistry']
  *
  * `apply` 与 `applyAll` 都要调它，否则测试路径（走 applyAll）拿不到 components 字段。
  */
-function mountConfig(ctx: HostContext, rt: ReturnType<typeof acquire>): void {  const table = {
+function mountConfig(ctx: HostContext, rt: ReturnType<typeof acquire>): void {
+  const table = {
     exact: {
       '/config': createConfigHandler({
         settings: rt.settings,

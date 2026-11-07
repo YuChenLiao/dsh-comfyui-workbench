@@ -6,6 +6,7 @@ import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
 import type { Artifact } from '../../../shared/run/index.js'
 import { buildSurface, readEntry } from '../../../shared/workflow/index.js'
+import { detectFormat, formatHint } from '../../../shared/workflow/detect.js'
 import type { ApiWorkflow, WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { asInt, asRecord, asString } from '../../../shared/tools/types.js'
 import type { ToolBlock, ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
@@ -50,6 +51,10 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
     throw new Error(`读不了工作流文件：${error instanceof Error ? error.message : String(error)}`)
   }
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('工作流文件不是 JSON 对象。')
+  // 描述里承诺了"path 必须是 API 格式"，这里就得真的验 —— 否则模型传 UI 格式时
+  // 拿到的是 ComfyUI 层那句晦涩报错，而不是下面这句能照做的指引。
+  const format = detectFormat(raw)
+  if (format !== 'api') throw new Error(formatHint(format))
   const workflow = raw as ApiWorkflow
   const workflowId = path.basename(filePath, path.extname(filePath))
   // 单文件模式：临时算一份 IO 面，保证变量校验与模板走同一套规则。

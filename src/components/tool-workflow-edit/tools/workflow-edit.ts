@@ -49,7 +49,10 @@ export function workflowEditTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_workflow_edit',
     description:
-      '修改工作流的用途备注，或调整某个节点的参数。patches 默认只影响下一次运行（不写模板）；要写回模板必须带 persist=true 与 expectHash。被变量控制（bind）的参数不能直接 patch，应先改那个变量。',
+      '修改工作流的用途备注，或调整某个节点的参数。patches 默认只影响下一次运行（不写模板）；要写回模板必须带 persist=true 与 expectHash。'
+      + '**一次性的参数不要用这个** —— 直接用 `comfyui_run` 的 vars；这里只在两种情况用：'
+      + '把新值固定进模板（persist=true），或改工作流的备注。'
+      + '被变量控制（bind）的参数不能直接 patch，应先改那个变量。',
     parameters: {
       type: 'object',
       additionalProperties: false,

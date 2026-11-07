@@ -155,18 +155,45 @@ test('使用说明注册成 skill：名字、描述、正文都在', async () =>
   try {
     const skill = app.skills.find(item => item.name === 'comfyui-workbench')
     assert.ok(skill !== undefined, '应当注册 comfyui-workbench 这个 skill')
+    // `source` 是宿主的加载前置条件：缺了它，目录里看得见、模型一点开就抛
+    // `loaded skill "…" source must be a string` —— 比不注册更糟。注册时宿主不校验，
+    // 所以只能在这里钉住。
+    assert.equal(typeof skill.source, 'string', '缺 source 会让加载阶段抛错')
+    assert.ok(skill.source.length > 0)
     // 描述决定模型什么时候加载它，必须覆盖三类触发场景
     assert.match(skill.description, /出图/)
     assert.match(skill.description, /素材/)
     assert.match(skill.description, /排查/)
     assert.ok(skill.description.length > 60, '描述太短，模型判断不出何时该加载')
 
-    // 正文的关键内容：四层分工、标准路径、三种误用（少一条就说明搬运时丢段了）
-    assert.match(skill.content, /模板/, '要讲模板这一层')
-    assert.match(skill.content, /vars/, '要讲变量这一层')
-    assert.match(skill.content, /sidecar/, '要讲产物与复现凭据')
-    assert.match(skill.content, /UI 格式/, '要点名 UI 格式不能直接跑')
-    assert.match(skill.content, /为了改参数去改写工作流 JSON/, '最常见的误用要写明')
+    // 正文里的**数字**必须与实现一致 —— 这类断言以前没有，把「六块」写成「十八块」
+    // 也照样全绿。数字是模型的行为依据，写错比写漏更贵。
+    const content = skill.content
+    const panels = (await import('../lib/index.js')).componentStateOf
+    for (const [needle, label] of [
+      [/六个面板/, '面板数（与 Workbench 的 TABS 对齐）'],
+      [/十五个工具/, '工具数'],
+      [/99372/, '标签条数'],
+      [/288 组/, '姿势组数'],
+      [/1407 套/, '衣装套数'],
+      [/115 秒/, '出图中位耗时'],
+      [/336 秒/, '出图最长耗时'],
+    ]) {
+      assert.match(content, needle, `正文缺 ${label}，或者把数字写错了`)
+    }
+    assert.equal(typeof panels, 'function')
+
+    // 关键判断：四层分工、标准路径、三种误用、以及「改参数存回模板」的正规路径
+    for (const [needle, label] of [
+      [/模板/, '要讲模板这一层'],
+      [/vars/, '要讲变量这一层'],
+      [/sidecar/, '要讲产物与复现凭据'],
+      [/UI 格式/, '要点名 UI 格式不能直接跑'],
+      [/为了改参数去改写工作流 JSON/, '最常见的误用要写明'],
+      [/comfyui_workflow_edit/, '要把「存回模板」的正规路径指出来，否则模型只会去改文件'],
+    ]) {
+      assert.match(content, needle, `正文缺段：${label}`)
+    }
   } finally {
     await app.close()
   }
