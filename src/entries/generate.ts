@@ -47,6 +47,8 @@ export function apply(ctx: HostContext, config: unknown): void {
     runs: rt.runs,
     index: rt.index,
     assertWritable: rt.assertWritable,
+    // 惰性取：姿势库/衣装库的 apply 可能晚于本 entry
+    getMaterials: () => rt.materials,
     logger: rt.logger,
   }, {
     enabled: TOOL_GROUPS.filter(group => group.component === 'tool.generate').map(group => group.name),

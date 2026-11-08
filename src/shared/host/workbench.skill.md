@@ -1,6 +1,6 @@
 # 这套 ComfyUI 工作台怎么用
 
-插件把本机 ComfyUI 接进对话：六个面板给人看，十五个工具给模型用。
+插件把本机 ComfyUI 接进对话：六个面板给人看，十六个工具给模型用。
 四层东西各管各的，混了就出问题 ——
 
 | 层 | 在哪 | 规矩 |
@@ -41,6 +41,22 @@
 - **衣装库**（1407 套）：`comfyui_costume_search` 的结果带 `keywords`（英文串，可直接拼进提示词）→ `comfyui_costume_fetch` 取图当参考。
 
 要找"能吃图的工作流"：`comfyui_workflow_list { inputs: "image" }` 会给出 `imageSlots`，告诉你该往哪个键传图。
+
+## 用素材出图
+
+要"这套衣服 + 这个姿势出一张"，不必自己拼五步，用 `comfyui_compose`：
+
+1. 先搜素材：`comfyui_costume_search` / `comfyui_pose_search` 拿 id
+2. `comfyui_compose { costumeId, poseId, tags, prompt }` —— 它把图落进 uploads、按槽位语义填好 vars、拼好提示词
+3. 把返回的 `call` 原样交给 `comfyui_run`
+
+它**不出图**，只产出参数。返回里的 `assumptions` 是槽位映射的推断依据：label 有语义就用 label，
+否则看默认文件名（`pose_ref.png` 这种），再不行才按顺序。
+**靠顺序猜出来的槽位会写进 `assumptions`**（靠 label 或默认文件名对上的不写 —— 那是证据不是猜测）；
+不对就用 `extraVars` 覆盖。`dropped` 里的角色是没地方放的，不会静默丢。
+
+正向提示词只写进**明确是正向**的槽：name/label 含 prompt/positive/正面 的。带 negative、
+或看起来是文件名前缀的文本槽一律跳过 —— 宁可退回模板默认，也不把正向内容写进负向。
 
 ## 服务与等待
 

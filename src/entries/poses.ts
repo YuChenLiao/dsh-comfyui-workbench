@@ -92,6 +92,21 @@ function applyInner(ctx: HostContext, config: unknown): void {
   // 面板走共享 runtime（HTTP 前缀由它注册一次）
   const rt = acquire(ctx, config)
   if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'poses: runtime')
+
+  // 素材面的一半：compose 工具要把姿势线稿塞进工作流，而它不该 import 本组件。
+  rt.materials = {
+    ...rt.materials,
+    pose: id => {
+      const found = index.findView(id)
+      return found === undefined ? undefined : { id: found.view.id, name: found.pose.name }
+    },
+    fetchPose: async (id, size) => {
+      const found = index.findView(id)
+      if (found === undefined) throw new Error(`没有这个姿势视角：${id}`)
+      const { file } = await images.materialize(size === 'thumb' ? found.view.thumb : found.view.full, uploadsDir())
+      return file
+    },
+  }
   ensureHttp(ctx, rt)
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => mountRoutes(ctx, COMPONENT, { exact: routes.exact }), 'poses: routes')
