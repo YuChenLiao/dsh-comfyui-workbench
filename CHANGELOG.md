@@ -1,7 +1,26 @@
 # CHANGELOG
 
-## 未发布
+## 0.6.2 — 2026-11-08
 
+### 新功能：把「这套工作台怎么用」注册成 skill
+
+模型经常绕过 `vars`，改为复制或改写工作流 JSON 再用 `workflow.path` 跑。查下来不是它用错 ——
+工作流目录 36 个模板全是 API 格式、`workflow_list` 也给了 `inputs`，是**契约在鼓励改文件**：
+`comfyui_run` 只说"参数用 vars 传"、没说"改参数别碰文件"，而 `workflow.path` 的说明像在暗示
+"你可以自己造一份"。
+
+两层一起修：
+
+- **契约层**：`comfyui_run` 描述补上"改参数一律用 vars，不要为了改参数去复制或改写工作流 JSON"，
+  `workflow` 参数改成"优先 `{"id"}`；`path` 只用于目录外的临时文件且必须是 API 格式"；
+  `run_batch` 同步；`workflow_edit` 补一句"一次性参数不要用这个"；`rerun` 那句
+  "或改 sidecar 里的 workflowId" 改成"不要去改 sidecar —— 它是复现凭据"
+- **知识层**：注册 embedded skill `comfyui-workbench`，正文在 `workbench.skill.md`（构建时按文本内联）。
+  讲四层分工（模板 / 变量 / 产物 / 素材）、跑图的标准路径、三种常见误用、素材三库怎么拼。
+  不是工具手册 —— 参数在各自的 description 里，这里只讲取舍与顺序
+
+审查在这一轮抓到 6 条必修，其中一条会让整个 skill 白做：注册时漏了 `source`，宿主加载时
+`validateDefinition` 要求它是字符串 —— 现象是"目录里看得见、一点开就抛"，比不注册更糟。
 ### 新功能：`comfyui_compose` —— 素材到出图的最后一段
 
 素材库能搜、能取图，但"这套衣服这张姿势该塞进哪个槽、提示词怎么拼"原来全靠模型临场推理，
