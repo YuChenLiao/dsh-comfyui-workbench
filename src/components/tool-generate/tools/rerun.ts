@@ -146,7 +146,9 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
           ok: false,
           code: 'workflow_missing',
           error: message,
-          hint: '用 comfyui_workflow_list 看现有工作流，或改 sidecar 里的 workflowId。',
+          // 只承诺真能做到的：`from` 只是定位 sidecar，仍按 sidecar 里的 workflowId 找模板，
+          // 模板改了名它照样找不到 —— 别在这儿许诺一条走不通的路。
+          hint: '用 comfyui_workflow_list 看现有工作流（模板可能改过名，或不在这个目录）。不要去改 sidecar —— 它是这张图的复现凭据，改了会失去追溯。',
         }
       }
 

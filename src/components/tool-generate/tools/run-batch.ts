@@ -84,7 +84,10 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       properties: {
         workflow: {
           type: 'object',
-          description: '共用工作流：{"id":"sdxl"} 或 {"path":"D:/某处/workflow.json"}。各条可各自覆盖。',
+          description:
+            '共用工作流，**优先用 {"id":"sdxl"}** —— 配合各条的 vars 改参数。'
+            + '{"path":"…"} 只用于目录之外的临时文件且必须是 API 格式（UI 格式要先在 ComfyUI 里「Export (API)」）。'
+            + '各条可各自覆盖。',
           properties: { id: { type: 'string' }, path: { type: 'string' } },
         },
         runs: {

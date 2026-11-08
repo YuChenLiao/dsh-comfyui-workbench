@@ -98,6 +98,22 @@ function applyInner(ctx: HostContext, config: unknown): void {
 
   const rt = acquire(ctx, config)
   if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'costumes: runtime')
+
+  // 素材面的另一半（与姿势库各占一半，工具侧惰性取）。
+  rt.materials = {
+    ...rt.materials,
+    costume: id => {
+      const item = index.get(id)
+      return item === undefined ? undefined : { id: item.id, name: item.name, keywords: item.keywords }
+    },
+    fetchCostume: async (id, size) => {
+      const item = index.get(id)
+      if (item === undefined) throw new Error(`没有这套衣装：${id}`)
+      const relative = size === 'thumb' ? item.thumb : item.full
+      const { file } = await images.materialize(relative, uploadsDir())
+      return file
+    },
+  }
   ensureHttp(ctx, rt)
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => mountRoutes(ctx, COMPONENT, { exact: routes.exact }), 'costumes: routes')

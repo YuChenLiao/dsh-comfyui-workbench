@@ -1,6 +1,7 @@
 import { nodeSearchTool } from './node-search.js'
 import { rerunTool } from './rerun.js'
 import { runsTool } from './runs.js'
+import { composeTool } from './compose.js'
 import { runBatchTool } from './run-batch.js'
 import { runTool } from './run.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
@@ -41,6 +42,12 @@ export const TOOL_GROUPS: readonly ToolGroupDef[] = [
     component: 'tool.generate',
     title: '查看工作流的输入输出面',
     build: deps => workflowInspectTool(deps),
+  },
+  {
+    name: 'compose',
+    component: 'tool.generate',
+    title: '把素材整理成一次运行调用',
+    build: deps => composeTool(deps),
   },
   {
     name: 'rerun',

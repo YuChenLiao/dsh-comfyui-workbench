@@ -25,11 +25,13 @@ const { applyAll } = await import('../lib/index.js')
 async function boot(config) {
   const routes = []
   const tools = []
+  const skills = []
   const ctx = {
     effect: factory => { factory() },
     get: name => {
       if (name === 'webServer') return { register: route => { routes.push(route); return () => {} } }
       if (name === 'tools') return { register: spec => { tools.push(spec); return () => {} } }
+      if (name === 'skills') return { register: skill => { skills.push(skill); return () => {} } }
       return undefined
     },
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
@@ -43,6 +45,7 @@ async function boot(config) {
   return {
     origin,
     tools: tools.map(spec => spec.name),
+    skills,
     get: async pathname => {
       const res = await fetch(origin + pathname)
       return { status: res.status, body: await res.json().catch(() => null) }
@@ -70,14 +73,14 @@ const baseConfig = d => ({
   autoDetect: false,
 })
 
-test('默认全开：两组路由与十五个工具都在', async () => {
+test('默认全开：两组路由与十六个工具都在', async () => {
   const d = dirs()
   const app = await boot(baseConfig(d))
   try {
     assert.equal((await app.get('/comfyui-workbench/api/items')).status, 200)
     assert.equal((await app.get('/comfyui-workbench/api/workflows')).status, 200)
-    // 八个 comfyui_* 工具（含 node_search / run_batch）+ 两个 pose 工具 + 三个 danbooru_* 工具
-    assert.equal(app.tools.length, 15)
+    // 九个 comfyui_*（含 compose / node_search / run_batch）+ 两个 pose + 两个 costume + 三个 danbooru_*
+    assert.equal(app.tools.length, 16)
   } finally {
     await app.close()
   }
@@ -139,3 +142,60 @@ test('某个工具构建抛错，其余工具照常注册', () => {
   assert.match(report.failed[0].message, /schema/)
   assert.match(warnings[0], /其余工具不受影响/)
 })
+
+/**
+ * 使用说明以 embedded skill 的形式注册给模型。
+ *
+ * 起因：实际使用中模型经常绕过 `vars`，改为复制/改写工作流 JSON 再走 `workflow.path`。
+ * 工具描述补了"别改文件"，但四层分工、标准路径、三种误用这些**取舍**放不进参数说明 ——
+ * 那部分靠这个 skill。
+ */
+test('使用说明注册成 skill：名字、描述、正文都在', async () => {
+  const app = await boot({ roots: [dirs().out] })
+  try {
+    const skill = app.skills.find(item => item.name === 'comfyui-workbench')
+    assert.ok(skill !== undefined, '应当注册 comfyui-workbench 这个 skill')
+    // `source` 是宿主的加载前置条件：缺了它，目录里看得见、模型一点开就抛
+    // `loaded skill "…" source must be a string` —— 比不注册更糟。注册时宿主不校验，
+    // 所以只能在这里钉住。
+    assert.equal(typeof skill.source, 'string', '缺 source 会让加载阶段抛错')
+    assert.ok(skill.source.length > 0)
+    // 描述决定模型什么时候加载它，必须覆盖三类触发场景
+    assert.match(skill.description, /出图/)
+    assert.match(skill.description, /素材/)
+    assert.match(skill.description, /排查/)
+    assert.ok(skill.description.length > 60, '描述太短，模型判断不出何时该加载')
+
+    // 正文里的**数字**必须与实现一致 —— 这类断言以前没有，把「六块」写成「十八块」
+    // 也照样全绿。数字是模型的行为依据，写错比写漏更贵。
+    const content = skill.content
+    const panels = (await import('../lib/index.js')).componentStateOf
+    for (const [needle, label] of [
+      [/六个面板/, '面板数（与 Workbench 的 TABS 对齐）'],
+      [/十六个工具/, '工具数'],
+      [/99372/, '标签条数'],
+      [/288 组/, '姿势组数'],
+      [/1407 套/, '衣装套数'],
+      [/115 秒/, '出图中位耗时'],
+      [/336 秒/, '出图最长耗时'],
+    ]) {
+      assert.match(content, needle, `正文缺 ${label}，或者把数字写错了`)
+    }
+    assert.equal(typeof panels, 'function')
+
+    // 关键判断：四层分工、标准路径、三种误用、以及「改参数存回模板」的正规路径
+    for (const [needle, label] of [
+      [/模板/, '要讲模板这一层'],
+      [/vars/, '要讲变量这一层'],
+      [/sidecar/, '要讲产物与复现凭据'],
+      [/UI 格式/, '要点名 UI 格式不能直接跑'],
+      [/为了改参数去改写工作流 JSON/, '最常见的误用要写明'],
+      [/comfyui_workflow_edit/, '要把「存回模板」的正规路径指出来，否则模型只会去改文件'],
+    ]) {
+      assert.match(content, needle, `正文缺段：${label}`)
+    }
+  } finally {
+    await app.close()
+  }
+})
+

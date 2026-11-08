@@ -78,12 +78,39 @@ export interface RunRecordLike {
   stale?: boolean
 }
 
+/** 一件能塞进工作流的素材（姿势线稿 / 衣装图）。 */
+export interface MaterialItem {
+  /** 库 id（衣装 `SPR-0001`、姿势视角 `full_single_P012_front`）。 */
+  id: string
+  /** 中文名，给模型认人用。 */
+  name: string
+  /** 可直接拼进提示词的关键词串（衣装有，姿势通常没有）。 */
+  keywords?: string
+}
+
+/**
+ * 素材取用面：姿势库与衣装库两个 entry **各自注册自己那一半**。
+ *
+ * 为什么不直接 import 那两个组件：`components/*` 之间不该互相依赖（只有装配层可以）。
+ * 这里只留一个接口，`Runtime.materials` 由各自 entry 在 apply 时填，工具侧通过
+ * `getMaterials()` 惰性取 —— 不依赖 entry 的加载顺序。
+ *
+ * 两个半面都可缺省：关掉某个库时 compose 只少一种素材来源，不会整体失效。
+ */
+export interface MaterialSource {
+  pose?: (id: string) => MaterialItem | undefined
+  costume?: (id: string) => MaterialItem | undefined
+  /** 取素材图并落盘到 uploads，返回绝对路径；找不到素材时抛错。 */
+  fetchPose?: (id: string, size: 'full' | 'thumb') => Promise<string>
+  fetchCostume?: (id: string, size: 'full' | 'thumb') => Promise<string>
+}
+
 /** 工具执行需要的依赖。 */
 export interface ToolDeps {
   client: ComfyClient
   workflowsDir: string
   outputDir: string
-  /** 按会话解析产物目录：多工作区时用会话自己的工作区，拿不到就回退 outputDir。 */
+  /** 按会话解析产物目录（多工作区）；拿不到会话信息就回退 outputDir。 */
   resolveOutputDirFor?: (agent: unknown) => string
   timeoutMs: number
   pollIntervalMs: number
@@ -97,6 +124,8 @@ export interface ToolDeps {
   index: AssetIndex
   assertWritable: (dir: string, agent?: unknown) => void
   logger?: LoggerLike | undefined
+  /** 素材取用面（惰性取：两条素材 entry 的 apply 可能晚于本工具注册）。 */
+  getMaterials?: () => MaterialSource | undefined
 }
 
 /** 统一输出：结果按 JSON 文本渲染。 */

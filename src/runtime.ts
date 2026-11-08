@@ -8,6 +8,7 @@ import { LogTail } from './shared/comfy/log-tail.js'
 import { isAuthorized } from './shared/authz/authorize.js'
 import { rootsOf } from './shared/authz/roots.js'
 import type { Settings } from './shared/host/config.js'
+import type { MaterialSource } from './shared/tools/types.js'
 import { resolveSettings } from './shared/host/config.js'
 import { resolveLogger } from './shared/host/logger.js'
 import { canonical, ensureDir, pluginDataDir, workflowsDir } from './shared/host/paths.js'
@@ -65,6 +66,8 @@ export interface Runtime {
   warn: (message: string) => void
   info: (message: string) => void
   track: (dispose: (() => void) | void) => void
+  /** 素材取用面：姿势库与衣装库各自注册自己那一半，工具侧惰性取（不依赖 entry 加载顺序）。 */
+  materials?: MaterialSource
   /** 批量导出（相册组件提供；工作流组件的 POST /workflows 调它）。 */
   exportWorkflows?: RouteHandler
   /** 各工具 entry 的注册结果（供 /config 展示）。 */

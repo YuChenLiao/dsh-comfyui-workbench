@@ -21,6 +21,8 @@ const hostJob = {
   platform: 'node',
   target: 'node20',
   external: ['node:*', 'sharp'],
+  // skill 正文是独立的 `.md`，按文本内联（与客户端那边的 `.css` 同一套做法）
+  loader: { '.md': 'text' },
   sourcemap: false,
   logLevel: 'info',
 }
@@ -44,7 +46,8 @@ const clientJob = {
   // 样式文件是独立的 `.css`，这里按**文本**导入：拿到原始 CSS 字符串，
   // 运行时由面板 `<style>` 注入。不把 CSS 写成 TS 字符串常量 —— 那样编辑器没有
   // 语法高亮、没有工具能校验，逻辑文件里还会混进几十 KB 样式。
-  loader: { '.css': 'text' },
+  // `.md` 同理：skill 正文保持真正的 Markdown 文件（能预览、能 lint），构建时内联成字符串。
+  loader: { '.css': 'text', '.md': 'text' },
   sourcemap: false,
   logLevel: 'info',
 }

@@ -19,6 +19,7 @@ import { apply as applyPoses } from './entries/poses.js'
 import { apply as applyCostumes } from './entries/costumes.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
+import { mountWorkbenchSkill } from './shared/host/skill.js'
 import { readToggles, writeToggles } from './shared/host/toggles.js'
 import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from './runtime.js'
 import type { Runtime } from './runtime.js'
@@ -89,6 +90,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   // 前缀也由 core 兜一次：核心 entry 不会被单独关掉，重载后它能把 API 重新挂上。
   ensureHttp(ctx, rt)
   mountConfig(ctx, rt)
+  mountWorkbenchSkill(ctx)
 }
 
 /**
@@ -103,6 +105,7 @@ export function applyAll(ctx: HostContext, config: unknown): Runtime {
   // 不返回的话，`new RunRegistry(outputDir)` 漏传目录这种事没有任何测试守得住。
   const rt = acquire(ctx, config)
   mountConfig(ctx, rt)
+  mountWorkbenchSkill(ctx)
   applyGallery(ctx, config)
   applyWorkflow(ctx, config)
   applyTags(ctx, config)
@@ -120,6 +123,7 @@ export { stripAnsi, TerminalBuffer } from './shared/comfy/output-buffer.js'
 export { TagIndex, searchTagsLinear } from './components/tool-danbooru/server/tag-index.js'
 export { applyOverrides, overrideNotes } from './shared/run/overrides.js'
 export { fileRefsOf, pickArtifacts } from './shared/run/runner.js'
+export { mountWorkbenchSkill, WORKBENCH_SKILL_DESCRIPTION, WORKBENCH_SKILL_NAME } from './shared/host/skill.js'
 export { dedupeItems, looseKey } from './components/panel-gallery/server/assets/dedupe.js'
 export { adviceFor, classifyFailure, modelNameIn } from './shared/comfy/failure-kind.js'
 export { describeNodeErrors, executionFailed } from './shared/comfy/errors.js'
@@ -129,6 +133,9 @@ export { watchProgress } from './shared/comfy/progress.js'
 export type { ProgressTick } from './shared/comfy/progress.js'
 export { nodeSearchTool, resetNodeIndexCache } from './components/tool-generate/tools/node-search.js'
 export { planOrder, runBatchTool } from './components/tool-generate/tools/run-batch.js'
+export { composeTool } from './components/tool-generate/tools/compose.js'
+export { planSlots, ROLE_CN } from './components/tool-generate/tools/compose-slots.js'
+export { buildPrompt } from './components/tool-generate/tools/compose-prompt.js'
 export { runsTool } from './components/tool-generate/tools/runs.js'
 export { rerunTool } from './components/tool-generate/tools/rerun.js'
 export { loadWorkflowForBatch } from './components/tool-generate/tools/run.js'

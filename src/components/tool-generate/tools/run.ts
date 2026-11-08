@@ -6,6 +6,7 @@ import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
 import type { Artifact } from '../../../shared/run/index.js'
 import { buildSurface, readEntry } from '../../../shared/workflow/index.js'
+import { detectFormat, formatHint } from '../../../shared/workflow/detect.js'
 import type { ApiWorkflow, WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { asInt, asRecord, asString } from '../../../shared/tools/types.js'
 import type { ToolBlock, ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
@@ -50,6 +51,10 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
     throw new Error(`读不了工作流文件：${error instanceof Error ? error.message : String(error)}`)
   }
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('工作流文件不是 JSON 对象。')
+  // 描述里承诺了"path 必须是 API 格式"，这里就得真的验 —— 否则模型传 UI 格式时
+  // 拿到的是 ComfyUI 层那句晦涩报错，而不是下面这句能照做的指引。
+  const format = detectFormat(raw)
+  if (format !== 'api') throw new Error(formatHint(format))
   const workflow = raw as ApiWorkflow
   const workflowId = path.basename(filePath, path.extname(filePath))
   // 单文件模式：临时算一份 IO 面，保证变量校验与模板走同一套规则。
@@ -100,6 +105,8 @@ export function runTool(deps: ToolDeps): ToolSpec {
       + '所以不用先手动启动 ComfyUI；也**不要**去 kill 或重启它 —— 它可能正在下载/加载模型，'
       + '打断会让它卡在自己的下载状态里。'
       + '参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow_list / inspect 查）。'
+      + '**改参数一律用 vars，不要为了改参数去复制或改写工作流 JSON** —— 模板 + 变量就是为此存在的，'
+      + '改文件会让这次运行无法追溯，也让工作流目录越堆越乱；只有要改**结构**（增删节点、换连线）时才碰文件。'
       + '返回值包含产物路径与原始像素尺寸；宿主不回传图片本身，需要看图时按返回的路径读取原图。',
     parameters: {
       type: 'object',
@@ -112,7 +119,10 @@ export function runTool(deps: ToolDeps): ToolSpec {
         },
         workflow: {
           type: 'object',
-          description: '工作流标识：{"id":"sdxl"} 指向工作流目录，或 {"path":"D:/某处/workflow.json"} 指向单文件',
+          description:
+            '工作流标识。**优先用 {"id":"sdxl"}** —— 指向工作流目录里的模板，配合 vars 改参数，这是常规路径。'
+            + '{"path":"D:/某处/workflow.json"} 只用于目录之外的临时文件，且必须是 **API 格式**；'
+            + 'UI 格式（带 nodes + links 的界面工程文件）不能直接提交，要先在 ComfyUI 里「Export (API)」。',
           properties: {
             id: { type: 'string' },
             path: { type: 'string' },
