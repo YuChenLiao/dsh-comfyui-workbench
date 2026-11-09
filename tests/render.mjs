@@ -10,19 +10,50 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import os from 'node:os'
+import { fileURLToPath } from 'node:url'
 
-const profilePkg = path.join(os.homedir(), '.dsh', 'profiles', 'desktop', 'package.json')
-const profileRequire = createRequire(profilePkg)
+const here = path.dirname(fileURLToPath(import.meta.url))
 
-// react 与 react-dom 必须同源：dsh 的安装树里存在多份 React 副本，
-// 混用会让 react-dom 认不出另一个副本产出的 element（$$typeof 不同）。
-let reactDomDir = path.dirname(profileRequire.resolve('react-dom/server'))
-while (!fs.existsSync(path.join(reactDomDir, 'package.json'))) {
-  const parent = path.dirname(reactDomDir)
-  if (parent === reactDomDir) throw new Error('找不到 react-dom 的 package.json')
-  reactDomDir = parent
+/**
+ * 解析 React 和 react-dom。
+ *
+ * **优先用项目自己的**（`devDependencies` 里声明的 react / react-dom）。宿主不再提供：
+ * 它的 React 是编译进前端 bundle 的，asar 里没有可 require 的包，而
+ * `~/.dsh/profiles/desktop/node_modules` 在升级后也只剩 `react-icons` —— 依赖宿主解析
+ * 会让这条测试在某次宿主升级后突然跑不了（发生过）。
+ *
+ * 回落到宿主 profile 只为兼容旧环境；两边都没有时给一句能照做的报错，而不是
+ * `Cannot find module`。
+ */
+function resolveReactRuntime() {
+  const candidates = [path.join(here, '..', 'package.json'), path.join(os.homedir(), '.dsh', 'profiles', 'desktop', 'package.json')]
+  const tried = []
+  for (const pkgPath of candidates) {
+    if (!fs.existsSync(pkgPath)) { tried.push(`${pkgPath}（不存在）`); continue }
+    const req = createRequire(pkgPath)
+    let entry = ''
+    try {
+      entry = req.resolve('react-dom/server')
+    } catch {
+      tried.push(`${path.dirname(pkgPath)}（没装 react-dom）`)
+      continue
+    }
+    // react 与 react-dom 必须同源：多个 React 副本会让 react-dom 认不出 element（$$typeof 不同）
+    let dir = path.dirname(entry)
+    while (!fs.existsSync(path.join(dir, 'package.json'))) {
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    return createRequire(path.join(dir, 'package.json'))
+  }
+  throw new Error(
+    '找不到 react-dom/server。在本仓库执行 `npm i -D react react-dom` 即可（宿主不再提供可 require 的 React）。'
+    + `已试过：${tried.join('；')}`,
+  )
 }
-const sameRequire = createRequire(path.join(reactDomDir, 'package.json'))
+
+const sameRequire = resolveReactRuntime()
 const React = sameRequire('react')
 const { renderToStaticMarkup } = sameRequire('react-dom/server')
 

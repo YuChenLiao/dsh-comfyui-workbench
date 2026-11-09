@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 未发布
+
+### 修复：`npm test` 因宿主不再提供 React 而中断
+
+`tests/render.mjs` 从 `~/.dsh/profiles/desktop` 解析 `react-dom/server`，而 DSH 升级后那个目录
+只剩 `react-icons` —— `npm test` 卡在第五步，后面五百多条用例一条都没跑。
+
+**"从宿主拿"这条路不存在**：宿主的 React 是编译进前端 bundle 的，`app.asar` 里没有任何可 require
+的 `react` / `react-dom` 包（实测 0 个文件）。
+
+修法：`react` / `react-dom` 进 `devDependencies`（项目早就声明了对应的 `@types`，缺的只是实现），
+`render.mjs` 改成**先查项目自己的 `node_modules`**、再回落宿主 profile；两边都没有时给一句能照做的
+报错（`npm i -D react react-dom`），而不是一句 `Cannot find module`。
+
+运行时零依赖这条没破：devDependency 不进产物，`arch.mjs` 的外部包检查仍只看 `src/**` 的 import。
+
+`npm test` **528/528**，exit 0 —— 这条链现在能从第一步跑到最后一步。
+
 ## 0.6.3 — 2026-11-09
 
 ### 修复：隐私开关切页签就失效（隐藏 NSFW / 只看常规）
