@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../../client/icons.js'
 import { API } from '../../../client/api.js'
 import { runAction } from '../../../client/actions.js'
+import { readPref, writePref } from '../../../shared/host/prefs.js'
 import { download, fetchRunStatus } from '../../../client/api.js'
 import { useGalleryData } from './hooks/useGalleryData.js'
 import type { Translate } from '../../../client/i18n.js'
@@ -45,8 +46,14 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [query, setQuery] = useState('')
   const [includeBare, setIncludeBare] = useState(false)
   const [mergeDuplicates, setMergeDuplicates] = useState(true)
-  /** 隐藏 NSFW 内容。默认关：藏不藏是用户的选择，不该替人决定。 */
-  const [hideNsfw, setHideNsfw] = useState(false)
+  /**
+   * 隐藏 NSFW 内容。默认关：藏不藏是用户的选择，不该替人决定。
+   *
+   * **必须持久化**。切换页签会把本组件卸载，用普通 `useState(false)` 的话一离开资产库
+   * 就悄悄变回显示 —— 在有人路过时这很要命。存在本机 localStorage 而不是服务端 settings：
+   * 这类开关是"这台机器上不长眼"的隐私边界，不该跟着账号同步到别的机器。
+   */
+  const [hideNsfw, setHideNsfw] = useState(() => readPref('gallery.hideNsfw', false))
   const [activePath, setActivePath] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
   const [pendingDelete, setPendingDelete] = useState<GalleryItem | null>(null)
@@ -399,7 +406,11 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         mergeDuplicates={mergeDuplicates}
         hideNsfw={hideNsfw}
         hiddenNsfwCount={hiddenNsfwCount}
-        onToggleNsfw={() => setHideNsfw(value => !value)}
+        onToggleNsfw={() => setHideNsfw(value => {
+          const next = !value
+          writePref('gallery.hideNsfw', next)
+          return next
+        })}
         selecting={selecting}
         embedded={embedded === true}
         onQuery={setQuery}

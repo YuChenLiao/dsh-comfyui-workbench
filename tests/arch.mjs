@@ -233,5 +233,21 @@ assert.deepEqual(
   `这些文件把样式写成了 TS 字符串常量，应改成独立的 .css 文件（构建时按文本导入）：${cssInTs.join(' / ')}`,
 )
 
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，2 组白名单与导入脚本一致）`)
+// ── 隐私开关必须持久化 ──
+// 隐藏 NSFW / 只看常规这类开关如果只活在 `useState` 里，切页签卸载面板就会重置成"全显示"。
+// 这是用户报过的社死场景，而它**没有任何运行时测试能覆盖**（面板卸载/重挂的过程在 SSR 里不存在），
+// 所以退一步守接线：每个开关的读与写都必须同时出现在对应文件里 —— 删掉任一半就红。
+const PERSISTED_SWITCHES = [
+  ['src/components/panel-gallery/client/Gallery.tsx', 'gallery.hideNsfw'],
+  ['src/components/panel-poses/client/PosesPanel.tsx', 'poses.onlySafe'],
+  ['src/components/panel-costumes/client/CostumesPanel.tsx', 'costumes.onlySafe'],
+]
+for (const [rel, key] of PERSISTED_SWITCHES) {
+  const text = fs.readFileSync(path.join(root, rel), 'utf8')
+  const escaped = key.replace('.', '\\.')
+  assert.match(text, new RegExp(`readPref\\('${escaped}'`), `${rel}：${key} 的初值必须从 readPref 读，否则切页签就重置`)
+  assert.match(text, new RegExp(`writePref\\('${escaped}'`), `${rel}：${key} 变化时必须 writePref，否则读得到旧值`)
+}
+
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，2 组白名单与导入脚本一致，${PERSISTED_SWITCHES.length} 个隐私开关读写成对）`)
 

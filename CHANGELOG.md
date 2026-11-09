@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 0.6.3 — 2026-11-09
+
+### 修复：隐私开关切页签就失效（隐藏 NSFW / 只看常规）
+
+反馈：在资产库打开「隐藏 NSFW」，切到别的面板再切回来，开关重置成"显示"——
+在有人路过时很容易社死。
+
+根因：三个开关都是组件内的 `useState`，切页签会把面板卸载，state 自然回到初值。
+`gallery.hideNsfw`、`poses.onlySafe`、`costumes.onlySafe` 是同一个毛病 —— 后两个一样会把
+露骨素材重新摊开。
+
+修法：存到 localStorage（`readPref` / `writePref`，放 `shared/host/prefs.ts`）。
+**不用服务端 settings**：这类开关是"这台机器上不长眼"的隐私边界，跨设备同步反而是坏事
+（在客厅那台机器上悄悄变回显示）。localStorage 抛错（隐私模式 / 被策略禁用）时读用默认值、
+写静默，不影响功能。
+
+放在 `shared/host` 而不是 `client/`：能被 `node --test` 直接单测，不必依赖客户端 bundle
+（那个 bundle 的测试入口 `render.mjs` 目前因宿主缺 `react-dom` 跑不了）。
+
+`node --test tests/*.test.mjs` **528/528**（新增 5 条：没存过 / 能读写 / localStorage 抛错 /
+没有 window / 值不是 0/1）。`npm test` 这条链本身跑不完 —— `tests/render.mjs` 依赖宿主 profile 的
+`react-dom/server`，而 DSH 升级后那个目录只剩 `react-icons`。环境问题，与本节无关。
+
+开关"记住"这件事**没有运行时测试能覆盖**（面板卸载/重挂的过程在 SSR 里不存在），所以退一步守接线：
+`arch.mjs` 现在断言三个开关的 `readPref` 与 `writePref` 必须**成对出现**在同一文件里 ——
+删掉任一半就红（实测：删掉 `writePref` 那一行，arch 立刻报「变化时必须 writePref」）。
+
+两个不做的事，写在这里免得被当成遗漏：**多标签页不同步**（没监听 `storage` 事件，后写的覆盖先写的，
+已挂载的那个标签页内存态不变），以及 `includeBare` / `mergeDuplicates` **故意不持久化** ——
+那两个是浏览状态，不是隐私边界，记住反而碍事。
+
 ## 0.6.2 — 2026-11-08
 
 ### 新功能：把「这套工作台怎么用」注册成 skill

@@ -20,6 +20,7 @@ import type { PoseHit, PoseStats } from '../../../client/api.js'
 import { addImageToConversation } from '../../../client/conversation.js'
 import type { Translate } from '../../../client/i18n.js'
 import { shouldAutoFill, shouldLoadMore } from '../../../client/scroll.js'
+import { readPref, writePref } from '../../../shared/host/prefs.js'
 
 /** 一页多少组。姿势总共 288 组，40 足够铺满一屏还有余。 */
 const PAGE = 40
@@ -35,8 +36,13 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
   const [query, setQuery] = useState('')
   const [system, setSystem] = useState('')
   const [category, setCategory] = useState('')
-  /** 只看常规（排除标了 adult 的组）。默认关 —— 内容筛选交给使用者自己。 */
-  const [onlySafe, setOnlySafe] = useState(false)
+  /**
+   * 只看常规（排除标了 adult 的组）。默认关 —— 内容筛选交给使用者自己。
+   *
+   * **持久化**：切页签会卸载本组件，普通 state 会让开关悄悄回到"全显示"——
+   * 和资产库隐藏 NSFW 是同一类社死场景（有人路过时切回来就是一片露骨素材）。
+   */
+  const [onlySafe, setOnlySafe] = useState(() => readPref('poses.onlySafe', false))
   const [items, setItems] = useState<PoseHit[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<PoseStats | null>(null)
@@ -308,6 +314,7 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
             onChange={event => {
               const value = event.target.checked
               setOnlySafe(value)
+              writePref('poses.onlySafe', value)
               schedule({ safe: value })
             }}
           />

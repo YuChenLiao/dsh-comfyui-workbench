@@ -12,6 +12,7 @@ import type { CostumeItem, CostumeStats } from '../../../client/api.js'
 import { addImageToConversation } from '../../../client/conversation.js'
 import type { Translate } from '../../../client/i18n.js'
 import { shouldAutoFill, shouldLoadMore } from '../../../client/scroll.js'
+import { readPref, writePref } from '../../../shared/host/prefs.js'
 
 const PAGE = 40
 const DEBOUNCE_MS = 250
@@ -25,8 +26,13 @@ export interface CostumesPanelProps {
 export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
-  /** 只看常规（排除内衣/泳装/性感）。默认关 —— 内容筛选交给使用者。 */
-  const [onlySafe, setOnlySafe] = useState(false)
+  /**
+   * 只看常规（排除内衣/泳装/性感）。默认关 —— 内容筛选交给使用者。
+   *
+   * **持久化**：与资产库隐藏 NSFW、姿势库「只看常规」同一个理由 ——
+   * 切页签会卸载组件，开关丢了就等于把露骨素材重新摊开。
+   */
+  const [onlySafe, setOnlySafe] = useState(() => readPref('costumes.onlySafe', false))
   const [items, setItems] = useState<CostumeItem[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<CostumeStats | null>(null)
@@ -230,6 +236,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
             onChange={event => {
               const value = event.target.checked
               setOnlySafe(value)
+              writePref('costumes.onlySafe', value)
               schedule({ safe: value })
             }}
           />
