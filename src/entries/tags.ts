@@ -10,7 +10,6 @@ import path from 'node:path'
 
 import { createTagsIndex } from '../components/panel-tags/server/api.js'
 import { createTagsRoutes } from '../components/panel-tags/server/routes.js'
-import { createPoolJob } from '../components/panel-tags/server/pool-job.js'
 import { createSyncJob } from '../components/panel-tags/server/sync-job.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
@@ -33,9 +32,6 @@ export const inject = ['webServer', 'workspaceRegistry']
  */
 let singleton: { dataDir: string; job: ReturnType<typeof createSyncJob> } | null = null
 
-/** 池子任务同样要跨 apply 唯一（理由见上）。 */
-let poolSingleton: { dataDir: string; job: ReturnType<typeof createPoolJob> } | null = null
-
 function sharedJob(dataDir: string, onSettled: () => void): ReturnType<typeof createSyncJob> {
   if (singleton !== null && singleton.dataDir === dataDir) return singleton.job
   const job = createSyncJob({ dataDir, onSettled })
@@ -56,13 +52,6 @@ ${message}
   } catch {
     // 连日志都写不了就只能放弃
   }
-}
-
-function sharedPool(dataDir: string): ReturnType<typeof createPoolJob> {
-  if (poolSingleton !== null && poolSingleton.dataDir === dataDir) return poolSingleton.job
-  const job = createPoolJob({ dataDir })
-  poolSingleton = { dataDir, job }
-  return job
 }
 
 export function apply(ctx: HostContext, config: unknown): void {
@@ -88,8 +77,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   const dataDir = pluginDataDir()
   const index = createTagsIndex(dataDir)
   const job = sharedJob(dataDir, () => index.invalidate())
-  const pool = sharedPool(dataDir)
-  const routes = createTagsRoutes(index, job, pool, dataDir)
+  const routes = createTagsRoutes(index, job)
 
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => mountRoutes(ctx, 'panel.tags', { exact: routes.exact }), 'tags: routes')

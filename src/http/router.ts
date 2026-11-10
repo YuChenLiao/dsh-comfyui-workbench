@@ -65,7 +65,7 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       // /workflows     —— GET 列表 / POST 批量导出
       // /terminal      —— GET 拉增量 / POST 清屏或启动
       // /config        —— GET 读配置 / POST 切面板开关（progressStream 等）
-      // /tags/…        —— 面板的写操作（/tags/sync 更新数据、/tags/prompts/sync 建池）
+      // /tags/…        —— 面板的写操作（/tags/sync 更新数据）
       // /poses/…       —— 姿势库的写操作（/poses/fetch 把线稿落盘给工作流当输入图）
       // /costumes/…    —— 服装库的写操作（同上）
       //                   用**前缀**判断而不是逐条列举：子路径以后还会加，列举就会漏，

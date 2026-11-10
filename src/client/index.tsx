@@ -13,7 +13,6 @@
  */
 import { WorkflowAdmin } from '../components/panel-workflow/client/WorkflowAdmin.js'
 import { TagsPanel } from '../components/panel-tags/client/TagsPanel.js'
-import { PromptRefs } from '../components/panel-tags/client/PromptRefs.js'
 import TAGS_CSS from '../components/panel-tags/client/styles.css'
 import { PosesPanel } from '../components/panel-poses/client/PosesPanel.js'
 import POSES_CSS from '../components/panel-poses/client/styles.css'
@@ -160,7 +159,6 @@ export const __test = {
   Workbench,
   WorkflowAdmin,
   TagsPanel,
-  PromptRefs,
   TAGS_CSS,
   PosesPanel,
   POSES_CSS,

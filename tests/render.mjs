@@ -400,7 +400,7 @@ for (const [label, marker] of [
 }
 
 // 标签面板：SSR 不跑 useEffect，首帧应当是"正在建索引"而不是空列表
-const { TagsPanel, TAGS_CSS, PromptRefs } = mod.__test
+const { TagsPanel, TAGS_CSS } = mod.__test
 assert.ok(TagsPanel !== undefined, '应当导出 TagsPanel（标签库面板）')
 assert.match(TAGS_CSS, /\.ctg-root/, 'TAGS_CSS 该有根类')
 const tags = renderToStaticMarkup(React.createElement(TagsPanel, { t, visible: true }))
@@ -434,12 +434,6 @@ assert.match(poses, /cps-toggle/, '该有「只看常规」开关')
 assert.match(poses, /posesLoading|posesSub/, '首帧要说明状态，不能空白')
 assert.match(poses, /posesEmpty/, '没有数据时给提示而不是一片空白')
 
-const refs = renderToStaticMarkup(React.createElement(PromptRefs, { t, visible: true }))
-assert.match(refs, /ctg-refs/, '参考面板该渲染出根节点')
-assert.match(refs, /refsRandom/, '该有随机模式')
-assert.match(refs, /refsAnother/, '该有「换一批」')
-assert.match(refs, /ctg-refs-grid/, '该有结果网格（带图的那版）')
-
 // 空列表：给出导入指引而不是一片空白
 const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
   t,
@@ -449,4 +443,4 @@ const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
 // SSR 不跑 useEffect，首帧停在"加载中"——这正是修掉"把加载中显示成空"的证明
 assert.match(panel, /loadingWorkflows/, '首帧应当显示加载中而不是空态')
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / TagsPanel / PromptRefs）')
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / TagsPanel）')
