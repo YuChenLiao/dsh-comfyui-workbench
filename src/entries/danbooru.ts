@@ -1,8 +1,8 @@
 /**
  * 组件：模型工具 · Danbooru 标签库。
  *
- * 三个工具：`danbooru_lookup` / `danbooru_lookup_batch`（按中文名、日文名或 tag 查
- * 角色 / 画师 / 作品 / 通用四类标签）与 `danbooru_sync`（从 Danbooru 抓热门段到本地）。
+ * 两个工具：`danbooru_lookup`（按中文名、日文名或 tag 查角色 / 画师 / 作品 / 通用四类标签 ——
+ * 给 `query` 查一个、给 `queries` 查一批）与 `danbooru_sync`（从 Danbooru 抓热门段到本地）。
  *
  * 这条 entry 刻意**不碰 ComfyUI 运行时**：它只读一个数据目录、注册两个纯本地工具。
  * 走 `acquire` 会顺带建出客户端、监督器与资产索引（还要等 workspaceRegistry 就绪），
@@ -10,7 +10,7 @@
  *
  * 可以在宿主「设置 → 插件」里单独关掉，也能用 `disabledComponents: ['tool.danbooru']`。
  */
-import { DANBOORU_COMPONENT, DEFAULT_SYNC, createTagCache, danbooruLookupBatchTool, danbooruLookupTool, danbooruSyncTool } from '../components/tool-danbooru/index.js'
+import { DANBOORU_COMPONENT, DEFAULT_SYNC, createTagCache, danbooruLookupTool, danbooruSyncTool } from '../components/tool-danbooru/index.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext, LoggerLike } from '../shared/host/types.js'
@@ -41,8 +41,7 @@ export function apply(ctx: HostContext, config: unknown): void {
   const deps = { dataDir, logger, cache }
 
   let registered = 0
-  for (const spec of [danbooruLookupBatchTool({ cache, logger }),
-    danbooruLookupTool(deps), danbooruSyncTool(deps, DEFAULT_SYNC)]) {
+  for (const spec of [danbooruLookupTool(deps), danbooruSyncTool(deps, DEFAULT_SYNC)]) {
     try {
       const dispose = tools.register(spec)
       // 卸载时注销：这是 entry 自己的 effect，不经过共享 runtime。

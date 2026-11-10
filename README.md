@@ -22,7 +22,7 @@
 | `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：1407 套现实衣装（图中无人物），搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
-| `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
+| `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
 | `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务 |
 
 关掉某一条只影响它自己：例如关掉 `gallery`，资产库路由随之 404，工作流管理与工具照常（两个例外：批量导出工作流 ZIP 要读图与 sidecar，依赖相册；关掉 `core` 等于关掉整个插件——HTTP API 与浏览器端都会消失）。
@@ -80,8 +80,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |
 | `comfyui_runs` | 查任务状态：正在跑（`state: running`）、排队中（带 `queuePosition`）、最近完成或失败的。进度只落记录、**不进对话**，所以不打断当前回合。`progress` 字段只在开启 `progressStream` 时出现，而且**只对面板 `/run`、`/rerun` 提交的运行有**（工具提交的没有）——缺这个字段不代表异常；开启后百分比按采样节点重置，会回跳 |
 | `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数，或不同工作流各跑一次）。逐条报结果，**一条失败不影响其它条**；默认全部异步 |
-| `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查**角色、画师、作品、通用**四类标签（`kind` 可限定），**只返回 tag**。写提示词前用它对齐名字，能少跑偏。查「长发」→`long_hair`、「东方Project」→`touhou` |
-| `danbooru_lookup_batch` | 一次查多个名字（上限 50），**只查本地不联网** —— 缺哪个再用单条 `danbooru_lookup` 补（那个会自动走在线） |
+| `danbooru_lookup` | 把名字转成 Danbooru tag，**两条路径**：给 `query` 查单个（走本地库，没命中自动联网兜底）；给 `queries` 查一批（上限 50，**只查本地不联网** —— 一次查几十个还逐个联网会慢且容易限流，缺哪个再用 `query` 补）。`kind` 可限定角色 / 画师 / 作品 / 通用四类。查「长发」→`long_hair`、「东方Project」→`touhou` |
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
 | `comfyui_pose` | 姿势库的**两条路径**：给 `query` 搜索（288 组 / 1439 角度，按中文名、编号、分类；返回 `id` 与角度数，不含图片；默认全给，`onlySafe` 才收窄到常规 98 组）；给 `id` 取图（某个角度或正面的线稿落进 uploads，可直接当 ControlNet / 图生图的输入图） |
 | `comfyui_costume` | 衣装库的**两条路径**：给 `query` 搜索（1407 套，按中文描述、标签、英文关键词或编号；返回 `id` 与 **`keywords`**，后者可直接拼进提示词）；给 `id` 取图（落进 uploads，当服装参考图） |

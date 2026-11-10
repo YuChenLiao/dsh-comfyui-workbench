@@ -14,7 +14,7 @@ import path from 'node:path'
 import { test } from 'node:test'
 
 import {
-  danbooruLookupBatchTool,
+  batchLookup,
   danbooruLookupTool,
   createTagCache,
 } from '../lib/index.js'
@@ -68,10 +68,9 @@ test('danbooru_lookup：kind 限定到 character 时不会从 general 里凑答�
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-test('danbooru_lookup_batch：批量也能查到 general 与 copyright', async () => {
+test('批量路径（queries）也能查到 general 与 copyright', async () => {
   const dir = emptyDataDir()
-  const tool = danbooruLookupBatchTool({ cache: createTagCache(dir) })
-  const result = await tool.execute({ queries: ['长发', '东方Project', '微笑'] })
+  const result = await batchLookup({ cache: createTagCache(dir) }, { queries: ['长发', '东方Project', '微笑'] })
   assert.equal(result.ok, true, JSON.stringify(result))
   const flat = JSON.stringify(result)
   assert.ok(flat.includes('long_hair'), `批量结果里该有 long_hair：${flat.slice(0, 300)}`)
@@ -80,15 +79,55 @@ test('danbooru_lookup_batch：批量也能查到 general 与 copyright', async (
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-test('两个工具的 kind 枚举都列出了四类', () => {
+test('kind 枚举列出了四类（单条与批量共用同一个 schema）', () => {
   const dir = emptyDataDir()
   const cache = createTagCache(dir)
-  for (const tool of [danbooruLookupTool({ dataDir: dir, cache }), danbooruLookupBatchTool({ cache })]) {
+  // 两个工具已合成一个：kind 现在只有一份声明，批量路径也用同一份
+  for (const tool of [danbooruLookupTool({ dataDir: dir, cache })]) {
     const kind = tool.parameters.properties.kind
     assert.ok(Array.isArray(kind.enum), `${tool.name} 的 kind 应该是枚举`)
     for (const expected of ['character', 'artist', 'copyright', 'general', 'all']) {
       assert.ok(kind.enum.includes(expected), `${tool.name} 的 enum 缺 ${expected}：${JSON.stringify(kind.enum)}`)
     }
   }
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('两条路径的分派：给 queries 走批量（不联网），只给 query 才走单条', async () => {
+  const dir = emptyDataDir()
+  const cache = createTagCache(dir)
+  const deps = { dataDir: dir, cache }
+  const tool = danbooruLookupTool(deps)
+
+  // 给 queries：应当走 batchLookup —— 返回的是逐条结果，不是一个 tags 列表
+  const batched = await tool.execute({ queries: ['长发'] })
+  assert.equal(batched.ok, true)
+  assert.ok(Array.isArray(batched.results), '批量路径该回 results 数组')
+  assert.equal(batched.tags, undefined, '批量路径不该回单条的 tags')
+
+  // 两个都不给：明确说清有两条路径，而不是只提 query
+  const empty = await tool.execute({})
+  assert.equal(empty.ok, false)
+  assert.match(empty.message ?? empty.error, /query/)
+  assert.match(empty.message ?? empty.error, /queries/)
+
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('批量路径不许静默吞掉 category（单条会硬报错，批量也得说清）', async () => {
+  const dir = emptyDataDir()
+  const cache = createTagCache(dir)
+  const tool = danbooruLookupTool({ dataDir: dir, cache })
+
+  // 批量的筛选逻辑没实现。静默忽略会得到"看着筛过了、其实没筛"的结果 —— 那比报错更误导
+  const blocked = await tool.execute({ queries: ['长发'], category: 'clothing' })
+  assert.equal(blocked.ok, false, '批量 + category 应当报错，不能静默返回未筛结果')
+  assert.match(blocked.error, /category/)
+  assert.match(blocked.error, /query/)
+
+  // 去掉 category 就能用
+  const ok = await tool.execute({ queries: ['长发'] })
+  assert.equal(ok.ok, true)
+
   fs.rmSync(dir, { recursive: true, force: true })
 })

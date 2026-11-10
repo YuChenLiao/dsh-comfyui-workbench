@@ -550,7 +550,7 @@ test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）
   }
 })
 
-test('工具注册：13 个工具都带必要字段', async () => {
+test('工具注册：12 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
@@ -567,7 +567,6 @@ test('工具注册：13 个工具都带必要字段', async () => {
       'comfyui_workflow',
       'comfyui_workflow_edit',
       'danbooru_lookup',
-      'danbooru_lookup_batch',
       'danbooru_sync',
     ])
     for (const spec of app.tools) {

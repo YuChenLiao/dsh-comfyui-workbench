@@ -1,23 +1,20 @@
 /**
- * `danbooru_lookup_batch`：一次查多个名字。
+ * `danbooru_lookup` 的**批量路径**（`queries` 参数）。
  *
- * 单个 `danbooru_lookup` 每次都要走一遍"两次 kind 查询 + 跨 kind 排序"，而索引建好
- * 之后单次查询只要 0.5 ms 上下。批量查询把这层固定开销摊销掉 —— 查 10 个名字几乎
- * 和查 1 个同价。
+ * 单个查询每次都要走一遍"两次 kind 查询 + 跨 kind 排序"，而索引建好之后单次只要 0.5 ms 上下。
+ * 批量把这层固定开销摊销掉 —— 查 10 个名字几乎和查 1 个同价。
  *
- * 与 `danbooru_lookup` 的另一个差别：**批量时不走在线兜底**。一次查 20 个名字，
- * 每个都去网上找一遍会很慢、而且容易被限流；批量只给本地结果，缺哪些由调用方
- * 自己用单条工具补。
+ * 与单条路径的关键差别：**批量不走在线兜底**。一次查 20 个名字、每个都联网会很慢且容易被限流；
+ * 批量只给本地结果，缺哪些由调用方用单条 `query` 补（那条会自动走在线）。
  */
 import { asString } from '../../../shared/tools/types.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
-import type { ToolSpec } from '../../../shared/tools/types.js'
 import { TAG_KINDS } from '../server/store.js'
 import type { TagKind } from '../server/store.js'
 import type { TagCache } from './lookup.js'
 
 /** 一次最多查几个名字。 */
-const MAX_QUERIES = 50
+export const MAX_BATCH_QUERIES = 50
 
 /** 单个名字的查询结果。 */
 interface BatchHit {
@@ -30,41 +27,15 @@ interface BatchHit {
 }
 
 /**
- * 造工具。
+ * 批量查一批名字（`danbooru_lookup` 的 `queries` 路径）。
  *
  * @param deps - 数据目录与缓存。
+ * @param args - `queries` / `kind` / `limit`。
  */
-export function danbooruLookupBatchTool(deps: { cache: TagCache; logger?: LoggerLike | undefined }): ToolSpec {
-  return {
-    name: 'danbooru_lookup_batch',
-    description:
-      '一次查多个角色 / 画师名字，返回每个名字对应的 Danbooru tag。'
-      + '适合写提示词前批量对齐名字（一次 5~20 个）。'
-      + '**只查本地库，不联网兜底** —— 缺哪个再用单条的 danbooru_lookup 补（那个会自动走在线）。'
-      + `每次最多 ${MAX_QUERIES} 个名字。`,
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['queries'],
-      properties: {
-        queries: {
-          type: 'array',
-          items: { type: 'string' },
-          description: `要查的名字列表（中文名 / 日文名 / tag 都行），最多 ${MAX_QUERIES} 个。`,
-        },
-        kind: {
-          type: 'string',
-          enum: ['character', 'artist', 'copyright', 'general', 'all'],
-          description: '限定类别：角色 / 画师 / 作品 / 通用。默认 all 查全部四类。',
-        },
-        limit: { type: 'integer', description: '每个名字最多返回几个 tag，默认 3，上限 10。' },
-      },
-    },
-    output: {
-      schema: { type: 'object', additionalProperties: true },
-      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-    },
-    async execute(args) {
+export async function batchLookup(
+  deps: { cache: TagCache; logger?: LoggerLike | undefined },
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
       const raw = Array.isArray(args.queries) ? args.queries : []
       const queries = raw
         .map(item => asString(item).trim())
@@ -73,8 +44,8 @@ export function danbooruLookupBatchTool(deps: { cache: TagCache; logger?: Logger
         .filter((query, index, all) => all.indexOf(query) === index)
 
       if (queries.length === 0) return { ok: false, error: 'queries 不能为空，至少要给一个名字。' }
-      if (queries.length > MAX_QUERIES) {
-        return { ok: false, error: `一次最多查 ${MAX_QUERIES} 个名字，收到 ${queries.length} 个。请分批。` }
+      if (queries.length > MAX_BATCH_QUERIES) {
+        return { ok: false, error: `一次最多查 ${MAX_BATCH_QUERIES} 个名字，收到 ${queries.length} 个。请分批。` }
       }
 
       const kindArg = asString(args.kind, 'all')
@@ -124,6 +95,4 @@ export function danbooruLookupBatchTool(deps: { cache: TagCache; logger?: Logger
             hint: `这 ${missing.length} 个名字本地库里没有。用单条 danbooru_lookup 查会自动走在线，或先跑 danbooru_sync。`,
           }),
       }
-    },
-  }
 }

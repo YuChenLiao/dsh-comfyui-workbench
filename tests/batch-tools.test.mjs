@@ -1,8 +1,10 @@
 /**
- * 两个批量工具。
+ * `danbooru_lookup` 的**批量路径**（`queries`）。
  *
- * 守四件事：批量查询的去重与缺失上报、批量提交的部分失败不中断、两者的上限、
- * 以及批量查询"只查本地不联网"这条承诺。
+ * 守三件事：去重保序、缺失上报、以及"只查本地不联网"这条承诺；上限由 `MAX_BATCH_QUERIES` 管。
+ *
+ * 注意这里直接调 `batchLookup`，不经过工具的分派层 —— 分派由
+ * `danbooru-kinds.test.mjs` 里那条用例守着，两者各管一段。
  */
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -10,7 +12,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { TagIndex, danbooruLookupBatchTool } from '../lib/index.js'
+import { TagIndex, batchLookup } from '../lib/index.js'
+
+/** 工具已并入 danbooru_lookup；这些用例只管批量路径，包成原来的形状。 */
+const lookupBatch = deps => ({ execute: args => batchLookup(deps, args) })
 
 const RECORDS = [
   { tag: 'hatsune_miku', kind: 'character', postCount: 148311, names: ['初音未来', '初音ミク', 'miku'] },
@@ -32,7 +37,7 @@ function fakeCache(records = RECORDS) {
 }
 
 test('批量查询：一次拿到多个名字，缺的单独列出', async () => {
-  const tool = danbooruLookupBatchTool({ cache: fakeCache() })
+  const tool = lookupBatch({ cache: fakeCache() })
   const result = await tool.execute({ queries: ['初音未来', '圣园未花', 'wlop', '不存在xyz'], limit: 2 })
   assert.equal(result.ok, true)
   assert.equal(result.count, 4)
@@ -47,14 +52,14 @@ test('批量查询：一次拿到多个名字，缺的单独列出', async () =>
 })
 
 test('批量查询：重复名字去重，但保持顺序', async () => {
-  const tool = danbooruLookupBatchTool({ cache: fakeCache() })
+  const tool = lookupBatch({ cache: fakeCache() })
   const result = await tool.execute({ queries: ['初音未来', 'wlop', '初音未来'], limit: 1 })
   assert.equal(result.count, 2, '重复项应被去掉')
   assert.deepEqual(result.results.map(r => r.query), ['初音未来', 'wlop'])
 })
 
 test('批量查询：空列表与超上限被拒', async () => {
-  const tool = danbooruLookupBatchTool({ cache: fakeCache() })
+  const tool = lookupBatch({ cache: fakeCache() })
   assert.equal((await tool.execute({ queries: [] })).ok, false)
   assert.equal((await tool.execute({ queries: ['', '  '] })).ok, false)
   const tooMany = Array.from({ length: 51 }, (_, i) => `q${i}`)
@@ -64,7 +69,7 @@ test('批量查询：空列表与超上限被拒', async () => {
 })
 
 test('批量查询：只查本地，没有 online 字段', async () => {
-  const tool = danbooruLookupBatchTool({ cache: fakeCache() })
+  const tool = lookupBatch({ cache: fakeCache() })
   const result = await tool.execute({ queries: ['不存在xyz'] })
   // 单条工具没命中会走在线（source: 'online'）；批量不走，只报 missing
   assert.equal(result.ok, true)
@@ -73,7 +78,7 @@ test('批量查询：只查本地，没有 online 字段', async () => {
 })
 
 test('批量查询：kind 过滤生效', async () => {
-  const tool = danbooruLookupBatchTool({ cache: fakeCache() })
+  const tool = lookupBatch({ cache: fakeCache() })
   const artistsOnly = await tool.execute({ queries: ['wlop'], kind: 'artist' })
   assert.deepEqual(artistsOnly.results[0].tags, ['wlop'])
   const charactersOnly = await tool.execute({ queries: ['wlop'], kind: 'character' })

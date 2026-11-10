@@ -6,6 +6,7 @@ import type { TagKind, TagRecord } from '../server/store.js'
 import type { CategoryMap } from '../server/groups.js'
 import type { MatchHow } from '../server/tag-index.js'
 import { asString } from '../../../shared/tools/types.js'
+import { batchLookup, MAX_BATCH_QUERIES } from './lookup-batch.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 
@@ -210,13 +211,22 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
     name: 'danbooru_lookup',
     description:
       '把角色 / 画师的名字转成 Danbooru 能认的 tag。给中文名（甘雨、初音未来）、日文名（初音ミク）或 tag 本身都行，'
-      + '返回可直接写进提示词的 tag 列表。写提示词前用它对齐名字，能显著减少生图时角色跑偏。',
+      + '返回可直接写进提示词的 tag 列表。写提示词前用它对齐名字，能显著减少生图时角色跑偏。'
+      + '**给 query 查一个（会联网兜底），给 queries 查一批（只查本地）** —— 两件事合在一个工具里，'
+      + '因为"查名字"这个动作没有"先查一个再查一批"的顺序。',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: '要查的名字：中文名、日文名或 Danbooru tag，如「甘雨」「初音ミク」「hatsune_miku」。',
+          description: '要查的**单个**名字：中文名、日文名或 Danbooru tag，如「甘雨」「初音ミク」「hatsune_miku」。没命中会自动联网兜底。给 queries 时忽略。',
+        },
+        queries: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            `要查的**一批**名字，最多 ${MAX_BATCH_QUERIES} 个，且**只查本地库、不联网** ——`
+            + '一次查几十个还逐个联网会慢且容易限流；缺哪个再用单个 query 补（那条会自动走在线）。',
         },
         kind: {
           type: 'string',
@@ -226,11 +236,14 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
         category: {
           type: 'string',
           enum: ['action', 'clothing', 'appearance', 'composition', 'object', 'theme', 'explicit', 'other'],
-          description: '按语义大类筛（只对 general 有效）：action 动作 / clothing 服装 / appearance 外貌 / composition 构图 / object 物件 / theme 主题 / explicit 性相关 / other 其它。分类来自 Danbooru 的 tag group，覆盖 30693 个通用标签里的约 26.9%（8261 条），筛不到时去掉这个参数重试。',
+          description: '按语义大类筛（只对 general 有效，且**只对单个 query 生效**）：action 动作 / clothing 服装 / appearance 外貌 / composition 构图 / object 物件 / theme 主题 / explicit 性相关 / other 其它。分类来自 Danbooru 的 tag group，覆盖 30693 个通用标签里的约 26.9%（8261 条），筛不到时去掉这个参数重试。',
         },
-        limit: { type: 'integer', description: '最多返回几个 tag，默认 5，上限 20。' },
+        limit: {
+          type: 'integer',
+          description: '每个名字最多返回几个 tag：单个 query 默认 5、上限 20；批量 queries 默认 3、上限 10。',
+        },
       },
-      required: ['query'],
+      required: [],
       additionalProperties: false,
     },
     output: {
@@ -238,11 +251,28 @@ export function danbooruLookupTool(deps: DanbooruDeps & { cache: TagCache }): To
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     execute: async (args) => {
+      // 批量路径先分派：给了 queries 就是批量（只查本地，不联网）
+      const queries = Array.isArray(args.queries) ? args.queries : []
+      if (queries.length > 0) {
+        // category 的筛选逻辑只在单条路径实现（要读 tag group）。批量时静默忽略它，
+        // 会得到"看起来筛过了其实没筛"的结果 —— 那比报错更误导，单条路径的注释里也写着这句。
+        if (asString(args.category, '').trim() !== '') {
+          return {
+            ok: false,
+            error: 'category 只对单个 query 生效（批量只查本地库，不按语义大类筛）。'
+              + '要按 category 筛就逐个查；批量时去掉这个参数即可。',
+          }
+        }
+        return batchLookup(deps, args)
+      }
+
       const query = asString(args.query)
       const kindArg = asString(args.kind, 'all')
       const categoryArg = asString(args.category, '').trim()
       const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 20)
-      if (query === '') return { ok: false, error: 'query 不能为空' }
+      if (query === '') {
+        return { ok: false, error: '要查什么？给 query（单个名字，会联网兜底）或 queries（一批名字，只查本地）。' }
+      }
 
       const kinds: readonly TagKind[] = TAG_KINDS.includes(kindArg as TagKind) ? [kindArg as TagKind] : TAG_KINDS
 
