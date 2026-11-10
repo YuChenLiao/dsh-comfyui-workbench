@@ -2,6 +2,33 @@
 
 ## 未发布
 
+### 改进：工作流查询 2 → 1，并入体检（`comfyui_workflow`）
+
+`comfyui_workflow_list` + `comfyui_workflow_inspect` → `comfyui_workflow`。
+
+**四档靠参数决定，不靠工具名**：不给 → 列表；给 `workflowId` → IO 面 + 节点清单；
+再加 `nodeId` → 单节点完整配置；给 `audit: true` → 全库体检。
+
+为什么合：四档都是**同一个对象上的只读查询**，失败后的下一步也相同（换 id、或去启用/导入）。
+原来拆成两个工具，模型得先判断"我现在该调哪个"——那是个假选择。而体检本来会变成第三个工具，
+直接挂在 `audit` 上，不占位置。
+
+**体检补的是社区最痛的那件事**：ComfyUI 一更新/一装新节点包，就读不到"哪套模板已经废了"，
+要等跑失败了才知道。现在 `audit: true` 一次回答：
+
+- **缺节点** → 必然跑不起来（那套模板就没用了，得装回节点包或换模板）
+- **缺模型** → 能提交，但会跑偏或报错（返回里给本机可用的替代模型）
+- 其余健康，只给数量
+
+拿不到 `/object_info` 时它明说"**无法体检**"，**绝不假装全部健康** —— 假装健康比不报更危险。
+
+实现分在三个文件（`workflow-list` / `workflow-inspect` / `workflow-audit`），`workflow.ts` 只做分派
+与 schema；各自逻辑留在各自文件，可以单独测。
+
+工具数 **14 → 13**。`npm test` **517/517**（新增 4 条体检用例：三档分流、拿不到节点清单、
+节点清单为空、全部健康时不制造焦虑）。
+
+
 ### 改进：素材库工具 4 → 2（`comfyui_pose` / `comfyui_costume`）
 
 `comfyui_pose_search` + `comfyui_pose_fetch` → `comfyui_pose`，衣装同理。

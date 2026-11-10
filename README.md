@@ -20,7 +20,7 @@
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
 | `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：1407 套现实衣装（图中无人物），搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
-| `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
+| `comfyui-workbench:generate` | 工具 | `comfyui_workflow`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
 | `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务 |
@@ -73,8 +73,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 | 工具 | 作用 |
 | --- | --- |
-| `comfyui_workflow_list` | 列出**可用的**工作流：id、标题、用途备注、底模、输入种类、输出形状。被停用的不列出（`hiddenCount` 告知藏了几条）。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
-| `comfyui_workflow_inspect` | 不传 `nodeId` 给 IO 面与节点清单；传了给单节点完整配置。顺带报告缺节点、缺模型与可用的替代 |
+| `comfyui_workflow` | 工作流的**四档只读视角**：不给参数列可用工作流（id、标题、用途、底模、输入种类、输出形状；被停用的不列出，`hiddenCount` 告知藏了几条）；给 `workflowId` 看 IO 面与节点清单（顺带报缺节点、缺模型与替代建议）；再加 `nodeId` 看单节点完整配置；给 `audit: true` 体检全库。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
 | `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait: true` 同步等、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
 | `comfyui_node_search` | 按类名 / 显示名 / 别名 / 分类 / 输入输出类型 / 包名搜索本机节点，四档排序。默认只回一行摘要，`detail` 才给输入输出 |

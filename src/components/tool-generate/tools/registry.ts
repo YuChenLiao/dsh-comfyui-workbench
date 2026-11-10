@@ -6,8 +6,7 @@ import { runBatchTool } from './run-batch.js'
 import { runTool } from './run.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 import { workflowEditTool } from '../../tool-workflow-edit/tools/workflow-edit.js'
-import { workflowInspectTool } from './workflow-inspect.js'
-import { workflowListTool } from './workflow-list.js'
+import { workflowTool } from './workflow.js'
 
 /**
  * 工具分组。
@@ -32,16 +31,10 @@ export interface ToolGroupDef {
 /** 全部工具分组，顺序即注册顺序。 */
 export const TOOL_GROUPS: readonly ToolGroupDef[] = [
   {
-    name: 'workflow-list',
+    name: 'workflow',
     component: 'tool.generate',
-    title: '列出工作流与缺失模型',
-    build: deps => workflowListTool(deps),
-  },
-  {
-    name: 'workflow-inspect',
-    component: 'tool.generate',
-    title: '查看工作流的输入输出面',
-    build: deps => workflowInspectTool(deps),
+    title: '工作流：列表 / 详情 / 单节点 / 体检',
+    build: deps => workflowTool(deps),
   },
   {
     name: 'compose',

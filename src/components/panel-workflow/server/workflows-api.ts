@@ -53,7 +53,7 @@ export function toPanelItem(
  * `GET /comfyui-workbench/api/workflows`：IO 面列表。
  *
  * 只给 IO 面，不给节点图 —— 浏览器端不需要拓扑，给它等于把几十 KB JSON
- * 送进内存与 devtools。节点细节走工具（`comfyui_workflow_inspect`）。
+ * 送进内存与 devtools。节点细节走工具（`comfyui_workflow`）。
  */
 export async function handleWorkflowList(
   dir: string,

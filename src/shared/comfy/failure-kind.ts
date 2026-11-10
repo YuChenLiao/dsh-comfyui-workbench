@@ -222,11 +222,11 @@ export function adviceFor(
           .slice(0, 3)
           .map(item => item.option)
         const nearHint = near.length > 0 ? `；候选里最接近的是 ${near.map(item => `'${item}'`).join('、')}` : ''
-        return `${where === '' ? '某个参数' : where}的取值 '${rejected.value}' 不在候选列表里${nearHint}。改 vars 里这个键再试（共 ${rejected.options.length} 个候选，可用 comfyui_workflow_inspect 看全）。`
+        return `${where === '' ? '某个参数' : where}的取值 '${rejected.value}' 不在候选列表里${nearHint}。改 vars 里这个键再试（共 ${rejected.options.length} 个候选，可用 comfyui_workflow 看全）。`
       }
-      return `${where === '' ? '某个参数' : where}的取值不合法（不在候选列表或超出范围）。用 comfyui_workflow_inspect 加该节点的 nodeId 看它的可选值与范围，再改 vars 重试。`
+      return `${where === '' ? '某个参数' : where}的取值不合法（不在候选列表或超出范围）。用 comfyui_workflow 加该节点的 nodeId 看它的可选值与范围，再改 vars 重试。`
     }
     default:
-      return '通常是模型/节点参数不匹配。先用 comfyui_workflow_inspect 看缺不缺节点与模型，再降分辨率或换底模重试。'
+      return '通常是模型/节点参数不匹配。先用 comfyui_workflow 看缺不缺节点与模型，再降分辨率或换底模重试。'
   }
 }

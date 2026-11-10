@@ -75,7 +75,7 @@ test('参数越界的建议带节点定位', () => {
   const advice = adviceFor('bad_param', ctx('Value not in list: sampler_name', { nodeId: '5', nodeType: 'KSampler' }))
   assert.match(advice, /节点 5/)
   assert.match(advice, /KSampler/)
-  assert.match(advice, /inspect/)
+  assert.match(advice, /comfyui_workflow/, '建议里要给能照做的工具名')
 })
 
 test('unknown 退化成原来那句（不能更差）', () => {

@@ -1,8 +1,8 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
 import { readEntry } from '../../../shared/workflow/index.js'
 import type { ApiNode, IOSlot, ModelRef, WorkflowIOSurface } from '../../../shared/workflow/types.js'
-import { asString, jsonOutput } from '../../../shared/tools/types.js'
-import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
+import { asString } from '../../../shared/tools/types.js'
+import type { ToolDeps } from '../../../shared/tools/types.js'
 
 /** 敏感字段：展示时打码，日志与工具输出里不出现原值。 */
 const SECRET_KEY = /(api_?key|token|secret|passw(or)?d|credential|auth)/i
@@ -17,7 +17,7 @@ function isSecret(key: string, slots: readonly IOSlot[], bindOf: string): boolea
 function displayValue(value: unknown, secret: boolean): unknown {
   if (secret) return '[redacted]'
   if (Array.isArray(value) && value.length === 2 && typeof value[1] === 'number') {
-    return `← node ${String(value[0])}[${value[1]}]`
+    return `← node ${String(value[0])}[${String(value[1])}]`
   }
   return value
 }
@@ -77,75 +77,58 @@ function surfaceView(surface: WorkflowIOSurface, missing: string[]): Record<stri
 }
 
 /**
- * `comfyui_workflow_inspect`：看细节。
+ * 看一套工作流的细节（`comfyui_workflow` 的详情路径）。
  *
  * `nodeId` 的有无就是档位：不传给 IO 面 + 节点清单，传了给那一个节点的完整配置。
  * 这样"先看清单、再点开某一个"是两跳、一个工具，不额外占一份 schema。
  *
  * @param deps - 依赖。
+ * @param args - `workflowId`（必填）/ `nodeId`。
  */
-export function workflowInspectTool(deps: ToolDeps): ToolSpec {
+export async function inspectWorkflow(deps: ToolDeps, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const workflowId = asString(args.workflowId).trim()
+  if (workflowId === '') return { ok: false, mode: 'inspect', message: '需要 workflowId。' }
+
+  const entry = readEntry(deps.workflowsDir, workflowId)
+  if (entry === undefined) {
+    return { ok: false, mode: 'inspect', message: `没有这个工作流：${workflowId}。先用同一个工具（不带 workflowId）看有哪些。` }
+  }
+
+  const nodeId = asString(args.nodeId).trim()
+  if (nodeId !== '') {
+    const node = entry.workflow[nodeId]
+    if (node === undefined) {
+      return { ok: false, mode: 'node', message: `工作流 ${workflowId} 里没有节点 ${nodeId}。`, nodes: nodeList(entry.workflow) }
+    }
+    return { ok: true, mode: 'node', ...nodeView(workflowId, nodeId, node, entry.surface) }
+  }
+
+  // 预检：拿不到节点清单时降级成"不预检"，不要因此看不到 IO 面。
+  let missing: string[] = []
+  let absentModels: string[] = []
+  let modelHint = ''
+  try {
+    const info = await deps.client.objectInfo()
+    const known = new Set(Object.keys(info))
+    if (known.size > 0) {
+      missing = [...new Set(Object.values(entry.workflow).map(node => String(node.class_type ?? '')).filter(name => name !== '' && !known.has(name)))]
+      const available = availableModels(info)
+      absentModels = missingModels(entry.surface.models, available)
+      if (absentModels.length > 0) {
+        const primary = entry.surface.models.find(model => model.primary === true) ?? entry.surface.models[0]
+        modelHint = `本机没有：${absentModels.join('、')}。可用的替代：${suggestModels(available, primary?.kind ?? 'checkpoint').join('、') || '（一个都没有）'}`
+      }
+    }
+  } catch (error) {
+    deps.logger?.warn?.(`[${workflowId}] 预检跳过：${error instanceof Error ? error.message : String(error)}`)
+  }
+
   return {
-    name: 'comfyui_workflow_inspect',
-    description:
-      '查看工作流细节。不传 nodeId：返回输入输出面 + 节点清单（id/classType/title）+ 缺失节点预检。'
-      + '传 nodeId：返回该节点的完整配置（含连线来源）。改参数前先用它确认现状。'
-      + '它要读 ComfyUI 的节点清单，所以**服务没在跑时也会先自动拉起**（最多 3 分钟），慢是正常的。',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['workflowId'],
-      properties: {
-        workflowId: { type: 'string', description: '工作流 id（用 comfyui_workflow_list 查）' },
-        nodeId: { type: 'string', description: '只看这一个节点' },
-      },
-    },
-    output: jsonOutput(),
-    async execute(args) {
-      const workflowId = asString(args.workflowId).trim()
-      if (workflowId === '') return { ok: false, message: '需要 workflowId。' }
-
-      const entry = readEntry(deps.workflowsDir, workflowId)
-      if (entry === undefined) {
-        return { ok: false, message: `没有这个工作流：${workflowId}。先用 comfyui_workflow_list 看有哪些。` }
-      }
-
-      const nodeId = asString(args.nodeId).trim()
-      if (nodeId !== '') {
-        const node = entry.workflow[nodeId]
-        if (node === undefined) {
-          return { ok: false, message: `工作流 ${workflowId} 里没有节点 ${nodeId}。`, nodes: nodeList(entry.workflow) }
-        }
-        return { ok: true, ...nodeView(workflowId, nodeId, node, entry.surface) }
-      }
-
-      // 预检：拿不到节点清单时降级成"不预检"，不要因此看不到 IO 面。
-      let missing: string[] = []
-      let absentModels: string[] = []
-      let modelHint = ''
-      try {
-        const info = await deps.client.objectInfo()
-        const known = new Set(Object.keys(info))
-        if (known.size > 0) {
-          missing = [...new Set(Object.values(entry.workflow).map(node => String(node.class_type ?? '')).filter(name => name !== '' && !known.has(name)))]
-          const available = availableModels(info)
-          absentModels = missingModels(entry.surface.models, available)
-          if (absentModels.length > 0) {
-            const primary = entry.surface.models.find(model => model.primary === true) ?? entry.surface.models[0]
-            modelHint = `本机没有：${absentModels.join('、')}。可用的替代：${suggestModels(available, primary?.kind ?? 'checkpoint').join('、') || '（一个都没有）'}`
-          }
-        }
-      } catch (error) {
-        deps.logger?.warn?.(`[${workflowId}] 预检跳过：${error instanceof Error ? error.message : String(error)}`)
-      }
-
-      return {
-        ok: true,
-        ...surfaceView(entry.surface, missing),
-        ...(absentModels.length === 0 ? {} : { missingModels: absentModels, modelHint }),
-        nodes: nodeList(entry.workflow),
-        hint: '要看某个节点的具体参数，用同一个工具加 nodeId。',
-      }
-    },
+    ok: true,
+    mode: 'inspect',
+    ...surfaceView(entry.surface, missing),
+    ...(absentModels.length === 0 ? {} : { missingModels: absentModels, modelHint }),
+    nodes: nodeList(entry.workflow),
+    hint: '要看某个节点的具体参数，用同一个工具加 nodeId。',
   }
 }

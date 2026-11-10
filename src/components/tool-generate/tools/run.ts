@@ -33,7 +33,7 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
   const id = asString(spec.id).trim()
   if (id !== '') {
     const entry = readEntry(deps.workflowsDir, id)
-    if (entry === undefined) throw new Error(`没有这个工作流：${id}。先用 comfyui_workflow_list 看有哪些。`)
+    if (entry === undefined) throw new Error(`没有这个工作流：${id}。先用 comfyui_workflow 看有哪些。`)
     // 停用的工作流不该被执行：管理员关掉它通常是有原因的（吃显存、只在特定机器上能跑）。
     if (!entry.surface.enabled) {
       throw new Error(`工作流 ${id} 已被停用，不能执行。需要的话在工作流管理面板里重新启用。`)
@@ -104,7 +104,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
       + '**服务没在跑时会自动拉起**：提交会等到服务就绪再发出去（默认最多等 3 分钟），'
       + '所以不用先手动启动 ComfyUI；也**不要**去 kill 或重启它 —— 它可能正在下载/加载模型，'
       + '打断会让它卡在自己的下载状态里。'
-      + '参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow_list / inspect 查）。'
+      + '参数用 vars 传（键必须是该工作流声明过的输入名，可用 comfyui_workflow（不带参数是列表，带 workflowId 是详情） 查）。'
       + '**改参数一律用 vars，不要为了改参数去复制或改写工作流 JSON** —— 模板 + 变量就是为此存在的，'
       + '改文件会让这次运行无法追溯，也让工作流目录越堆越乱；只有要改**结构**（增删节点、换连线）时才碰文件。'
       + '返回值包含产物路径与原始像素尺寸；宿主不回传图片本身，需要看图时按返回的路径读取原图。',

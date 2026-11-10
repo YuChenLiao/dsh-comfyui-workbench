@@ -1,7 +1,7 @@
 /**
  * `comfyui_node_search`：按节点的各项信息搜索本机 ComfyUI 的节点。
  *
- * 为什么值得做：`comfyui_workflow_inspect` 只能告诉你"缺了哪些节点"，但它不知道
+ * 为什么值得做：`comfyui_workflow` 只能告诉你"缺了哪些节点"，但它不知道
  * 「有哪些节点能做放大」这类问题。模型改工作流时最需要的是"还有哪些同类节点"。
  *
  * 与官方 comfy-mcp 的 `nodes` 工具的区别：它 8 个 action 且深度绑 comfy-cli，
@@ -63,7 +63,7 @@ export function nodeSearchTool(deps: NodeSearchDeps): ToolSpec {
       + '返回精简列表（类名、显示名、分类、所属包、一句话说明与命中原因）；detail=true 才给输入输出。'
       + '至少要给一个条件 —— 不加筛选地列出全部节点没有意义，也不会被接受。'
       + '**它不会拉起 ComfyUI**：服务没在跑时只会等 20 秒然后报"搜不到"（连不上通常立刻失败），'
-      + '所以要把服务拉起来得用 comfyui_run（或 comfyui_workflow_list）触发一次。'
+      + '所以要把服务拉起来得用 comfyui_run（或 comfyui_workflow）触发一次。'
       + '注意：节点的元数据（display_name / description / search_aliases）都是英文，用中文查不到结果；'
       + 'hasModel 要给模型文件名的一段（如 "waiNSFWIllustrious"），不要给 "upscale" 这类普通词。',
     parameters: {

@@ -210,7 +210,7 @@ export function composeTool(deps: ToolDeps): ToolSpec {
       if (workflowId !== '') {
         const entry = readEntry(deps.workflowsDir, workflowId)
         if (entry === undefined) {
-          return { ok: false, error: `没有这个工作流：${workflowId}。先用 comfyui_workflow_list 看有哪些。` }
+          return { ok: false, error: `没有这个工作流：${workflowId}。先用 comfyui_workflow 看有哪些。` }
         }
         if (!entry.surface.enabled) return { ok: false, error: `工作流 ${workflowId} 已被停用。` }
         inputs = entry.surface.inputs
@@ -230,7 +230,7 @@ export function composeTool(deps: ToolDeps): ToolSpec {
                 ? `工作流目录读不到或没有可用模板：${deps.workflowsDir}`
                 : `没有找到能放这些素材的工作流（${wanted.map(item => ROLE_CN[item.role]).join('、')}）。`
                   + '只按图槽数量硬塞会把参考图放进"待重绘的底图"，所以这种情况宁可报错。'
-                  + '用 comfyui_workflow_list { inputs: "image" } 看看哪些带图槽，或直接指定 workflowId。',
+                  + '用 comfyui_workflow { inputs: "image" } 看看哪些带图槽，或直接指定 workflowId。',
           }
         }
         workflowId = picked.workflowId

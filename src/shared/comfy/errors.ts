@@ -98,7 +98,7 @@ export function submitRejected(body: unknown): RunError {
   const hint = type === 'prompt_no_outputs'
     ? '这份工作流没有输出节点（ComfyUI 的 prompt_no_outputs），跑完不会产生任何产物。接一个 SaveImage / PreviewImage 之类的输出节点再提交。'
     : type === 'prompt_outputs_failed_validation'
-      ? '所有输出链的参数都被判为非法。按被点名的节点逐个改，或先用 comfyui_workflow_inspect 对一遍槽位。'
+      ? '所有输出链的参数都被判为非法。按被点名的节点逐个改，或先用 comfyui_workflow 对一遍槽位。'
       : '检查被点名的节点参数（类型、取值范围），或先用 inspect 看该节点的输入。'
   return new RunError(
     'submit_rejected',

@@ -148,7 +148,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
           error: message,
           // 只承诺真能做到的：`from` 只是定位 sidecar，仍按 sidecar 里的 workflowId 找模板，
           // 模板改了名它照样找不到 —— 别在这儿许诺一条走不通的路。
-          hint: '用 comfyui_workflow_list 看现有工作流（模板可能改过名，或不在这个目录）。不要去改 sidecar —— 它是这张图的复现凭据，改了会失去追溯。',
+          hint: '用 comfyui_workflow 看现有工作流（模板可能改过名，或不在这个目录）。不要去改 sidecar —— 它是这张图的复现凭据，改了会失去追溯。',
         }
       }
 
@@ -399,7 +399,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
         ...(wait ? { results: submitted } : {}),
         ...(stale ? {
           staleWorkflow: true,
-          hint: '这份 sidecar 记录的工作流版本与当前不同（workflowHash 不一致）。参数名仍兼容的话可以继续；不确定就先用 comfyui_workflow_inspect 对一下槽位。',
+          hint: '这份 sidecar 记录的工作流版本与当前不同（workflowHash 不一致）。参数名仍兼容的话可以继续；不确定就先用 comfyui_workflow 对一下槽位。',
         } : {}),
         ...(failures.length > 0 ? { failures } : {}),
         ...(tags.length > 0 ? { tags } : {}),

@@ -1,6 +1,6 @@
 # 这套 ComfyUI 工作台怎么用
 
-插件把本机 ComfyUI 接进对话：六个面板给人看，十四个工具给模型用。
+插件把本机 ComfyUI 接进对话：六个面板给人看，十三个工具给模型用。
 四层东西各管各的，混了就出问题 ——
 
 | 层 | 在哪 | 规矩 |
@@ -12,8 +12,8 @@
 
 ## 跑一次图的标准路径
 
-1. `comfyui_workflow_list` 挑模板 —— 看 `models.primary`（底模）与 `description`（用途）。同名的模板靠这两项区分，别只看 id。
-2. 第一次用某个模板，先 `comfyui_workflow_inspect` 看 `inputs`：那就是 `vars` 能用的键名，连同类型、默认值、取值范围。
+1. `comfyui_workflow` 列清单挑模板 —— 看 `models.primary`（底模）与 `description`（用途）。同名的模板靠这两项区分，别只看 id。
+2. 第一次用某个模板，先 `comfyui_workflow` 加 `workflowId` 看 `inputs`：那就是 `vars` 能用的键名，连同类型、默认值、取值范围。
 3. `comfyui_run { workflow: { id }, vars: {...} }`。
 4. 按返回的产物路径读原图；要改一点重跑用 `comfyui_rerun` —— sidecar 里存着 workflowId / hash / vars / seed，不用手抄。
 
@@ -29,7 +29,7 @@
 
 一次性的参数用 `vars` 就够。要让它**一直生效**（以后不传也是新值），用 `comfyui_workflow_edit`：
 
-1. `comfyui_workflow_inspect` 拿到当前的 `workflowHash`
+1. `comfyui_workflow` 拿到当前的 `workflowHash`
 2. `comfyui_workflow_edit` 传 `patches`（节点 id + 输入名 + 值）、`persist: true`、`expectHash`
 
 `expectHash` 是并发保护：模板在这期间被别人改过就会拒绝，不会覆盖掉。**这是唯一该写模板的路径** —— 它改的是模板本身，带 hash 校验，也不产生副本。
@@ -42,7 +42,7 @@
 
 素材工具都是**同一个工具两条路径**：给 `query` 是搜，给 `id` 是取图。不用先决定"该调哪个工具"。
 
-要找"能吃图的工作流"：`comfyui_workflow_list { inputs: "image" }` 会给出 `imageSlots`，告诉你该往哪个键传图。
+要找"能吃图的工作流"：`comfyui_workflow { inputs: "image" }` 会给出 `imageSlots`，告诉你该往哪个键传图。
 
 ## 用素材出图
 
@@ -66,10 +66,17 @@
 - 一次出图实测中位 115 秒、最长 336 秒。用 `comfyui_runs` 查状态。**工具提交的运行只有排队位置，没有百分比** —— 精确进度只接在面板那两条路径上。
 - 中间产物（保存节点的来源还被别的计算节点继续消费）**在有正式产物时**会被丢掉、不进资产库；如果这个工作流一个正式产物都没有，就会退而求其次把中间产物收下来。
 
+## 升级后先体检
+
+ComfyUI 更新或装了新节点包之后，`comfyui_workflow { audit: true }` 一次回答"现在还能跑哪几个"：
+缺节点的模板**必然跑不起来**（那套模板就没用了），缺模型的**能提交但会跑偏或报错**（返回里给替代模型建议）。
+
+它依赖 ComfyUI 的节点清单，拿不到时会明说"无法体检"而**不会假装全部健康** —— 看到那句就是服务没连上。
+
 ## 什么时候用哪个
 
-- 不知道有哪些模板 → `comfyui_workflow_list`
-- 知道模板、要改参数 → `comfyui_workflow_inspect` 查完直接 `comfyui_run`
+- 不知道有哪些模板 → `comfyui_workflow`（不带参数）
+- 知道模板、要改参数 → `comfyui_workflow` 加 `workflowId` 查完直接 `comfyui_run`
 - 已有产物、想再来一张或做变体 → `comfyui_rerun`
 - 要批量 → `comfyui_run_batch`（只投一条汇总通知，并按工作流分组提交，避免反复重载底模）
 - 跑失败了 → 看返回的 `failureKind`，五类各有对应改法；节点是否存在用 `comfyui_node_search` 查

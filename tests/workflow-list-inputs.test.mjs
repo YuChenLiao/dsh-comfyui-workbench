@@ -10,7 +10,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { workflowListTool } from '../lib/index.js'
+import { listWorkflows } from '../lib/index.js'
+
+/** 工具已并入 comfyui_workflow；这些用例只管列表路径，用它包成原来的形状，断言不用改。 */
+const workflowListTool = deps => ({ execute: args => listWorkflows(deps, args) })
 
 /** 吃图的工作流（LoadImage → VAEDecode）。 */
 const WITH_IMAGE = {
