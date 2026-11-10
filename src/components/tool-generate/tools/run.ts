@@ -8,7 +8,7 @@ import type { Artifact } from '../../../shared/run/index.js'
 import { buildSurface, readEntry } from '../../../shared/workflow/index.js'
 import { detectFormat, formatHint } from '../../../shared/workflow/detect.js'
 import type { ApiWorkflow, WorkflowIOSurface } from '../../../shared/workflow/types.js'
-import { asInt, asRecord, asString } from '../../../shared/tools/types.js'
+import { asRecord, asString, parseWait } from '../../../shared/tools/types.js'
 import type { ToolBlock, ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 
 /**
@@ -135,21 +135,18 @@ export function runTool(deps: ToolDeps): ToolSpec {
         },
         outputPath: { type: 'string', description: '产物落盘目录；不传用配置的 outputDir' },
         wait: {
-          type: 'boolean',
-          description: '是否同步等到出图。默认 false：提交后立刻返回 promptId，出完图插件会主动通知对话；传 true 则本次调用等到产物落盘或超时。',
+          type: ['boolean', 'integer'],
+          description:
+            '要不要同步等到出图：`false`（默认）提交后立刻返回 promptId，出完图插件会主动通知对话；'
+            + '`true` 等到产物落盘或超时；也可以直接给毫秒数（如 300000），表示等，但最多等这么久。'
+            + '不再有独立的 waitMs / timeoutMs —— 要设上限就把数字传给 wait。',
         },
-        waitMs: { type: 'integer', description: 'wait=true 时的等待上限（毫秒），默认取配置的 timeoutMs' },
         tags: {
           type: 'array',
           items: { type: 'string' },
           description: '产物标签，登记进资产索引便于之后筛选。注意只有 wait:true 同步取回产物时才会登记；默认异步路径由后台通知落盘，不写索引。',
         },
-        timeoutMs: { type: 'integer', description: '已弃用：请用 waitMs' },
-        returnImages: {
-          type: 'string',
-          enum: ['first', 'all', 'none'],
-          description: '已弃用：工具结果不能承载二进制图片，图片一律只给路径。保留该参数只为兼容旧调用。',
-        },
+
       },
     },
     output: {
@@ -231,7 +228,13 @@ export function runTool(deps: ToolDeps): ToolSpec {
       const outputDir = asString(args.outputPath).trim() !== ''
         ? asString(args.outputPath).trim()
         : (deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir)
-      const timeoutMs = asInt(args.timeoutMs, deps.timeoutMs, 1_000, 3_600_000)
+      // `wait` 一参两用：布尔表示等不等，数字表示"等，但最多这么久"。规则见 parseWait。
+      const { shouldWait, waitMs } = parseWait(args.wait, deps.timeoutMs)
+
+      // `RunOptions.timeoutMs` 是必填字段，但 submitWorkflow 内部并不读它 ——
+      // 单次 HTTP 由 ComfyClient 的 requestTimeoutMs 管，等服务就绪由 readyTimeoutMs 管。
+      // 这里照传配置值只是为了满足类型，不再是"提交超时"。
+      const submitTimeoutMs = deps.timeoutMs
 
       // 一次性覆盖：来自 comfyui_workflow_edit（persist=false）。用完即清。
       //
@@ -257,12 +260,13 @@ export function runTool(deps: ToolDeps): ToolSpec {
 
       try {
         const submitted = await submitWorkflow({
+          timeoutMs: submitTimeoutMs,
           client: deps.client,
           workflow: loaded.workflow,
           slots: loaded.surface.inputs,
           vars: applied.vars,
           outputDir,
-          timeoutMs,
+
           pollIntervalMs: deps.pollIntervalMs,
           workflowId: loaded.workflowId,
           workflowHash: loaded.surface.workflowHash,
@@ -277,7 +281,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
 
         // 默认异步：提交完就把控制权交回对话。出图要几分钟，
         // 让工具调用一直挂着会让用户以为连接断了。
-        if (args.wait !== true) {
+        if (!shouldWait) {
           // 有 agent 就挂一个后台等待者：出图后由它调 Agent.followup 把结果塞回
           // 这个会话（与子代理回传同一条通道），用户不用再问一次。
           const agent = exec?.agent as NotifyTarget | undefined
@@ -312,7 +316,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
         let outcome: Awaited<ReturnType<typeof waitForRun>>
         try {
           outcome = await waitForRun(deps.client, submitted.promptId, {
-            timeoutMs: asInt(args.waitMs, deps.timeoutMs, 1_000, 1_800_000),
+            timeoutMs: waitMs,
             pollIntervalMs: deps.pollIntervalMs,
             fallback: {
               outputDir,

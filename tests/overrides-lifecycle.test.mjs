@@ -100,8 +100,7 @@ test('wait 超时的 pending 分支也带"已应用覆盖"提示', async () => {
   const result = await tool.execute({
     workflow: { path: deps._file },
     vars: { seed: 1 },
-    wait: true,
-    waitMs: 1_000,
+    wait: 1_000,
   })
 
   assert.equal(result.ok, true)

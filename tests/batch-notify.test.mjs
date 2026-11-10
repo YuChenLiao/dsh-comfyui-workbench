@@ -207,7 +207,7 @@ test('wait=true 全成功也要凑齐（不能等到 30 分钟超时）', async 
   }))
   const agent = recordingAgent()
   const tool = runBatchTool(deps)
-  await tool.execute({ workflow: { path: deps._file }, runs: [{ vars: { seed: 1 } }, { vars: { seed: 2 } }], wait: true, timeoutMs: 5_000 }, { agent })
+  await tool.execute({ workflow: { path: deps._file }, runs: [{ vars: { seed: 1 } }, { vars: { seed: 2 } }], wait: 5_000 }, { agent })
 
   const startedAt = Date.now()
   while (Date.now() - startedAt < 5_000) {

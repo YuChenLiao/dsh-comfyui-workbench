@@ -119,10 +119,8 @@ interface RunInput {
   vars?: Record<string, string | number | boolean>
   outputPath?: string
   tags?: string[]
-  wait?: boolean          // 默认 false（提交即返回；出图后由 followup 通知）
-  waitMs?: number         // wait: true 时的等待上限；`timeoutMs` 已弃用（见工具参数表）
+  wait?: boolean | number // 布尔=等不等，数字=等多久（原来拆成 wait / waitMs / timeoutMs 三个，已合并）
   /** 已弃用，字段保留以兼容旧调用：工具响应不能承载图片字节，图片一律只给路径。见 §3.3。 */
-  returnImages?: 'first' | 'all' | 'none'
 }
 ```
 
@@ -751,7 +749,7 @@ ctx.inject(['betterSidebar'], (scope) => {
 | B10 | 根目录来源 | 在 `~/.dsh-comfyui-image/config.json` 里设 `outputDir` | `/roots` 出现 `kind: output` 的该项（证明仍在读旧配置） |
 | B11 | 类型保真 | 模板 `"steps": "{{steps}}"`，传 20 | 提交 JSON 里是数字 20；单测覆盖 |
 | B12 | 变量缺失 / 节点预检 | 分别删必填绑定、塞不存在的 class_type | `variable_unbound` / `node_missing`，且**未发出** `POST /prompt`（请求日志核对） |
-| B13 | 超时收尾 | 跑一个超过 `waitMs` 的长工作流 | 返回 pending（或 `timeout`）；**ComfyUI `/queue` 里该 prompt 仍在** —— 当前不发 `POST /interrupt`（全仓 `client.interrupt()` 零调用） |
+| B13 | 超时收尾 | 跑一个超过 `wait` 上限的长工作流 | 返回 pending（或 `timeout`）；**ComfyUI `/queue` 里该 prompt 仍在** —— 当前不发 `POST /interrupt`（全仓 `client.interrupt()` 零调用） |
 | B14 | 无产物 | 末端只连纯文本输出节点（`outputs` 有内容但无 `filename`） | `no_output`，hint 说明两种成因。**模板一个输出节点都没有**是另一件事：ComfyUI 在提交阶段就以 `prompt_no_outputs` 拒掉，落 `submit_rejected` |
 | B15 | sidecar 互通 | 用 `dsh-comfyui-image` 产出的图走本插件 | 列表显示提示词/种子；两者共用同一 `outputDir` 时新图立刻可见 |
 | B16 | 索引可重建 | 删 `index.db` 重启 | 从 sidecar 重建，`/assets` 结果与删除前一致 |

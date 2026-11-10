@@ -154,3 +154,37 @@ export function asInt(value: unknown, fallback: number, min: number, max: number
 export function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
+
+/** 同步等待的下限/上限（毫秒）。下限 1 秒：更短的等待没有意义，轮询一次就过去了。 */
+export const WAIT_MIN_MS = 1_000
+export const WAIT_MAX_MS = 1_800_000
+
+/**
+ * 解析 `wait` 参数：**布尔表示等不等，数字表示等多久**。
+ *
+ * 三处（`run` / `rerun` / `run_batch`）共用这一份，因为语义必须一致 —— 三份各写一遍时
+ * 已经出现过跑偏：`run_batch` 解析出了数字却没拿它决定同步与否，等于参数是摆设。
+ *
+ * 规则：
+ * - 数字 `<= 0` → 当作 **不等**。`wait: 0` 最可能表达"别等"，把它变成"同步等 1 秒"是反直觉的。
+ * - 数字夹到 `[WAIT_MIN_MS, WAIT_MAX_MS]`。
+ * - 只给 `true` 时用 `defaultMs`，**同样夹上限** —— 否则配置里把 `timeoutMs` 调到 60 分钟时，
+ *   `wait: true` 的同步等待会跟着翻倍到 60 分钟。
+ * - 字符串数字也认（模型偶尔给 `"120000"`）。
+ *
+ * @param value - 原始参数值。
+ * @param defaultMs - 只给 `true` 时用的默认等待上限（取自配置）。
+ */
+export function parseWait(value: unknown, defaultMs: number): { shouldWait: boolean; waitMs: number } {
+  const clampDefault = (): number => Math.min(WAIT_MAX_MS, Math.max(WAIT_MIN_MS, defaultMs))
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : undefined
+
+  if (numeric !== undefined) {
+    if (numeric <= 0) return { shouldWait: false, waitMs: clampDefault() }
+    return { shouldWait: true, waitMs: Math.min(WAIT_MAX_MS, Math.max(WAIT_MIN_MS, numeric)) }
+  }
+  if (value === true) return { shouldWait: true, waitMs: clampDefault() }
+  return { shouldWait: false, waitMs: clampDefault() }
+}

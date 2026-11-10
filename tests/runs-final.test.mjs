@@ -91,8 +91,7 @@ test('wait: true 超时后记录标 unknown，不停在 running', async () => {
   const result = await tool.execute({
     workflow: { path: deps._file },
     vars: { seed: 1 },
-    wait: true,
-    waitMs: 1_000,
+    wait: 1_000,
   })
   assert.equal(result.pending, true)
   const record = deps.runs.get('pid-1')

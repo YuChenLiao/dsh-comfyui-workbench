@@ -59,7 +59,7 @@ function makeDeps(historyFor = () => ({ status: { status_str: 'success', complet
 test('wait:true 的 no_output 终态带 finishedAt（elapsedMs 不会永涨）', async () => {
   const deps = makeDeps()
   const tool = runTool(deps)
-  await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: true, waitMs: 5_000 })
+  await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: 5_000 })
 
   const record = deps.runs.get('pid-1')
   assert.equal(record?.state, 'failed')
@@ -77,7 +77,7 @@ test('wait:true 的 no_output 终态带 finishedAt（elapsedMs 不会永涨）',
 test('wait:true 的超时未知态也带 finishedAt 与 error', async () => {
   const deps = makeDeps(() => undefined) // 永不完成
   const tool = runTool(deps)
-  await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: true, waitMs: 1_000 })
+  await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: 1_000 })
 
   const record = deps.runs.get('pid-1')
   assert.equal(record?.state, 'unknown')

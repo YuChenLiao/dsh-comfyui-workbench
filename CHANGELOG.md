@@ -2,6 +2,34 @@
 
 ## 未发布
 
+### 改进：`wait` 一参两用，参数表 9 → 6
+
+`comfyui_run` 原来有三个参数管同一件事：`wait`（等不等）、`waitMs`（等多久）、`timeoutMs`
+（已废弃，描述里写着"请用 waitMs"却还留着）。模型经常两个都传，或者传 `timeoutMs` 以为在设
+等待上限。现在只剩 `wait`：**布尔表示等不等，数字表示"等，但最多等这么久"**（字符串数字也认）。
+
+参数表从 9 个降到 **6 个**：`promptId` / `workflow` / `vars` / `outputPath` / `wait` / `tags`。
+顺手删掉 `returnImages`（工具结果本来就不能承载二进制，它只是为兼容旧调用留的空壳）。
+
+**`comfyui_rerun` 与 `comfyui_run_batch` 同步改**：它们各自也有一份 `waitMs` / `timeoutMs`。
+只改 run 的话会留下三种等待语义，比不改更乱。提交超时（拉起服务 + 校验 + 入队）收成内部值，
+不再暴露成参数 —— 调用方关心的是"等多久出图"，那是 `wait`。
+
+解析规则抽成 `shared/tools/types.ts` 的 `parseWait`，三个工具共用一份。**抽的原因不是"三份重复"，
+是三份已经跑偏**：`run_batch` 解析出了数字却没拿它决定同步与否（仍用 `args.wait !== true`），
+`wait: 3000` 会立刻返回 —— 参数是摆设。第一版就是这样，审查实测抓出来的。
+
+**这个改动差点假绿**：`additionalProperties: false` 只在宿主侧校验，单元测试直接调 `execute` 时
+多余参数会被静默忽略。改完 schema 后测试照样全绿，但十处测试传的 `waitMs` / `timeoutMs` 已经不生效 ——
+它们本想验证"等 1 秒超时"，实际按 deps 里的配置值在等（`run_batch` 那条从 0.06 秒变成 30.1 秒）。
+
+现在测试统一改成数值形式的 `wait`，并新增 8 条用例钉住：布尔/数字/字符串数字、`0` 与负数当"不等"、
+小于下限抬到 1 秒、`true` 被 30 分钟上限夹住、参数表只剩六个、三个工具的 schema 一致。
+变异验证 4/4 打红：`run_batch` 退回旧判据、`parseWait` 忽略数字、`0` 改成同步、`true` 不夹上限。
+
+`npm test` **532/532**。
+
+
 ### 改进：工作流查询 2 → 1，并入体检（`comfyui_workflow`）
 
 `comfyui_workflow_list` + `comfyui_workflow_inspect` → `comfyui_workflow`。

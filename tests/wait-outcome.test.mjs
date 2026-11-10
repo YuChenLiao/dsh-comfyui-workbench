@@ -59,7 +59,7 @@ function makeDeps(historyEntry) {
 test('wait:true 遇 no_output：记录必须是 failed，不能降级成 pending', async () => {
   const deps = makeDeps({ status: { status_str: 'success', completed: true }, outputs: {} })
   const tool = runTool(deps)
-  const result = await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: true, waitMs: 5_000 })
+  const result = await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: 5_000 })
 
   const record = deps.runs.get('pid-1')
   assert.equal(record?.state, 'failed', `"完成但没产物"是确定结论，该 failed，实际 ${record?.state}`)
@@ -80,7 +80,7 @@ test('wait:true 遇网络类错误：仍可 pending 让用户续查', async () =
     throw error
   }
   const tool = runTool(deps)
-  const result = await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: true, waitMs: 2_000 })
+  const result = await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: 2_000 })
 
   // 网络类：等满容忍次数后按 unknown 处理，返回 pending 是合理的
   assert.equal(result.pending, true, `网络类该 pending，实际 ${JSON.stringify(result).slice(0, 150)}`)
@@ -97,7 +97,7 @@ test('wait:true 遇 execution_failed：立即 failed，不拖到 6 次', async (
     },
   })
   const tool = runTool(deps)
-  const result = await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: true, waitMs: 5_000 })
+  const result = await tool.execute({ workflow: { path: deps._file }, vars: { seed: 1 }, wait: 5_000 })
 
   const record = deps.runs.get('pid-1')
   assert.equal(record?.state, 'failed')

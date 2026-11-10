@@ -16,7 +16,7 @@ import { sweepRun } from '../../../shared/run/index.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
 import { BatchCollector } from '../../../shared/run/batch-notify.js'
 import { codeOf, finalStateOf } from '../../../shared/run/policy.js'
-import { asInt, asString } from '../../../shared/tools/types.js'
+import { asString, parseWait } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 import type { NotifyTarget } from '../../../shared/run/notify.js'
@@ -107,10 +107,10 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
           },
         },
         wait: {
-          type: 'boolean',
+          type: ['boolean', 'integer'],
           description: '是否同步等全部出图。默认 false（全部异步）。批量同步等待很容易撞超时，一般不要开。',
         },
-        timeoutMs: { type: 'integer', description: 'wait=true 时单条等待上限（毫秒）。' },
+
       },
     },
     output: {
@@ -125,7 +125,11 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       }
 
       const sessionDir = deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir
-      const timeoutMs = asInt(args.timeoutMs, deps.timeoutMs, 1_000, 3_600_000)
+      // 与 comfyui_run / rerun 共用同一份解析，并且**用它决定同步与否** ——
+      // 上一版只解析不消费，`wait: 3000` 会立刻返回，参数等于摆设。
+      const parsedWait = parseWait(args.wait, deps.timeoutMs)
+      const shouldWait = parsedWait.shouldWait
+      const timeoutMs = parsedWait.waitMs
       const agent = exec?.agent as NotifyTarget | undefined
       const canNotify = agent !== undefined && typeof agent.followup === 'function'
 
@@ -225,7 +229,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
 
           submittedIds.push(submitted.promptId)
 
-          if (args.wait !== true) {
+          if (!shouldWait) {
             items.push({
               index,
               ok: true,

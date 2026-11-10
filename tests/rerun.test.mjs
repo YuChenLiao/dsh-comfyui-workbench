@@ -227,7 +227,7 @@ test('wait: true 真的等，并带回产物、登记索引（tags 有去处）'
   })
   deps.client.view = async () => Buffer.from([0x89, 0x50, 0x4e, 0x47])
   const tool = rerunTool(deps)
-  const result = await tool.execute({ from: sidecar, wait: true, waitMs: 5_000, tags: ['portrait', 'test'] })
+  const result = await tool.execute({ from: sidecar, wait: 5_000, tags: ['portrait', 'test'] })
 
   assert.equal(result.ok, true)
   assert.ok(Array.isArray(result.results), 'wait 时要给每条结果')
@@ -416,7 +416,7 @@ test('wait 超时后仍挂兜底：迟到的产物会进注册表', async () => 
   }
   deps.client.view = async () => Buffer.from([0x89, 0x50, 0x4e, 0x47])
   const tool = rerunTool(deps)
-  const result = await tool.execute({ from: sidecar, wait: true, waitMs: 1_000 })
+  const result = await tool.execute({ from: sidecar, wait: 1_000 })
   assert.equal(result.ok, true)
   assert.equal(result.results[0].pending, true, '先返回 pending')
   // 等待兜底收敛
@@ -443,7 +443,7 @@ test('wait: true 遇执行失败时记录要标 failed（不是停在 queued）'
     },
   })
   const tool = rerunTool(deps)
-  const result = await tool.execute({ from: sidecar, wait: true, waitMs: 5_000 })
+  const result = await tool.execute({ from: sidecar, wait: 5_000 })
 
   // 提交成功了但执行失败：整体 ok 可以是 false，也可能 ok 但 results 里有失败；
   // 无论哪种，登记表那条必须收敛成 failed 并带 error。
@@ -579,7 +579,7 @@ test('count>1 时第 1 条成功、第 2 条执行失败：各自记各自的状
   }
   deps.client.view = async () => Buffer.from([0x89, 0x50, 0x4e, 0x47])
   const tool = rerunTool(deps)
-  await tool.execute({ from: sidecar, count: 2, wait: true, waitMs: 5_000 })
+  await tool.execute({ from: sidecar, count: 2, wait: 5_000 })
 
   const first = deps.runs.get('pid-1')
   const second = deps.runs.get('pid-2')

@@ -74,7 +74,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | 工具 | 作用 |
 | --- | --- |
 | `comfyui_workflow` | 工作流的**四档只读视角**：不给参数列可用工作流（id、标题、用途、底模、输入种类、输出形状；被停用的不列出，`hiddenCount` 告知藏了几条）；给 `workflowId` 看 IO 面与节点清单（顺带报缺节点、缺模型与替代建议）；再加 `nodeId` 看单节点完整配置；给 `audit: true` 体检全库。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
-| `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait: true` 同步等、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
+| `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait` 同步等（`true` 或直接给毫秒数，一参两用）、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
 | `comfyui_node_search` | 按类名 / 显示名 / 别名 / 分类 / 输入输出类型 / 包名搜索本机节点，四档排序。默认只回一行摘要，`detail` 才给输入输出 |
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |

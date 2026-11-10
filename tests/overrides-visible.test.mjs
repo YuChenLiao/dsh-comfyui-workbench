@@ -69,7 +69,7 @@ test('wait 超时的 pending：render 文本里必须出现"一次性覆盖"', a
   const deps = makeDeps({ neverDone: true })
   deps.overrides.set('wf', [{ nodeId: '7', input: 'filename_prefix', value: 'zzz' }])
   const tool = runTool(deps)
-  const args = { workflow: { path: deps._file }, vars: { seed: 1 }, wait: true, waitMs: 1_000 }
+  const args = { workflow: { path: deps._file }, vars: { seed: 1 }, wait: 1_000 }
   const result = await tool.execute(args)
 
   assert.equal(result.pending, true)

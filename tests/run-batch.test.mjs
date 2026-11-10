@@ -184,8 +184,7 @@ test('wait: true 会真的等待并带回产物（不是提交完就返回）', 
   const result = await tool.execute({
     workflow: { path: file },
     runs: [{ vars: { seed: 1 } }],
-    wait: true,
-    timeoutMs: 5_000,
+    wait: 5_000,
   })
   assert.equal(result.ok, true)
   assert.equal(result.results[0].ok, true)
@@ -225,8 +224,7 @@ test('wait=true 的每条结果也带覆盖提示（不能静默改参数）', a
   const result = await tool.execute({
     workflow: { path: file },
     runs: [{ vars: { seed: 1 } }],
-    wait: true,
-    timeoutMs: 5_000,
+    wait: 5_000,
   })
   assert.equal(result.ok, true)
   const first = result.results[0]
@@ -248,8 +246,7 @@ test('批量 wait=true 超时（pending）分支也带覆盖提示', async () =>
   const result = await tool.execute({
     workflow: { path: file },
     runs: [{ vars: { seed: 1 } }],
-    wait: true,
-    timeoutMs: 1_000,
+    wait: 1_000,
   })
   const first = result.results[0]
   assert.equal(first.pending, true)

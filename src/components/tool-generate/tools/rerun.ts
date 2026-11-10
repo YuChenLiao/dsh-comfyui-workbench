@@ -18,7 +18,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
-import { asInt, asRecord, asString } from '../../../shared/tools/types.js'
+import { asInt, asRecord, asString, parseWait } from '../../../shared/tools/types.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 import type { NotifyTarget } from '../../../shared/run/index.js'
 import { sweepRun, watchRun } from '../../../shared/run/index.js'
@@ -104,8 +104,10 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
         },
         count: { type: 'integer', description: `出几张，默认 1，上限 ${MAX_COUNT}。` },
         outputPath: { type: 'string', description: '产物目录；不传用会话目录。' },
-        wait: { type: 'boolean', description: '是否同步等出图。默认 false（异步 + 完成后通知）。wait 为真时会带回产物路径并登记资产索引。' },
-        waitMs: { type: 'integer', description: 'wait=true 时的等待上限（毫秒）。' },
+        wait: {
+          type: ['boolean', 'integer'],
+          description: '是否同步等出图：false（默认，异步 + 完成后通知）；true 等到产物落盘；也可以直接给毫秒数表示等多久。wait 为真时会带回产物路径并登记资产索引。',
+        },
         tags: { type: 'array', items: { type: 'string' }, description: '给产物打的标签，进资产索引。' },
       },
     },
@@ -203,8 +205,10 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
       const canNotify = agent !== undefined && typeof agent.followup === 'function'
       const tags = Array.isArray(args.tags) ? args.tags.filter((tag): tag is string => typeof tag === 'string') : []
 
-      const wait = args.wait === true
-      const waitMs = asInt(args.waitMs, deps.timeoutMs, 1_000, 1_800_000)
+      // 与 comfyui_run 共用同一份解析（规则见 parseWait）。
+      const parsed = parseWait(args.wait, deps.timeoutMs)
+      const wait = parsed.shouldWait
+      const waitMs = parsed.waitMs
       // 总预算：20 条各自吃满 waitMs 最坏是 20×。与 run_batch 一样给个上限。
       const waitStartedAt = Date.now()
       const waitBudgetMs = Math.min(waitMs * count, 30 * 60_000)
