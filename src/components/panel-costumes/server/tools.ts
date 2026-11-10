@@ -10,13 +10,10 @@
  * **服装数据自带英文关键词**：搜索返回里直接给 `keywords`，模型拿到就能拼进 prompt ——
  * 不用再猜"这身衣服该怎么说"。
  */
+import { asString } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 import type { CostumeItem, CostumesIndex } from './catalog.js'
 import type { PoseImages } from '../../panel-poses/server/images.js'
-
-function asString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
-}
 
 /** 工具返回只带必要字段：1407 套全给会把上下文吃光。 */
 function brief(item: CostumeItem): Record<string, unknown> {

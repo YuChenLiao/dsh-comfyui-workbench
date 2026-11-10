@@ -17,13 +17,10 @@
  * 10 次第三方图床请求（`ai-pose-gallery.anhao.app`），那个站点不稳，会把一次毫秒级的
  * 索引查询变成几秒的等待，而且大部分结果模型根本不会用。**搜索保持轻**，要图就传 id。
  */
+import { asString } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 import type { PosesIndex, PoseHit } from './catalog.js'
 import type { PoseImages } from './images.js'
-
-function asString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
-}
 
 /** 工具返回里只用这些字段：姿势库有 1439 个视角，全给会把上下文吃光。 */
 function brief(hit: PoseHit): Record<string, unknown> {

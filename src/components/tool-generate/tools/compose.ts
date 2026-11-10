@@ -12,24 +12,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { MaterialItem, MaterialSource, ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
-import { jsonOutput } from '../../../shared/tools/types.js'
+import { asRecord, asString, jsonOutput } from '../../../shared/tools/types.js'
 import { readEntry } from '../../../shared/workflow/index.js'
 import type { IOSlot } from '../../../shared/workflow/types.js'
 import { buildPrompt } from './compose-prompt.js'
 import { planSlots, ROLE_CN } from './compose-slots.js'
 import type { MaterialRole } from './compose-slots.js'
 
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((item): item is string => typeof item === 'string')
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
 /** 素材角色能放进的槽位类型：mask 专门接蒙版，其余走 image。 */
