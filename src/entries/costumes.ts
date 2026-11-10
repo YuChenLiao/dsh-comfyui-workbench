@@ -20,7 +20,7 @@ import path from 'node:path'
 
 import { createCostumeRoutes } from '../components/panel-costumes/server/routes.js'
 import { createCostumesIndex } from '../components/panel-costumes/server/catalog.js'
-import { costumeFetchTool, costumeSearchTool } from '../components/panel-costumes/server/tools.js'
+import { costumeTool } from '../components/panel-costumes/server/tools.js'
 import type { CostumesIndex } from '../components/panel-costumes/server/catalog.js'
 import { createImageCache } from '../components/panel-poses/server/images.js'
 import type { PoseImages } from '../components/panel-poses/server/images.js'
@@ -126,7 +126,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
     console.warn('[comfyui-workbench] 拿不到 tools 服务，服装工具未注册。')
   } else {
     const deps = { index, images, uploadsDir }
-    for (const spec of [costumeSearchTool(deps), costumeFetchTool(deps)]) {
+    for (const spec of [costumeTool(deps)]) {
       try {
         const dispose = tools.register(spec)
         if (typeof dispose === 'function' && typeof ctx.effect === 'function') {

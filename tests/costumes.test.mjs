@@ -12,7 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { bundledCostumePath, costumeFetchTool, costumeSearchTool, createCostumesIndex, createImageCache, createPoseImages } from '../lib/index.js'
+import { bundledCostumePath, costumeTool, createCostumesIndex, createImageCache, createPoseImages } from '../lib/index.js'
 // **白名单从生产代码导入，不在这里抄一份**：抄一份等于给闸门配一把假钥匙 ——
 // 生产那份被放宽成 `^(thumbs|img)\/.+$` 时，抄出来的测试照样全绿。
 import { COSTUME_PATH } from '../lib/entries/costumes.js'
@@ -146,7 +146,7 @@ test('工具：搜索校验分类并给出可用分类，空结果区分"没有"
     pathPattern: COSTUME_PATH,
     fetchImpl: async () => new Response(tinyWebp(), { status: 200 }),
   })
-  const tool = costumeSearchTool({ index, images, uploadsDir: () => tempDir() })
+  const tool = costumeTool({ index, images, uploadsDir: () => tempDir() })
 
   const bad = await tool.execute({ category: '不存在的分类' })
   assert.equal(bad.ok, false)
@@ -179,11 +179,11 @@ test('工具：fetch 落盘并回关键词，找不到编号时指向 search', a
       return new Response(tinyWebp(), { status: 200 })
     },
   })
-  const tool = costumeFetchTool({ index, images, uploadsDir: () => tempDir() })
+  const tool = costumeTool({ index, images, uploadsDir: () => tempDir() })
 
   const missing = await tool.execute({ id: 'NO-SUCH-0001' })
   assert.equal(missing.ok, false)
-  assert.match(missing.error, /comfyui_costume_search/)
+  assert.match(missing.error, /不带 id 搜一下/)
   assert.equal(hits, 0, '找不到编号时不该打网络')
 
   const ok = await tool.execute({ id: 'SPR-0001', size: 'thumb' })
@@ -201,7 +201,7 @@ test('工具返回不带 undefined：非成人向服装必须能无损 JSON 往�
     pathPattern: COSTUME_PATH,
     fetchImpl: async () => new Response(tinyWebp(), { status: 200 }),
   })
-  const tool = costumeSearchTool({ index, images, uploadsDir: () => tempDir() })
+  const tool = costumeTool({ index, images, uploadsDir: () => tempDir() })
 
   const result = await tool.execute({ query: '针织', limit: 3 })
   assert.equal(result.ok, true)
@@ -210,4 +210,37 @@ test('工具返回不带 undefined：非成人向服装必须能无损 JSON 往�
   assert.deepEqual(JSON.parse(JSON.stringify(result)), result)
   // 同姿势库：字段必须是布尔，不能是 undefined
   for (const item of result.costumes) assert.equal(typeof item.adult, 'boolean')
+})
+
+test('工具：给 id 是取图、不给 id 是搜索（与姿势库同构，mode 自证）', async () => {
+  const index = createCostumesIndex(tempDir(), BUNDLED)
+  let hits = 0
+  const images = createImageCache({
+    cacheDir: tempDir(),
+    origin: ORIGIN,
+    pathPattern: COSTUME_PATH,
+    fetchImpl: async () => {
+      hits += 1
+      return new Response(tinyWebp(), { status: 200 })
+    },
+  })
+  const tool = costumeTool({ index, images, uploadsDir: () => tempDir() })
+
+  // 不给 id：纯搜索，不碰网络，也不该返回 file
+  const searched = await tool.execute({ limit: 2 })
+  assert.equal(searched.mode, 'search')
+  assert.equal(searched.file, undefined, '搜索不该带回文件路径')
+  assert.equal(hits, 0, '搜索不该打网络')
+
+  // 给了 id：取图，即使同时带了搜索参数也以 id 为准
+  const item = index.search({ limit: 1 }).items[0]
+  const fetched = await tool.execute({ id: item.id, query: '这个参数该被忽略', size: 'thumb' })
+  assert.equal(fetched.mode, 'fetch')
+  assert.equal(fetched.costumes, undefined, '取图不该返回结果列表')
+  assert.ok(fs.existsSync(fetched.file), '该落盘并回绝对路径')
+  // 取图返回里必须同时带 keywords 与 tags —— 合并两个工具时这两组词是唯一容易丢的字段
+  assert.ok(typeof fetched.costume.keywords === 'string' && fetched.costume.keywords !== '')
+  assert.ok(Array.isArray(fetched.costume.tags), 'tags 不能丢（HEAD 就是 slice(0, 8)）')
+  assert.ok(fetched.costume.tags.length <= 8)
+  assert.equal(hits, 1)
 })

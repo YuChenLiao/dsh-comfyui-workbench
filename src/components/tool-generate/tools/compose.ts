@@ -145,7 +145,7 @@ async function resolveMaterial(
   const item = lookup(id)
   if (item === undefined) {
     throw new Error(
-      `${label}库里没有 ${id}。先用 ${role === 'pose' ? 'comfyui_pose_search' : 'comfyui_costume_search'} 搜一下。`,
+      `${label}库里没有 ${id}。先用 ${role === 'pose' ? 'comfyui_pose' : 'comfyui_costume'} 搜一下（给 query，不是 id）。`,
     )
   }
   const file = await fetch(id, size)
@@ -171,10 +171,10 @@ export function composeTool(deps: ToolDeps): ToolSpec {
       additionalProperties: false,
       required: [],
       properties: {
-        costumeId: { type: 'string', description: '衣装库的 id（如 SPR-0001），来自 comfyui_costume_search。' },
+        costumeId: { type: 'string', description: '衣装库的 id（如 SPR-0001），来自 comfyui_costume 的搜索结果。' },
         poseId: {
           type: 'string',
-          description: '姿势的 id 或视角 id（如 full_single_P012 或 full_single_P012_side），来自 comfyui_pose_search。',
+          description: '姿势的 id 或视角 id（如 full_single_P012 或 full_single_P012_side），来自 comfyui_pose 的搜索结果。',
         },
         size: { type: 'string', enum: ['full', 'thumb'], description: '取图尺寸，默认 full（当参考图用 thumb 就够）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '已转好的 Danbooru tag（由 danbooru_lookup 得到）。' },

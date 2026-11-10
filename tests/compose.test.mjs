@@ -264,6 +264,6 @@ test('工具：extraVars 覆盖任何推断', async () => {
 test('工具：素材 id 不存在时给出下一步，不猜', async () => {
   const { dir, workflowsDir, materials } = makeDeps()
   const tool = composeTool({ workflowsDir, getMaterials: () => materials, outputDir: dir })
-  await assert.rejects(() => tool.execute({ costumeId: 'NO-SUCH-0001' }), /comfyui_costume_search/)
+  await assert.rejects(() => tool.execute({ costumeId: 'NO-SUCH-0001' }), /comfyui_costume/)
   fs.rmSync(dir, { recursive: true, force: true })
 })

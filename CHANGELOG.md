@@ -2,6 +2,28 @@
 
 ## 未发布
 
+### 改进：素材库工具 4 → 2（`comfyui_pose` / `comfyui_costume`）
+
+`comfyui_pose_search` + `comfyui_pose_fetch` → `comfyui_pose`，衣装同理。
+
+**给 `query` 是搜，给 `id` 是取图。** 两个动作在同一个对象上，`query` 与 `id` 天然互斥，失败后的
+下一步也是同一句（搜不到就换词、id 找不到就先去搜）—— 拆成两个工具只是让模型多一次无意义的选择。
+成功的返回里用 `mode: "search" | "fetch"` 说明走了哪条路（失败时只有 `ok: false` 与 `error`）。
+
+**不做 4 → 1**，四条理由：姿势多一个 `system`（`full` / `sexy` / `bust` / `pair`，衣装没有对应概念，
+合并后对衣装是纯噪声）；`category` 是两套完全不同的词表（动作分类 vs 穿搭场景）；返回值一个是多角度、
+一个带英文关键词；最根本的是用途不同 —— 姿势控构图（ControlNet 吃线稿），衣装控外观（IPAdapter +
+关键词进提示词）。模型选哪个是**意图判断**，不该降级成一个 `kind` 参数。
+
+**搜索不落缩略图。** 原方案想让结果直接带可用图路径，省掉"搜完再取一次"。实测否决：一次搜 10 条
+就是 10 次第三方图床请求（`ai-pose-gallery.anhao.app`），那个站点不稳，会把毫秒级的索引查询变成
+几秒的等待，而大部分结果模型根本不会用。搜索保持轻，要图就传 `id`。
+
+工具数 **16 → 14**。同步改了 skill 正文、README 中英工具表、`compose` 的报错与参数说明，
+并给合并后的工具补了一条互斥测试（给 `id` 时不搜索、不给 `id` 时不碰网络）。
+
+`npm test` **512/512**。
+
 ### 修复：`npm test` 因宿主不再提供 React 而中断
 
 `tests/render.mjs` 从 `~/.dsh/profiles/desktop` 解析 `react-dom/server`，而 DSH 升级后那个目录
@@ -17,8 +39,6 @@
 运行时零依赖这条没破：devDependency 不进产物，`arch.mjs` 的外部包检查仍只看 `src/**` 的 import。
 
 `npm test` **528/528**，exit 0 —— 这条链现在能从第一步跑到最后一步。
-
-## 未发布
 
 ### 移除：提示词参考（Danbooru posts + 提示词池）
 

@@ -14,7 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { bundledCatalogPath, createPoseImages, createPosesIndex, createPosesRoutes, poseFetchTool, poseSearchTool } from '../lib/index.js'
+import { bundledCatalogPath, createPoseImages, createPosesIndex, createPosesRoutes, poseTool } from '../lib/index.js'
 
 const ORIGIN = 'https://example.invalid'
 
@@ -336,7 +336,7 @@ test('路由：搜索 / 统计 / 越界参数都被夹住', async () => {
 test('工具：搜索参数校验与空结果的原因区分', async () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
   const images = createPoseImages({ cacheDir: tempDir(), origin: ORIGIN, fetchImpl: async () => new Response(TINY_PNG) })
-  const tool = poseSearchTool({ index, images, uploadsDir: () => tempDir() })
+  const tool = poseTool({ index, images, uploadsDir: () => tempDir() })
 
   const bad = await tool.execute({ system: 'nope' })
   assert.equal(bad.ok, false)
@@ -368,11 +368,11 @@ test('工具：fetch 找不到 id 时给出可执行的下一步', async () => {
       return new Response(TINY_PNG, { status: 200 })
     },
   })
-  const tool = poseFetchTool({ index, images, uploadsDir: () => tempDir() })
+  const tool = poseTool({ index, images, uploadsDir: () => tempDir() })
 
   const missing = await tool.execute({ id: 'no_such_pose' })
   assert.equal(missing.ok, false)
-  assert.match(missing.error, /comfyui_pose_search/)
+  assert.match(missing.error, /不带 id 搜一下/)
   assert.equal(hits, 0, '找不到 id 时不该去打网络')
 
   const pose = index.search({ limit: 1 }).items[0]
@@ -382,10 +382,38 @@ test('工具：fetch 找不到 id 时给出可执行的下一步', async () => {
   assert.equal(hits, 1)
 })
 
+test('工具：给 id 是取图、不给 id 是搜索（同一个工具两条路径，不互相干扰）', async () => {
+  const index = createPosesIndex(tempDir(), BUNDLED)
+  let hits = 0
+  const images = createPoseImages({
+    cacheDir: tempDir(),
+    origin: ORIGIN,
+    fetchImpl: async () => {
+      hits += 1
+      return new Response(TINY_PNG, { status: 200 })
+    },
+  })
+  const tool = poseTool({ index, images, uploadsDir: () => tempDir() })
+
+  // 不给 id：纯搜索，不该碰网络，也不该返回 file
+  const searched = await tool.execute({ limit: 2 })
+  assert.equal(searched.mode, 'search')
+  assert.equal(searched.file, undefined, '搜索不该带回文件路径')
+  assert.equal(hits, 0, '搜索不该打网络')
+
+  // 给了 id：取图，即使同时带了搜索参数也以 id 为准
+  const pose = index.search({ limit: 1 }).items[0]
+  const fetched = await tool.execute({ id: pose.id, query: '这个参数该被忽略', size: 'thumb' })
+  assert.equal(fetched.mode, 'fetch')
+  assert.equal(fetched.poses, undefined, '取图不该返回结果列表')
+  assert.ok(fs.existsSync(fetched.file), '该落盘并回绝对路径')
+  assert.equal(hits, 1)
+})
+
 test('工具返回不带 undefined：非成人向结果必须能无损 JSON 往返', async () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
   const images = createPoseImages({ cacheDir: tempDir(), origin: ORIGIN, fetchImpl: async () => new Response(TINY_PNG) })
-  const tool = poseSearchTool({ index, images, uploadsDir: () => tempDir() })
+  const tool = poseTool({ index, images, uploadsDir: () => tempDir() })
 
   const result = await tool.execute({ onlySafe: true, limit: 3 })
   assert.equal(result.ok, true)

@@ -550,18 +550,16 @@ test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）
   }
 })
 
-test('工具注册：16 个工具都带必要字段', async () => {
+test('工具注册：14 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
     assert.deepEqual(names, [
       'comfyui_compose',
-      'comfyui_costume_fetch',
-      'comfyui_costume_search',
+      'comfyui_costume',
       'comfyui_node_search',
-      'comfyui_pose_fetch',
-      'comfyui_pose_search',
+      'comfyui_pose',
       'comfyui_rerun',
       'comfyui_run',
       'comfyui_run_batch',

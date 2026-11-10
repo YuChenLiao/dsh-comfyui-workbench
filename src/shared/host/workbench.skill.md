@@ -1,6 +1,6 @@
 # 这套 ComfyUI 工作台怎么用
 
-插件把本机 ComfyUI 接进对话：六个面板给人看，十六个工具给模型用。
+插件把本机 ComfyUI 接进对话：六个面板给人看，十四个工具给模型用。
 四层东西各管各的，混了就出问题 ——
 
 | 层 | 在哪 | 规矩 |
@@ -37,8 +37,10 @@
 ## 素材三库的用法
 
 - **标签库**（99372 条）：`danbooru_lookup` 把中文想法转成 tag。语义分类只覆盖 `general` 那 30693 条的 26.9%（不是 99372 的），查不到时先去掉 `category` 再试。
-- **姿势库**（288 组 / 1439 角度）：`comfyui_pose_search` 找人 → `comfyui_pose_fetch` 把线稿落进 uploads → 当 ControlNet / 图生图的输入图。
-- **衣装库**（1407 套）：`comfyui_costume_search` 的结果带 `keywords`（英文串，可直接拼进提示词）→ `comfyui_costume_fetch` 取图当参考。
+- **姿势库**（288 组 / 1439 角度）：`comfyui_pose` 给 `query` 找人，给 `id` 就把线稿落进 uploads → 当 ControlNet / 图生图的输入图。
+- **衣装库**（1407 套）：`comfyui_costume` 给 `query` 搜，结果带 `keywords`（英文串，可直接拼进提示词）；给 `id` 就取图当参考。
+
+素材工具都是**同一个工具两条路径**：给 `query` 是搜，给 `id` 是取图。不用先决定"该调哪个工具"。
 
 要找"能吃图的工作流"：`comfyui_workflow_list { inputs: "image" }` 会给出 `imageSlots`，告诉你该往哪个键传图。
 
@@ -46,7 +48,7 @@
 
 要"这套衣服 + 这个姿势出一张"，不必自己拼五步，用 `comfyui_compose`：
 
-1. 先搜素材：`comfyui_costume_search` / `comfyui_pose_search` 拿 id
+1. 先搜素材：`comfyui_costume` / `comfyui_pose` 给 `query` 拿到 id
 2. `comfyui_compose { costumeId, poseId, tags, prompt }` —— 它把图落进 uploads、按槽位语义填好 vars、拼好提示词
 3. 把返回的 `call` 原样交给 `comfyui_run`
 

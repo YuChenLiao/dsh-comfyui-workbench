@@ -18,8 +18,8 @@
 | `comfyui-workbench:gallery` | 面板 | 资产库：列表、筛选、缩略图、删除、批量导出工作流 ZIP |
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/rerun`、`/config`、服务托管接口 |
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
-| `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose_search`、`comfyui_pose_fetch` 两个工具 |
-| `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：1407 套现实衣装（图中无人物），搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume_search`、`comfyui_costume_fetch` |
+| `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose` 一个工具（给 `query` 搜、给 `id` 取图） |
+| `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：1407 套现实衣装（图中无人物），搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow_list`、`comfyui_workflow_inspect`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_lookup_batch`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
@@ -84,10 +84,8 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `danbooru_lookup` | 按中文名 / 日文名 / Danbooru tag 查**角色、画师、作品、通用**四类标签（`kind` 可限定），**只返回 tag**。写提示词前用它对齐名字，能少跑偏。查「长发」→`long_hair`、「东方Project」→`touhou` |
 | `danbooru_lookup_batch` | 一次查多个名字（上限 50），**只查本地不联网** —— 缺哪个再用单条 `danbooru_lookup` 补（那个会自动走在线） |
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
-| `comfyui_pose_search` | 在姿势参考库里找人体姿势（288 组 / 1439 角度）：按中文名、编号或分类搜，返回 `id` 与角度数，**不含图片**。默认全给，`onlySafe` 才收窄到常规 98 组 |
-| `comfyui_pose_fetch` | 把某个角度（或某个姿势的正面）的线稿下载到本机 uploads，返回路径，可直接作为工作流的图片输入（ControlNet / 图生图） |
-| `comfyui_costume_search` | 在衣装库里找服装（1407 套）：按中文描述、标签、英文关键词或编号搜，返回 `id` 与 **`keywords`**——后者可直接拼进提示词 |
-| `comfyui_costume_fetch` | 把某套服装的图下载到本机 uploads，返回路径与关键词，用作服装参考图 |
+| `comfyui_pose` | 姿势库的**两条路径**：给 `query` 搜索（288 组 / 1439 角度，按中文名、编号、分类；返回 `id` 与角度数，不含图片；默认全给，`onlySafe` 才收窄到常规 98 组）；给 `id` 取图（某个角度或正面的线稿落进 uploads，可直接当 ControlNet / 图生图的输入图） |
+| `comfyui_costume` | 衣装库的**两条路径**：给 `query` 搜索（1407 套，按中文描述、标签、英文关键词或编号；返回 `id` 与 **`keywords`**，后者可直接拼进提示词）；给 `id` 取图（落进 uploads，当服装参考图） |
 | `comfyui_compose` | 把素材整理成**一次可直接交给 `comfyui_run` 的调用**：选工作流、把图落进 uploads、按槽位语义填 vars、拼好提示词。它自己不出图；`assumptions` 写清每条推断，不对就用 `extraVars` 覆盖 |
 
 工作流的"可用"由 `<id>.meta.json` 的 `enabled` 决定（缺省 `true`），面板与 `comfyui_workflow_edit` 写同一份文件。
@@ -221,7 +219,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 - **取一次就算数**：内存 32 张 + 磁盘缓存（上限 256 MB，按最久未用清理），同一个视角的并发请求只打一次上游。上游连着失败几次会短路 30 秒，面板显示「线稿暂时取不到」而不是让几十个缩略图各自挂 20 秒超时。
 - **五个角度**：正面 / 斜侧 / 侧面 / 俯视 / 仰视，卡片上直接切。287 组有满 5 个角度，1 组只有 4 个。
 - **默认全给**：288 组都在，不做内容筛选。标了成人向的 190 组（性感系 + 双人体系，加两个明确分类）只在卡片上有个小标记；想收窄就勾「只看常规」，那是使用者自己的选择。
-- **拿它出图**：点「取原图」把线稿存进 uploads，返回的路径就是工作流的图片输入；模型侧用 `comfyui_pose_search` 找、`comfyui_pose_fetch` 取。这个面板不自己调生图 API —— 出图只有 `comfyui_run` 一条路。
+- **拿它出图**：点「取原图」把线稿存进 uploads，返回的路径就是工作流的图片输入；模型侧用 `comfyui_pose`：给 `query` 找、给 `id` 取。这个面板不自己调生图 API —— 出图只有 `comfyui_run` 一条路。
 - 检索是本地线性扫 288 组（微秒级）。**这里不做倒排索引**：标签库 99372 条才值得建 2-gram，288 条建索引是负优化。
 - 关掉组件：`disabledComponents: ["panel.poses"]`。数据更新：`npm run poses:import`。
 

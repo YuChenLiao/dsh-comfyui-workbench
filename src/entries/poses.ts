@@ -22,7 +22,7 @@ import path from 'node:path'
 import { createPosesIndex } from '../components/panel-poses/server/catalog.js'
 import { createPoseImages } from '../components/panel-poses/server/images.js'
 import { createPosesRoutes } from '../components/panel-poses/server/routes.js'
-import { poseFetchTool, poseSearchTool } from '../components/panel-poses/server/tools.js'
+import { poseTool } from '../components/panel-poses/server/tools.js'
 import type { PosesIndex } from '../components/panel-poses/server/catalog.js'
 import type { PoseImages } from '../components/panel-poses/server/images.js'
 import { resolveSettings } from '../shared/host/config.js'
@@ -120,7 +120,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
     console.warn('[comfyui-workbench] 拿不到 tools 服务，姿势工具未注册。')
   } else {
     const deps = { index, images, uploadsDir }
-    for (const spec of [poseSearchTool(deps), poseFetchTool(deps)]) {
+    for (const spec of [poseTool(deps)]) {
       try {
         const dispose = tools.register(spec)
         if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
