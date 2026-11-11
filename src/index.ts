@@ -124,6 +124,7 @@ export { TagIndex, searchTagsLinear } from './components/tool-danbooru/server/ta
 export { applyOverrides, overrideNotes } from './shared/run/overrides.js'
 export { fileRefsOf, pickArtifacts } from './shared/run/runner.js'
 export { parseWait, WAIT_MAX_MS, WAIT_MIN_MS } from './shared/tools/types.js'
+export { isFillerTail, searchWithPrefixFallback } from './shared/search/fallback.js'
 export { readPref, writePref } from './shared/host/prefs.js'
 export { mountWorkbenchSkill, WORKBENCH_SKILL_DESCRIPTION, WORKBENCH_SKILL_NAME } from './shared/host/skill.js'
 export { dedupeItems, looseKey } from './components/panel-gallery/server/assets/dedupe.js'

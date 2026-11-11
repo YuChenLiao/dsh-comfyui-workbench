@@ -165,11 +165,55 @@ function group(records) {
     })
   }
 
-  const poses = [...byKey.values()]
+  /**
+ * 分类的检索别名。
+ *
+ * 索引是**小写子串 + 空格 AND**，而数据里只有中文分类词，所以 `sitting` / `standing` 这类
+ * 英文查询零命中；`躺` 也查不到，因为数据把躺姿拆成了仰卧 / 侧卧 / 俯卧。
+ * 这两类缺口靠"查的时候换个词"救不了 —— 只能用别名补进检索文本。
+ *
+ * 只写**这一层确实缺的词**：不加同义反复（`坐姿` 自己已在 name/category 里），
+ * 也不做完整的同义词词典（维护不起，收益递减）。
+ */
+const CATEGORY_ALIASES = {
+  坐姿: 'sitting seated sitting_pose',
+  站姿: 'standing standing_pose',
+  // 只给中性词：这个分类里仰卧/俯卧都有，`prone`（俯卧）或 `supine`（仰卧）都会错配
+  趴卧: '躺 卧 卧姿 lying lying_down',
+  跪立: 'kneeling kneel on_knees',
+  '跪立・四肢着地': 'kneeling all_fours on_all_fours quadruped',
+  '侧坐・女孩坐': 'side_sitting sitting_sideways',
+  蹲姿: 'squatting squat crouching',
+  前倾: 'leaning_forward lean',
+  '后仰・挺背': 'leaning_back arching back_arch',
+  扭身: 'twisting turned_body',
+  立位: 'standing upright',
+  立位贴身: 'standing_close body_to_body',
+  坐位: 'seated sitting',
+  面对面坐位: 'sitting_face_to_face face_to_face',
+  坐位贴身: 'seated_close sitting_close',
+  贴身: 'close_body holding_close',
+  // 同样只给中性/侧向词，不标 prone/supine
+  侧卧位: '躺 lying_side sideways lying',
+  可爱系: 'cute kawaii adorable',
+  '性感・大胆系': 'sexy bold seductive',
+  '挤胸・强调事业线系': 'cleavage bust_emphasis',
+  贴脸系: 'face_close cheek_to_cheek',
+  特殊: 'special unusual',
+  '正常位（传教士）': 'missionary',
+  后入位: 'from_behind doggystyle',
+  背向坐位: 'sitting_back_to back_view_sitting',
+  骑乘位: 'cowgirl riding on_top',
+}
+
+const poses = [...byKey.values()]
   for (const pose of poses) {
     pose.views.sort((a, b) => a.order - b.order)
     for (const view of pose.views) delete view.order
     pose.adult = ADULT_SYSTEMS.has(pose.systemId) || ADULT_CATEGORIES.has(pose.category)
+    // 检索用的别名（英文 + 中文同义词）。catalog 的 haystack 会带上它，
+    // 所以 `sitting`、`躺` 这类原本零命中的词也能查到。
+    pose.aliases = CATEGORY_ALIASES[pose.category] ?? ''
   }
   // 稳定顺序：体系（按上游声明顺序）→ 编号。面板不排序也不会每次刷新换排法。
   const systemOrder = Object.values(SYSTEM_BY_PREFIX).map(item => item.id)

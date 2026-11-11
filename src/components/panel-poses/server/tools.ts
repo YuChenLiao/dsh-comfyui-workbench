@@ -17,6 +17,7 @@
  * 10 次第三方图床请求（`ai-pose-gallery.anhao.app`），那个站点不稳，会把一次毫秒级的
  * 索引查询变成几秒的等待，而且大部分结果模型根本不会用。**搜索保持轻**，要图就传 id。
  */
+import { isFillerTail } from '../../../shared/search/fallback.js'
 import { asString } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 import type { PosesIndex, PoseHit } from './catalog.js'
@@ -69,11 +70,37 @@ function search(deps: PoseToolDeps, args: Record<string, unknown>): Record<strin
     }
   }
 
+  // 砍掉的是实词（`裙子`、`外套`）就说明语义被破坏了 —— 那时候给结果反而误导，
+  // 模型会以为筛过了。砍掉的是虚词（`着`、`上`）则照常给结果。
+  // 判据不用"命中占比"：姿势库只有 288 条，20% 太容易误伤合理回退。
+  const storeTotal = deps.index.stats().poseCount
+  const broadRatio = storeTotal > 0 ? result.total / storeTotal : 0
+  if (result.fellBack && !isFillerTail(result.droppedTail ?? '')) {
+    return {
+      ok: false,
+      mode: 'search',
+      matchedQuery: result.usedQuery,
+      droppedTail: result.droppedTail,
+      error: `「${query}」没命中。自动砍短成「${result.usedQuery}」能查到 ${result.total} 条（占全库 ${Math.round(broadRatio * 100)}%），`
+        + `但砍掉的「${result.droppedTail}」是实词 —— 那些结果里可能根本没有「${result.droppedTail}」。`,
+      hint: '换个词：姿势用分类词（坐姿 / 站姿 / 趴卧 / 跪立…），全表见 skill。',
+    }
+  }
+
   return {
     ok: true,
     mode: 'search',
     total: result.total,
     poses: result.items.map(brief),
+    // 回退过的词必须说出来 —— 否则模型会以为这几十条对应的是它原本查的词
+    ...(result.fellBack
+      ? {
+        matchedQuery: result.usedQuery,
+        droppedTail: result.droppedTail,
+        matchedHint: `「${query}」没命中，砍掉「${result.droppedTail}」后按「${result.usedQuery}」查到 ${result.total} 条`
+          + `（占全库 ${Math.round(broadRatio * 100)}%）。结果可能比你要的宽 —— 被砍掉的那部分在数据里可能根本不存在。`,
+      }
+      : {}),
     hint: '要哪组的图就把它的 id 传给同一个工具（不带 query）。',
   }
 }
@@ -128,7 +155,8 @@ export function poseTool(deps: PoseToolDeps): ToolSpec {
       + '（ControlNet / 图生图）。传姿势 id 给正面，传视角 id（如 full_single_P001_side）给那个角度。'
       + '两件事合在一个工具里，因为没有"先取图再搜"这种顺序 —— 一定是先搜到 id 再取。'
       + '**查的时候用中文分类词**（坐姿 / 站姿 / 趴卧 / 跪立 / 蹲姿 / 可爱系 …，全表见 skill）：'
-      + '索引字段是中文、匹配是子串，所以 `sitting`、`坐着` 这类英文与动词短语查不到；短词才对（`坐` 能中 58 条，`坐着` 零命中）。',
+      + '英文也认（分类带 `sitting` / `standing` / `lying` 别名）。动词短语会自动砍短重试（`坐着`→`坐`），'
+      + '返回里的 `matchedQuery` 会告诉你实际用了哪个词。',
     parameters: {
       type: 'object',
       properties: {

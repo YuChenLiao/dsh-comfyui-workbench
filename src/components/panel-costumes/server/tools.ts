@@ -10,6 +10,7 @@
  * **服装数据自带英文关键词**：搜索返回里直接给 `keywords`，模型拿到就能拼进 prompt ——
  * 不用再猜"这身衣服该怎么说"。
  */
+import { isFillerTail } from '../../../shared/search/fallback.js'
 import { asString } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 import type { CostumeItem, CostumesIndex } from './catalog.js'
@@ -58,11 +59,36 @@ function search(deps: CostumeToolDeps, args: Record<string, unknown>): Record<st
     }
   }
 
+  // 与姿势库同一套判断：砍掉实词就说明语义被破坏（`牛仔外套` → 那 175 条里没有一件外套），
+  // 给结果反而误导；砍掉虚词照常给。
+  const storeTotal = deps.index.stats().total
+  const broadRatio = storeTotal > 0 ? result.total / storeTotal : 0
+  if (result.fellBack && !isFillerTail(result.droppedTail ?? '')) {
+    return {
+      ok: false,
+      mode: 'search',
+      matchedQuery: result.usedQuery,
+      droppedTail: result.droppedTail,
+      error: `「${query}」没命中。自动砍短成「${result.usedQuery}」能查到 ${result.total} 套（占全库 ${Math.round(broadRatio * 100)}%），`
+        + `但砍掉的「${result.droppedTail}」是实词 —— 那些结果里可能根本没有「${result.droppedTail}」。`,
+      hint: '换个词：用单品名词（连衣裙 / 半身裙 / 针织 / 蕾丝）或配色（黑色 / 白色 / 棕色），别用风格词（水手服 / 和服）。全表见 skill。',
+    }
+  }
+
   return {
     ok: true,
     mode: 'search',
     total: result.total,
     costumes: result.items.map(brief),
+    // 回退过的词必须说出来（理由同姿势库）
+    ...(result.fellBack
+      ? {
+        matchedQuery: result.usedQuery,
+        droppedTail: result.droppedTail,
+        matchedHint: `「${query}」没命中，砍掉「${result.droppedTail}」后按「${result.usedQuery}」查到 ${result.total} 套`
+          + `（占全库 ${Math.round(broadRatio * 100)}%）。结果可能比你要的宽 —— 被砍掉的那部分在数据里可能根本不存在。`,
+      }
+      : {}),
     hint: '要哪套的图就把它的 id 传给同一个工具（不带 query）。keywords 可以直接拼进提示词。',
   }
 }

@@ -20,6 +20,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { searchWithPrefixFallback } from '../../../shared/search/fallback.js'
+
 /** 一组姿势（含它的所有角度）。 */
 export interface PoseRecord {
   id: string
@@ -31,6 +33,8 @@ export interface PoseRecord {
   /** 成人向判定由导入脚本按体系与分类作出，不是这里猜的。 */
   adult: boolean
   views: PoseView[]
+  /** 检索别名：分类的英文与中文同义词（由 import 脚本生成）。 */
+  aliases?: string
 }
 
 /** 一个角度。 */
@@ -100,6 +104,12 @@ export interface PoseSearchOptions {
 export interface PoseSearchResult {
   items: PoseHit[]
   total: number
+  /** 实际用来查的词（零命中时可能被逐字砍尾过）。 */
+  usedQuery?: string
+  /** 是否发生过前缀回退。 */
+  fellBack?: boolean
+  /** 回退时被砍掉的尾部。 */
+  droppedTail?: string
 }
 
 export interface PoseStats {
@@ -224,7 +234,9 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
 
   const matches = (pose: PoseRecord, parts: string[]): boolean => {
     if (parts.length === 0) return true
-    const hay = `${pose.name} ${pose.code} ${pose.category} ${pose.system} ${pose.id}`.toLowerCase()
+    // aliases 是分类的英文与中文同义词（sitting / 躺 …），由 scripts/import-poses.mjs 生成 ——
+    // 没有它，`sitting` / `standing` / `躺` 这些词永远零命中（数据只有中文分类词）
+    const hay = `${pose.name} ${pose.code} ${pose.category} ${pose.system} ${pose.id} ${pose.aliases ?? ''}`.toLowerCase()
     return parts.every(part => hay.includes(part))
   }
 
@@ -239,18 +251,28 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
       const limit = Math.min(Math.max(Number(options.limit ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, 1), MAX_LIMIT)
       const offset = Math.max(Number(options.offset ?? 0) || 0, 0)
 
-      const filtered: PoseRecord[] = []
-      for (const pose of loaded.poses) {
-        if (onlySafe && pose.adult) continue
-        if (systemId !== '' && pose.systemId !== systemId) continue
-        if (category !== '' && pose.category !== category) continue
-        if (!matches(pose, parts)) continue
-        filtered.push(pose)
+      const filterWith = (raw: string): PoseRecord[] => {
+        const list: PoseRecord[] = []
+        const split = raw.trim() === '' ? [] : raw.trim().toLowerCase().split(/\s+/).filter(Boolean)
+        for (const pose of loaded.poses) {
+          if (onlySafe && pose.adult) continue
+          if (systemId !== '' && pose.systemId !== systemId) continue
+          if (category !== '' && pose.category !== category) continue
+          if (!matches(pose, split)) continue
+          list.push(pose)
+        }
+        return list
       }
 
+      // 零命中时逐字砍尾再试（`坐着` → `坐`）。回退过的词要回报给调用方，
+      // 否则模型会以为这 58 条对应的是"坐着"。
+      const outcome = searchWithPrefixFallback(query, filterWith)
       return {
-        total: filtered.length,
-        items: filtered.slice(offset, offset + limit).map(hitOf),
+        total: outcome.list.length,
+        items: outcome.list.slice(offset, offset + limit).map(hitOf),
+        usedQuery: outcome.usedQuery,
+        fellBack: outcome.fellBack,
+        droppedTail: outcome.droppedTail,
       }
     },
     stats: () => {

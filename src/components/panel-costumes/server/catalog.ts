@@ -12,6 +12,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { searchWithPrefixFallback } from '../../../shared/search/fallback.js'
+
 /** 一套服装。 */
 export interface CostumeItem {
   id: string
@@ -54,6 +56,12 @@ export interface CostumeSearchOptions {
 export interface CostumeSearchResult {
   items: CostumeItem[]
   total: number
+  /** 实际用来查的词（零命中时可能被逐字砍尾过）。 */
+  usedQuery?: string
+  /** 是否发生过前缀回退。 */
+  fellBack?: boolean
+  /** 回退时被砍掉的尾部。 */
+  droppedTail?: string
 }
 
 export interface CostumeStats {
@@ -158,18 +166,30 @@ export function createCostumesIndex(dataDir: string, bundledFile?: string): Cost
       const limit = Math.min(Math.max(Number(options.limit ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, 1), MAX_LIMIT)
       const offset = Math.max(Number(options.offset ?? 0) || 0, 0)
 
-      const filtered: CostumeItem[] = []
-      for (const item of loaded.items) {
-        if (onlySafe && item.adult) continue
-        if (category !== '' && item.category !== category) continue
-        if (parts.length > 0) {
-          const hay = haystack(item)
-          if (!parts.every(part => hay.includes(part))) continue
+      const filterWith = (raw: string): CostumeItem[] => {
+        const list: CostumeItem[] = []
+        const split = raw.trim() === '' ? [] : raw.trim().toLowerCase().split(/\s+/).filter(Boolean)
+        for (const item of loaded.items) {
+          if (onlySafe && item.adult) continue
+          if (category !== '' && item.category !== category) continue
+          if (split.length > 0) {
+            const hay = haystack(item)
+            if (!split.every(part => hay.includes(part))) continue
+          }
+          list.push(item)
         }
-        filtered.push(item)
+        return list
       }
 
-      return { total: filtered.length, items: filtered.slice(offset, offset + limit) }
+      // 零命中时逐字砍尾再试（`白裙子` → `白`）。回退过的词要回报给调用方。
+      const outcome = searchWithPrefixFallback(query, filterWith)
+      return {
+        total: outcome.list.length,
+        items: outcome.list.slice(offset, offset + limit),
+        usedQuery: outcome.usedQuery,
+        fellBack: outcome.fellBack,
+        droppedTail: outcome.droppedTail,
+      }
     },
     stats: () => {
       const loaded = ensure()
