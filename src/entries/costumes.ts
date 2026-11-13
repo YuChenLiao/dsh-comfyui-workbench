@@ -136,7 +136,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
     : undefined
   const uploadsDir = (): string => settings.uploadsDir ?? path.join(dataDir, 'uploads')
 
-  const routes = createCostumeRoutes({ index, images, uploadsDir })
+  const routes = createCostumeRoutes({ index, images, uploadsDir, ...(anime === undefined ? {} : { anime }) })
 
   const rt = acquire(ctx, config)
   if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'costumes: runtime')

@@ -33,6 +33,13 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
    * 切页签会卸载组件，开关丢了就等于把露骨素材重新摊开。
    */
   const [onlySafe, setOnlySafe] = useState(() => readPref('costumes.onlySafe', false))
+  /**
+   * 画风：real 写实（1407 套实拍）/ anime 二次元（1320 套动画）。
+   *
+   * 同样持久化 —— 切页签会卸载面板，不记住的话每次都要重选，
+   * 而"我上次选的是二次元"这件事比"只看常规"更该记住（它是内容来源，不是筛选条件）。
+   */
+  const [source, setSource] = useState<'real' | 'anime'>(() => (readPref('costumes.anime', false) ? 'anime' : 'real'))
   const [items, setItems] = useState<CostumeItem[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<CostumeStats | null>(null)
@@ -58,6 +65,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     nextQuery: string,
     nextCategory: string,
     nextSafe: boolean,
+    nextSource: 'real' | 'anime',
     append = false,
   ): Promise<void> => {
     const mine = seq.current + 1
@@ -66,6 +74,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     if (!append) setError('')
     try {
       const result = await fetchCostumes({
+        source: nextSource,
         query: nextQuery,
         category: nextCategory,
         safe: nextSafe,
@@ -93,25 +102,25 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
   useEffect(() => {
     if (!visible) return undefined
     let alive = true
-    fetchCostumeStats()
+    fetchCostumeStats(source)
       .then(value => {
         if (alive) setStats(value)
       })
       .catch(() => { /* 统计失败不影响列表 */ })
-    void load('', '', false)
+    void load('', '', false, source)
     return () => { alive = false }
-  }, [visible, load])
+  }, [visible, load, source])
 
   /** 条件变了：防抖后重查。先关掉在飞窗口并清空快照，否则滚动加载会拿旧 offset。 */
-  const schedule = useCallback((next: { query?: string; category?: string; safe?: boolean }) => {
+  const schedule = useCallback((next: { query?: string; category?: string; safe?: boolean; source?: 'real' | 'anime' }) => {
     if (timer.current !== null) clearTimeout(timer.current)
     seq.current += 1
     itemsRef.current = []
     autoFill.current = -1
     timer.current = setTimeout(() => {
-      void load(next.query ?? query, next.category ?? category, next.safe ?? onlySafe)
+      void load(next.query ?? query, next.category ?? category, next.safe ?? onlySafe, next.source ?? source)
     }, DEBOUNCE_MS)
-  }, [load, query, category, onlySafe])
+  }, [load, query, category, onlySafe, source])
 
   /** 滚到底部自动加载（与标签库、姿势库同一套判定）。 */
   const onScroll = (): void => {
@@ -131,7 +140,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     })
     if (!go) return
     state.busyAt = now
-    void load(query, category, onlySafe, true)
+    void load(query, category, onlySafe, source, true)
   }
 
   /** 内容不足一屏时补一页（停手条件在 `shouldAutoFill` 里）。 */
@@ -148,7 +157,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     })
     if (!go) return
     autoFill.current = items.length
-    void load(query, category, onlySafe, true)
+    void load(query, category, onlySafe, source, true)
   }, [items.length, total, loading])
 
   const copyKeywords = (item: CostumeItem): void => {
@@ -205,6 +214,22 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
       </div>
 
       <div className="cct-search">
+        <select
+          className="cct-select"
+          value={source}
+          title={t('costumesSourceHint')}
+          onChange={event => {
+            const value = event.target.value === 'anime' ? 'anime' : 'real'
+            setSource(value)
+            writePref('costumes.anime', value === 'anime')
+            // 换库时分类会失效（两库分类名不同），一并清掉
+            setCategory('')
+            schedule({ source: value, category: '' })
+          }}
+        >
+          <option value="real">{t('costumesStyleReal')}</option>
+          <option value="anime">{t('costumesStyleAnime')}</option>
+        </select>
         <input
           className="cct-input"
           value={query}
@@ -298,11 +323,11 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
           className="cct-more-hint"
           role="button"
           tabIndex={0}
-          onClick={() => { if (!loading) void load(query, category, onlySafe, true) }}
+          onClick={() => { if (!loading) void load(query, category, onlySafe, source, true) }}
           onKeyDown={event => {
             if (event.key !== 'Enter' && event.key !== ' ') return
             event.preventDefault()
-            if (!loading) void load(query, category, onlySafe, true)
+            if (!loading) void load(query, category, onlySafe, source, true)
           }}
         >
           {loading ? t('costumesLoadingMore') : t('costumesScrollMore').replace('{left}', String(total - items.length))}

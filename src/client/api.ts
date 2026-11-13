@@ -506,11 +506,15 @@ export interface CostumeStats {
   origin: string
 }
 
+/** 衣装库的两个画风版本。 */
+export type CostumeSource = 'real' | 'anime'
+
 /** 查服装（面板用）。默认全给，`safe` 才收窄。 */
 export async function fetchCostumes(
-  options: { query?: string; category?: string; safe?: boolean; offset?: number; limit?: number },
+  options: { source?: CostumeSource; query?: string; category?: string; safe?: boolean; offset?: number; limit?: number },
 ): Promise<{ items: CostumeItem[]; total: number }> {
   const params = new URLSearchParams()
+  if (options.source === 'anime') params.set('source', 'anime')
   if (options.query !== undefined && options.query !== '') params.set('q', options.query)
   if (options.category !== undefined && options.category !== '') params.set('category', options.category)
   if (options.safe === true) params.set('safe', '1')
@@ -531,8 +535,9 @@ export async function fetchCostumes(
 }
 
 /** 取服装库统计。 */
-export async function fetchCostumeStats(): Promise<CostumeStats> {
-  const res = await fetch(`${API}/costumes/stats`)
+export async function fetchCostumeStats(source?: CostumeSource): Promise<CostumeStats> {
+  const suffix = source === 'anime' ? '?source=anime' : ''
+  const res = await fetch(`${API}/costumes/stats${suffix}`)
   const data: unknown = await res.json().catch(() => null)
   const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
   if (bag?.ok !== true) {

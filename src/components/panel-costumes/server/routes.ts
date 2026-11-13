@@ -23,6 +23,27 @@ export interface CostumeRoutesDeps {
   images: PoseImages
   /** uploads 目录。调用时取，配置可以在运行中改。 */
   uploadsDir: () => string
+  /**
+   * 动画版（1320 套二次元风）。给了面板才能切过去；不给就只有写实版。
+   *
+   * 与写实版**原站、路径白名单、缓存目录、uploads 子目录全部分开** ——
+   * 两库 id 都是 `SPR-xxxx`，混用会拿到同号的另一套衣服。
+   */
+  anime?: { index: CostumesIndex; images: PoseImages; uploadsDir: () => string } | undefined
+}
+
+/** 一条路由要用的三件东西（按 source 选一套）。 */
+interface Store { index: CostumesIndex; images: PoseImages; uploadsDir: () => string }
+
+/**
+ * 按 `?source=` 选库。
+ *
+ * 认不出的 source 一律回写实版（面板只会在两个值之间切），
+ * 但 `anime` 没挂上时返回 `undefined` —— 那种情况要明确报错，不能悄悄给写实版。
+ */
+function pickStore(deps: CostumeRoutesDeps, raw: string | null): Store | undefined {
+  if (raw !== 'anime') return { index: deps.index, images: deps.images, uploadsDir: deps.uploadsDir }
+  return deps.anime
 }
 
 export interface CostumeRoutes {
@@ -61,7 +82,10 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 export function createCostumeRoutes(deps: CostumeRoutesDeps): CostumeRoutes {
-  const { index, images, uploadsDir } = deps
+  /** 拿不到库时统一回一句可读的 404，别让面板显示"空库"。 */
+  const missing = (res: ServerResponse): void => {
+    sendJson(res, 404, { ok: false, error: 'no-anime-library', message: '这个安装没接动画版衣装库。' })
+  }
 
   return {
     exact: {
@@ -71,8 +95,10 @@ export function createCostumeRoutes(deps: CostumeRoutesDeps): CostumeRoutes {
           return
         }
         const params = url.searchParams
+        const store = pickStore(deps, params.get('source'))
+        if (store === undefined) { missing(res); return }
         try {
-          const result = index.search({
+          const result = store.index.search({
             query: params.get('q') ?? '',
             category: params.get('category') ?? '',
             // 默认全给；`safe=1` 才收窄。筛选是使用者的选择。
@@ -91,8 +117,10 @@ export function createCostumeRoutes(deps: CostumeRoutesDeps): CostumeRoutes {
           sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
           return
         }
+        const store = pickStore(deps, _url.searchParams.get('source'))
+        if (store === undefined) { missing(res); return }
         try {
-          sendJson(res, 200, { ok: true, ...index.stats() })
+          sendJson(res, 200, { ok: true, ...store.index.stats() })
         } catch (error) {
           sendJson(res, 500, { ok: false, error: 'index-failed', message: error instanceof Error ? error.message : String(error) })
         }
@@ -103,14 +131,16 @@ export function createCostumeRoutes(deps: CostumeRoutesDeps): CostumeRoutes {
           sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
           return
         }
-        const item = index.get(url.searchParams.get('id') ?? '')
+        const store = pickStore(deps, url.searchParams.get('source'))
+        if (store === undefined) { missing(res); return }
+        const item = store.index.get(url.searchParams.get('id') ?? '')
         if (item === undefined) {
           sendJson(res, 404, { ok: false, error: 'unknown-costume', message: '没有这套服装。' })
           return
         }
         const size = sizeOf(url.searchParams.get('size'))
         try {
-          const image = await images.fetch(fileOf(item, size))
+          const image = await store.images.fetch(fileOf(item, size))
           res.writeHead(200, {
             'Content-Type': image.mediaType,
             'Cache-Control': 'public, max-age=86400',
@@ -135,14 +165,16 @@ export function createCostumeRoutes(deps: CostumeRoutesDeps): CostumeRoutes {
           sendJson(res, 400, { ok: false, error: 'bad-body', message: error instanceof Error ? error.message : String(error) })
           return
         }
-        const item = index.get(typeof body.id === 'string' ? body.id : '')
+        const store = pickStore(deps, typeof body.source === 'string' ? body.source : null)
+        if (store === undefined) { missing(res); return }
+        const item = store.index.get(typeof body.id === 'string' ? body.id : '')
         if (item === undefined) {
           sendJson(res, 404, { ok: false, error: 'unknown-costume', message: '没有这套服装。' })
           return
         }
         const size = sizeOf(typeof body.size === 'string' ? body.size : undefined)
         try {
-          const { file, mediaType } = await images.materialize(fileOf(item, size), uploadsDir())
+          const { file, mediaType } = await store.images.materialize(fileOf(item, size), store.uploadsDir())
           sendJson(res, 200, {
             ok: true,
             file,
@@ -154,12 +186,14 @@ export function createCostumeRoutes(deps: CostumeRoutesDeps): CostumeRoutes {
         }
       },
 
-      '/costumes/cache': (_url, res, req) => {
+      '/costumes/cache': (url, res, req) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
           return
         }
-        sendJson(res, 200, { ok: true, ...images.stats() })
+        const store = pickStore(deps, url.searchParams.get('source'))
+        if (store === undefined) { missing(res); return }
+        sendJson(res, 200, { ok: true, ...store.images.stats() })
       },
     },
   }
