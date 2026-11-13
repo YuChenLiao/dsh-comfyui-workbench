@@ -19,7 +19,7 @@
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/rerun`、`/config`、服务托管接口 |
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
 | `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose` 一个工具（给 `query` 搜、给 `id` 取图） |
-| `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：1407 套现实衣装（图中无人物），搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
+| `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：**面板只展示写实版**（1407 套实拍照风）；另有一批 1320 套二次元版，经 `comfyui_costume { source: "anime" }` 使用。两批都不含人物，搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |

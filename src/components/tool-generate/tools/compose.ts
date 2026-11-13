@@ -127,9 +127,16 @@ async function resolveMaterial(
   role: 'pose' | 'costume',
   id: string,
   size: 'full' | 'thumb',
+  costumeSource: 'real' | 'anime',
 ): Promise<{ item: MaterialItem; file: string }> {
-  const lookup = role === 'pose' ? source.pose : source.costume
-  const fetch = role === 'pose' ? source.fetchPose : source.fetchCostume
+  // 衣装有两个画风库，id 格式相同（SPR-xxxx）—— 必须按 costumeSource 明确选，
+  // 否则「搜 anime 拿到 id 再交给 compose」会静默取到写实版同号图。
+  const lookup = role === 'pose'
+    ? source.pose
+    : costumeSource === 'anime' ? source.costumeAnime : source.costume
+  const fetch = role === 'pose'
+    ? source.fetchPose
+    : costumeSource === 'anime' ? source.fetchCostumeAnime : source.fetchCostume
   const label = ROLE_CN[role]
   if (lookup === undefined || fetch === undefined) {
     throw new Error(`${label}库没有启用（或被关掉了），拿不到 ${id}。`)
@@ -164,6 +171,12 @@ export function composeTool(deps: ToolDeps): ToolSpec {
       required: [],
       properties: {
         costumeId: { type: 'string', description: '衣装库的 id（如 SPR-0001），来自 comfyui_costume 的搜索结果。' },
+        costumeSource: {
+          type: 'string',
+          enum: ['real', 'anime'],
+          description: '衣装查哪个库：real 写实风（默认，1407 套）、anime 二次元风（1320 套）。**必须与搜出 id 时用的 source 一致** ——'
+            + '两个库的编号格式相同，不一致会拿到同号的另一套衣服。',
+        },
         poseId: {
           type: 'string',
           description: '姿势的 id 或视角 id（如 full_single_P012 或 full_single_P012_side），来自 comfyui_pose 的搜索结果。',
@@ -186,18 +199,23 @@ export function composeTool(deps: ToolDeps): ToolSpec {
       const wanted: Array<{ role: MaterialRole; file: string; item?: MaterialItem }> = []
       const assumptions: string[] = []
       const costumeId = asString(args.costumeId).trim()
+      const costumeSourceArg = asString(args.costumeSource, 'real').trim().toLowerCase()
+      if (costumeSourceArg !== 'real' && costumeSourceArg !== 'anime') {
+        return { ok: false, error: `costumeSource 只能是 real 或 anime，收到「${costumeSourceArg}」。` }
+      }
+      const costumeSource: 'real' | 'anime' = costumeSourceArg === 'anime' ? 'anime' : 'real'
       const poseId = asString(args.poseId).trim()
       const baseImage = asString(args.baseImage).trim()
       const maskImage = asString(args.maskImage).trim()
 
       if (poseId !== '') {
         if (materials === undefined) return { ok: false, error: '姿势库还没就绪（或被关掉了），拿不到素材。' }
-        const { item, file } = await resolveMaterial(materials, 'pose', poseId, size)
+        const { item, file } = await resolveMaterial(materials, 'pose', poseId, size, costumeSource)
         wanted.push({ role: 'pose', file, item })
       }
       if (costumeId !== '') {
         if (materials === undefined) return { ok: false, error: '衣装库还没就绪（或被关掉了），拿不到素材。' }
-        const { item, file } = await resolveMaterial(materials, 'costume', costumeId, size)
+        const { item, file } = await resolveMaterial(materials, 'costume', costumeId, size, costumeSource)
         wanted.push({ role: 'costume', file, item })
       }
       if (baseImage !== '') wanted.push({ role: 'base', file: baseImage })
@@ -290,6 +308,7 @@ export function composeTool(deps: ToolDeps): ToolSpec {
         dropped: plan.dropped.map(role => ({ role, why: '工作流没有多余的图槽放它' })),
         assumptions,
         unfilled,
+        ...(costumeId === '' ? {} : { costumeSource }),
         next: '把 call 原样交给 comfyui_run',
       }
     },

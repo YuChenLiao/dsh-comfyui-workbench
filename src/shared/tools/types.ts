@@ -100,9 +100,18 @@ export interface MaterialItem {
 export interface MaterialSource {
   pose?: (id: string) => MaterialItem | undefined
   costume?: (id: string) => MaterialItem | undefined
+  /**
+   * 动画版衣装（`comfyui_costume { source: "anime" }` 那个库）。
+   *
+   * **必须与 `costume` 分开**：两个库的 id 都是 `SPR-xxxx`，共用一个函数的话，
+   * 「搜 anime 拿到 id、再交给 compose」会静默取到写实版同号图，不报错也不提示。
+   */
+  costumeAnime?: (id: string) => MaterialItem | undefined
   /** 取素材图并落盘到 uploads，返回绝对路径；找不到素材时抛错。 */
   fetchPose?: (id: string, size: 'full' | 'thumb') => Promise<string>
   fetchCostume?: (id: string, size: 'full' | 'thumb') => Promise<string>
+  /** 动画版衣装的取图（落在 uploads/anime/ 下，不与写实版撞名）。 */
+  fetchCostumeAnime?: (id: string, size: 'full' | 'thumb') => Promise<string>
 }
 
 /** 工具执行需要的依赖。 */

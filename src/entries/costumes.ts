@@ -19,7 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { createCostumeRoutes } from '../components/panel-costumes/server/routes.js'
-import { createCostumesIndex } from '../components/panel-costumes/server/catalog.js'
+import { bundledCostumePath, createCostumesIndex } from '../components/panel-costumes/server/catalog.js'
 import { costumeTool } from '../components/panel-costumes/server/tools.js'
 import type { CostumesIndex } from '../components/panel-costumes/server/catalog.js'
 import { createImageCache } from '../components/panel-poses/server/images.js'
@@ -43,13 +43,30 @@ export const COMPONENT = 'panel.costumes'
  */
 export const COSTUME_PATH = /^(thumbs|img)\/costume\/[A-Za-z0-9_-]+\.webp$/
 
-/** 索引与取图器的模块级单例（理由同姿势库：apply 重跑不该把冷却与缓存清零）。 */
-let singleton: { key: string; index: CostumesIndex; images: PoseImages } | null = null
+/**
+ * 动画版服装图的路径白名单。**与 `scripts/import-costumes-anime.mjs` 那条必须逐字一致。**
+ *
+ * 与写实版的差别：**少一层 `costume/`**，而且原图是 **png** 不是 webp。
+ */
+export const COSTUME_ANIME_PATH = /^(thumbs|img)\/[A-Z]+-\d+\.webp$|^png\/[A-Z]+-\d+\.png$/
 
-function shared(dataDir: string, origin: string): { index: CostumesIndex; images: PoseImages } {
+/** 动画版原站（与写实版不是同一个域）。 */
+export const COSTUME_ANIME_ORIGIN = 'https://ai-costume-anime-gallery.pages.dev'
+
+/**
+ * 索引与取图器的模块级单例（理由同姿势库：apply 重跑不该把冷却与缓存清零）。
+ *
+ * 两个库各一份：写实版与动画版**原站不同、路径白名单不同、缓存目录也不同** ——
+ * 混用一份的话，动画版的 png 会被写实版的 webp 白名单挡掉，反之亦然。
+ */
+interface Store { index: CostumesIndex; images: PoseImages; uploadsDir: () => string }
+let realSingleton: { key: string; store: Store } | null = null
+let animeSingleton: { key: string; store: Store } | null = null
+
+function realStore(dataDir: string, origin: string, uploadsDir: () => string): Store {
   const key = `${dataDir}|${origin}`
-  if (singleton !== null && singleton.key === key) return singleton
-  const index = createCostumesIndex(dataDir)
+  if (realSingleton !== null && realSingleton.key === key) return realSingleton.store
+  const index = createCostumesIndex(dataDir, undefined, 'real')
   const images = createImageCache({
     cacheDir: path.join(dataDir, 'cache', 'costumes'),
     origin,
@@ -57,8 +74,27 @@ function shared(dataDir: string, origin: string): { index: CostumesIndex; images
     // 服装图是两级目录；不传这个，磁盘上限与 /costumes/cache 统计都会失效
     cacheSubdirs: ['thumbs/costume', 'img/costume'],
   })
-  singleton = { key, index, images }
-  return singleton
+  const store = { index, images, uploadsDir }
+  realSingleton = { key, store }
+  return store
+}
+
+function animeStore(dataDir: string, uploadsDir: () => string): Store {
+  const key = dataDir
+  if (animeSingleton !== null && animeSingleton.key === key) return animeSingleton.store
+  const index = createCostumesIndex(dataDir, undefined, 'anime')
+  const images = createImageCache({
+    cacheDir: path.join(dataDir, 'cache', 'costumes-anime'),
+    origin: COSTUME_ANIME_ORIGIN,
+    pathPattern: COSTUME_ANIME_PATH,
+    cacheSubdirs: ['thumbs', 'img', 'png'],
+  })
+  // 动画版落到 uploads/anime/ 子目录：两库 id 同格式（SPR-xxxx），materialize 又按 basename
+  // 落盘，共用目录会互相覆盖 —— 工作流里那条旧路径会悄悄换成另一画风的图。
+  const animeUploads = (): string => path.join(uploadsDir(), 'anime')
+  const store = { index, images, uploadsDir: animeUploads }
+  animeSingleton = { key, store }
+  return store
 }
 
 /** 把失败原因落盘：宿主会吞掉 apply 的异常。 */
@@ -91,7 +127,13 @@ function applyInner(ctx: HostContext, config: unknown): void {
 
   const dataDir = pluginDataDir()
   // 服装图与姿势图在同一个图床，共用一个 origin 配置项
-  const { index, images } = shared(dataDir, settings.posesOrigin)
+  const real = realStore(dataDir, settings.posesOrigin, () => settings.uploadsDir ?? path.join(dataDir, 'uploads'))
+  const { index, images } = real
+  // 动画版是独立原站；catalog 缺失时返回 undefined，工具会给出可读报错而不是崩
+  const anime = fs.existsSync(path.join(dataDir, 'costumes-anime', 'catalog.json'))
+    || fs.existsSync(bundledCostumePath(import.meta.url, 'anime'))
+    ? animeStore(dataDir, () => settings.uploadsDir ?? path.join(dataDir, 'uploads'))
+    : undefined
   const uploadsDir = (): string => settings.uploadsDir ?? path.join(dataDir, 'uploads')
 
   const routes = createCostumeRoutes({ index, images, uploadsDir })
@@ -100,6 +142,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'costumes: runtime')
 
   // 素材面的另一半（与姿势库各占一半，工具侧惰性取）。
+  // 动画版是独立的一对：两库 id 同格式（SPR-xxxx），共用一个函数就会静默取错库。
   rt.materials = {
     ...rt.materials,
     costume: id => {
@@ -113,6 +156,21 @@ function applyInner(ctx: HostContext, config: unknown): void {
       const { file } = await images.materialize(relative, uploadsDir())
       return file
     },
+    ...(anime === undefined
+      ? {}
+      : {
+        costumeAnime: id => {
+          const item = anime.index.get(id)
+          return item === undefined ? undefined : { id: item.id, name: item.name, keywords: item.keywords }
+        },
+        fetchCostumeAnime: async (id, size) => {
+          const item = anime.index.get(id)
+          if (item === undefined) throw new Error(`动画版衣装库里没有：${id}`)
+          const relative = size === 'thumb' ? item.thumb : item.full
+          const { file } = await anime.images.materialize(relative, anime.uploadsDir())
+          return file
+        },
+      }),
   }
   ensureHttp(ctx, rt)
   if (typeof ctx.effect === 'function') {
@@ -125,7 +183,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   if (tools === undefined || typeof tools.register !== 'function') {
     console.warn('[comfyui-workbench] 拿不到 tools 服务，服装工具未注册。')
   } else {
-    const deps = { index, images, uploadsDir }
+    const deps = { index, images, uploadsDir, ...(anime === undefined ? {} : { anime }) }
     for (const spec of [costumeTool(deps)]) {
       try {
         const dispose = tools.register(spec)

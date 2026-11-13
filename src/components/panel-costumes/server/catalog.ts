@@ -86,11 +86,22 @@ const MAX_LIMIT = 100
 const DEFAULT_LIMIT = 40
 
 /** 随包目录位置：往上找带 `package.json` 与 `data/` 的那层（source 与 lib 层数不同）。 */
-export function bundledCostumePath(fromUrl: string = import.meta.url): string {
+/**
+ * 随包数据的相对目录。
+ *
+ * `costumes` 是写实版（1407 套），`costumes-anime` 是动画版（1320 套）——
+ * 两者同一个作者、同一套规格（不含人物的衣装搭配），只是画风不同。
+ */
+export type CostumeStyle = 'real' | 'anime'
+
+/** 每个库对应的随包目录名（`data/<dir>/catalog.json`）。 */
+const STYLE_DIR: Record<CostumeStyle, string> = { real: 'costumes', anime: 'costumes-anime' }
+
+export function bundledCostumePath(fromUrl: string = import.meta.url, style: CostumeStyle = 'real'): string {
   let dir = path.dirname(fileURLToPath(fromUrl))
   for (let i = 0; i < 8; i += 1) {
     if (fs.existsSync(path.join(dir, 'package.json')) && fs.existsSync(path.join(dir, 'data'))) {
-      return path.join(dir, 'data', 'costumes', 'catalog.json')
+      return path.join(dir, 'data', STYLE_DIR[style], 'catalog.json')
     }
     const parent = path.dirname(dir)
     if (parent === dir) break
@@ -111,15 +122,15 @@ function readCatalog(file: string): CostumeCatalog {
  * 插件数据目录里的副本优先（用户自己跑过导入就用它），回退随包快照；
  * 文件变了按 mtime + size 指纹自动重建。
  */
-export function createCostumesIndex(dataDir: string, bundledFile?: string): CostumesIndex {
-  const bundled = bundledFile ?? bundledCostumePath()
+export function createCostumesIndex(dataDir: string, bundledFile?: string, style: CostumeStyle = 'real'): CostumesIndex {
+  const bundled = bundledFile ?? bundledCostumePath(import.meta.url, style)
   let catalog: CostumeCatalog | null = null
   let byId = new Map<string, CostumeItem>()
   let stats: CostumeStats | null = null
   let stamp = ''
 
   const fileOf = (): string => {
-    const own = path.join(dataDir, 'costumes', 'catalog.json')
+    const own = path.join(dataDir, STYLE_DIR[style], 'catalog.json')
     return fs.existsSync(own) ? own : bundled
   }
 

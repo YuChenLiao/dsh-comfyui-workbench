@@ -19,7 +19,7 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
 | `comfyui-workbench:tags` | panel | Tag library: search four tag categories, filter by semantic category, copy a tag. Browsing is read-only; the "update tags" button refreshes the data from upstream |
 | `comfyui-workbench:poses` | panel + tools | Pose library: 288 poses / 1,439 angles of human reference sketches — search, filter by system and category, save a sketch into uploads as a workflow image input; also registers one `comfyui_pose` tool (give `query` to search, `id` to fetch) |
-| `comfyui-workbench:costumes` | panel + tools | Costume library: 1,407 real-world outfits (no people in frame) — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers one `comfyui_costume` tool (give `query` to search, `id` to fetch) |
+| `comfyui-workbench:costumes` | panel + tools | Costume library: **the panel shows the real-style set only** (1,407 photo-style outfits, no people in frame); a second 1,320-outfit anime-style set is available through `comfyui_costume { source: "anime" }` (no people either) — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers one `comfyui_costume` tool (give `query` to search, `id` to fetch) |
 | `comfyui-workbench:generate` | tools | `comfyui_workflow`, `comfyui_compose`, `comfyui_run`, `comfyui_run_batch`, `comfyui_rerun`, `comfyui_runs`, `comfyui_node_search` |
 | `comfyui-workbench:edit` | tools | `comfyui_workflow_edit` |
 | `comfyui-workbench:danbooru` | tools | `danbooru_lookup`, `danbooru_sync`: character / artist / copyright / general tag library with Chinese names (99,372 tags). Does not touch the ComfyUI runtime, so it can be disabled on its own |
@@ -82,7 +82,7 @@ Restart DSH afterwards. Ten entries get inserted into `cordis.patch.yml` (the ro
 | `danbooru_lookup` | Turns names into Danbooru tags, **two paths in one tool**: give `query` for a single name (local library, falls back online when not found), give `queries` for a batch (up to 50, **local only, no network** — 50 online lookups would be slow and rate-limited; fill the gaps with `query`). `kind` narrows character / artist / copyright / general. `长发` → `long_hair`, `东方Project` → `touhou` |
 | `danbooru_sync` | Pulls character / artist tags (including Chinese names) into the local library. Thousands of requests — call it only when the user asks |
 | `comfyui_pose` | Two paths in one tool — give `query` to **search** the reference library (288 poses / 1,439 angles; by Chinese name, code or category; returns the `id` and angle count, no images; `onlySafe` narrows it to the 98 regular poses), give `id` to **fetch** that angle's sketch (or the pose's front view) into the local uploads directory — the returned path is ready as a workflow image input (ControlNet / img2img) |
-| `comfyui_costume` | Two paths in one tool — give `query` to **search** the costume library (1,407 outfits; by Chinese description, tag, English keyword or code; returns the `id` plus **`keywords`** that can go straight into a prompt), give `id` to **fetch** that outfit's image into the local uploads directory for use as a costume reference |
+| `comfyui_costume` | Two paths in one tool, and **two style sets** (`source: "real"` default 1,407 photo-style, `source: "anime"` 1,320 anime-style) — give `query` to **search** the costume library ( by Chinese description, tag, English keyword or code; returns the `id` plus **`keywords`** that can go straight into a prompt), give `id` to **fetch** that outfit's image into the local uploads directory for use as a costume reference |
 | `comfyui_compose` | Assembles materials into **one call you can hand straight to `comfyui_run`**: picks a workflow, materializes the images into uploads, fills `vars` by slot semantics, builds the prompt. It never generates anything itself — `assumptions` spells out every inference, override them with `extraVars` |
 
 A workflow's "available" flag lives in `<id>.meta.json` under `enabled` (default `true`); the panel and `comfyui_workflow_edit` write the same file.
@@ -336,8 +336,8 @@ groups into the eight categories the UI shows, and indexes them.
 | 288 pose groups (1,439 angles) and the original Japanese data | **ギア** ([@giaaibusi](https://x.com/giaaibusi)), [AI Pose Gallery](https://ai-pose-gallery.pages.dev/) |
 | Chinese names, action categories and the four-system split | **Anhao** ([anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)), mirror at <https://ai-pose-gallery.anhao.app> |
 
-Only the **mannequin set** is used here (depth maps, the portrait library and the anime costume set
-are not). The plugin aggregates and indexes them and nothing more. The source material
+The **mannequin costume set** and the **anime costume set** are both used here (depth maps and the
+portrait library are not). The plugin aggregates and indexes them and nothing more. The source material
 **may not be used commercially**, and this project's MIT license covers none of the sketches — see
 [data/poses/NOTICE.md](data/poses/NOTICE.md).
 
@@ -347,6 +347,7 @@ are not). The plugin aggregates and indexes them and nothing more. The source ma
 |---|---|
 | 1,407 outfits and the original data (COSTUME-DB-01) | **ギア** ([@giaaibusi](https://x.com/giaaibusi)), [AI Costume Gallery](https://ai-costume-gallery.pages.dev) |
 | Chinese names, Chinese tags, English keywords | **Anhao** ([anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)), mirror at <https://ai-pose-gallery.anhao.app> |
+| 1,320 anime-style outfits (COSTUME-ANIME-DB) and its Chinese index | **ギア** ([@giaaibusi](https://x.com/giaaibusi)), [Anime Costume Gallery](https://ai-costume-anime-gallery.pages.dev); Chinese index via [Deeyu/ai-costume-gallery-zh](https://github.com/Deeyu/ai-costume-gallery-zh) |
 
 The licence differs from the pose library: upstream allows using these images **as creative
 reference** (including in edited and commercial works) but forbids redistributing the image data

@@ -199,10 +199,12 @@ function regexLiteralOf(file, constName) {
   return open < 0 || close <= open ? '' : line.slice(open, close + 1)
 }
 
-for (const [label, prodFile, prodName, scriptFile] of [
+const WHITELIST_PAIRS = [
   ['姿势库', 'src/components/panel-poses/server/images.ts', 'SAFE_PATH', 'scripts/import-poses.mjs'],
-  ['服装库', 'src/entries/costumes.ts', 'COSTUME_PATH', 'scripts/import-costumes.mjs'],
-]) {
+  ['服装库·写实', 'src/entries/costumes.ts', 'COSTUME_PATH', 'scripts/import-costumes.mjs'],
+  ['服装库·动画', 'src/entries/costumes.ts', 'COSTUME_ANIME_PATH', 'scripts/import-costumes-anime.mjs'],
+]
+for (const [label, prodFile, prodName, scriptFile] of WHITELIST_PAIRS) {
   const prod = regexLiteralOf(prodFile, prodName)
   const script = regexLiteralOf(scriptFile, 'SAFE_PATH')
   assert.ok(prod !== '', `${label}：${prodFile} 里找不到 ${prodName}（白名单没了？）`)
@@ -212,6 +214,25 @@ for (const [label, prodFile, prodName, scriptFile] of [
     prod,
     `${label}的图路径白名单两份不一致：生产 ${prod} / 导入脚本 ${script} —— 必须逐字相同`,
   )
+}
+
+// ── 两个画风库都必须真的挂到工具上 ──
+// 动画版是可选组件：catalog 缺失时可以不挂。但"挂了"这件事本身没有运行时测试守着 ——
+// 忘在 deps 里传 `anime`，整库测试照样全绿，而工具会永远回「这个安装没接动画版衣装库」。
+// 这里退一步守接线：apply 里必须建 animeStore 并把它传进 costumeTool 的 deps。
+{
+  const text = fs.readFileSync(path.join(root, 'src/entries/costumes.ts'), 'utf8')
+  assert.match(text, /animeStore\(/, '服装 entry 必须建动画版 store')
+  assert.match(text, /anime === undefined \? \{\} : \{ anime \}|\{ \.\.\.\(anime === undefined/, '动画版 store 必须传进工具 deps')
+}
+
+// ── 两个画风库的落盘目录必须分开 ──
+// `materialize` 按 basename 落盘，而两库 id 同格式（SPR-xxxx）——
+// 共用目录时，写实版 SPR-0001 与动画版 SPR-0001 会互相覆盖，
+// 工作流里那条旧路径会悄悄换成另一画风的图。双库测试用的是假 images，抓不到这条。
+{
+  const text = fs.readFileSync(path.join(root, 'src/entries/costumes.ts'), 'utf8')
+  assert.match(text, /animeUploads[^\n]*path\.join\(uploadsDir\(\), 'anime'\)/, '动画版必须落到 uploads/anime 子目录')
 }
 
 // ── 样式必须写在 `.css` 里，不许写成 TS 字符串常量 ──
@@ -249,5 +270,5 @@ for (const [rel, key] of PERSISTED_SWITCHES) {
   assert.match(text, new RegExp(`writePref\\('${escaped}'`), `${rel}：${key} 变化时必须 writePref，否则读得到旧值`)
 }
 
-console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，2 组白名单与导入脚本一致，${PERSISTED_SWITCHES.length} 个隐私开关读写成对）`)
+console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，${WHITELIST_PAIRS.length} 组白名单与导入脚本一致，${PERSISTED_SWITCHES.length} 个隐私开关读写成对）`)
 
