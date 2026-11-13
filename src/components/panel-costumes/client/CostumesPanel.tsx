@@ -173,7 +173,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     setBusy(item.id)
     setError('')
     try {
-      const { file } = await fetchCostumeFile(item.id, 'full')
+      const { file } = await fetchCostumeFile(item.id, 'full', source)
       setFiles(prev => ({ ...prev, [item.id]: file }))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -187,7 +187,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     setBusy(item.id)
     setError('')
     try {
-      const res = await fetch(costumeImageUrl(item.id, 'full'))
+      const res = await fetch(costumeImageUrl(item.id, 'full', source))
       if (!res.ok) throw new Error(`${t('costumesImageFail')}：HTTP ${res.status}`)
       const blob = await res.blob()
       await addImageToConversation(blob, `${item.id}.webp`, { goToConversation })
@@ -280,7 +280,7 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
           return (
             <div className="cct-card" key={item.id}>
               <div className="cct-shot">
-                <CostumeImage src={costumeImageUrl(item.id, 'thumb')} alt={item.name} fail={t('costumesImageFail')} />
+                <CostumeImage src={costumeImageUrl(item.id, 'thumb', source)} alt={item.name} fail={t('costumesImageFail')} />
               </div>
               <div className="cct-meta">
                 <div className="cct-name" title={item.name}>

@@ -555,16 +555,23 @@ export async function fetchCostumeStats(source?: CostumeSource): Promise<Costume
 }
 
 /** 服装图的字节地址（服务端代理，浏览器不直连第三方图床）。 */
-export function costumeImageUrl(id: string, size: 'thumb' | 'preview' | 'full' = 'thumb'): string {
-  return `${API}/costumes/image?id=${encodeURIComponent(id)}&size=${size}`
+/**
+ * 一张服装图的地址。
+ *
+ * `source` 必须带上：两库的 id 同格式（`SPR-xxxx`），不带的话服务端按写实版取，
+ * 面板切到二次元后列表换了、图却没换 —— 这正是第一版漏掉的。
+ */
+export function costumeImageUrl(id: string, size: 'thumb' | 'preview' | 'full' = 'thumb', source?: CostumeSource): string {
+  const suffix = source === 'anime' ? '&source=anime' : ''
+  return `${API}/costumes/image?id=${encodeURIComponent(id)}&size=${size}${suffix}`
 }
 
 /** 把某套服装的图落盘到 uploads，返回本机路径。 */
-export async function fetchCostumeFile(id: string, size: 'thumb' | 'preview' | 'full' = 'full'): Promise<{ file: string; keywords: string }> {
+export async function fetchCostumeFile(id: string, size: 'thumb' | 'preview' | 'full' = 'full', source?: CostumeSource): Promise<{ file: string; keywords: string }> {
   const res = await fetch(`${API}/costumes/fetch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, size }),
+    body: JSON.stringify(source === 'anime' ? { id, size, source: 'anime' } : { id, size }),
   })
   const data: unknown = await res.json().catch(() => null)
   const bag = data !== null && typeof data === 'object'

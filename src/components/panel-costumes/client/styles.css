@@ -11,7 +11,16 @@
 .cct-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .cct-title{font-size:1.02em;font-weight:600}
 .cct-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
-.cct-search{display:flex;flex-wrap:wrap;gap:8px}
+/* 筛选区吸顶：翻到很下面时还想换分类/画风，不该滚回去找。
+   top 取 -14px 正好抵消 .cct-root 的 padding-top，左右各 -20px 抵消左右 padding ——
+   不抵消的话卡片会从 padding 区透出来。背景必须实色。 */
+.cct-search{
+  display:flex;flex-wrap:wrap;gap:8px;
+  position:sticky;top:-14px;z-index:3;
+  margin:0 -20px;padding:14px 20px 10px;
+  background:var(--w-bg);
+  box-shadow:0 8px 12px -10px rgba(0,0,0,.45);
+}
 .cct-input{flex:1;min-width:180px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.9em;padding:8px 10px}
 .cct-input:focus{border-color:var(--w-accent);outline:none}
 .cct-input::placeholder{color:var(--w-muted)}
