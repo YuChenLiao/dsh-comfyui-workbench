@@ -127,7 +127,7 @@ export interface PoseStats {
 
 export interface PosesIndex {
   search: (options: PoseSearchOptions) => PoseSearchResult
-  stats: () => PoseStats
+  stats: (system?: string) => PoseStats
   get: (id: string) => PoseRecord | undefined
   /** 按视角 id 找（`full_single_P001_front`），也接受姿势 id（回落到正面）。 */
   findView: (id: string) => { pose: PoseRecord; view: PoseView } | undefined
@@ -174,6 +174,8 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
   let catalog: PoseCatalog | null = null
   let byPose = new Map<string, PoseRecord>()
   let byView = new Map<string, { pose: PoseRecord; view: PoseView }>()
+  /** 每个体系各自的分类计数。26 个分类平铺太长，选了体系只该看到这个体系下有的那些。 */
+  let categoriesBySystem = new Map<string, Record<string, number>>()
   let stats: PoseStats | null = null
   let stamp = ''
 
@@ -195,6 +197,7 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
     catalog = null
     byPose = new Map()
     byView = new Map()
+    categoriesBySystem = new Map()
     stats = null
   }
 
@@ -210,6 +213,9 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
       for (const pose of loaded.poses) {
         byPose.set(pose.id, pose)
         for (const view of pose.views) byView.set(view.id, { pose, view })
+        const bucket = categoriesBySystem.get(pose.systemId) ?? {}
+        bucket[pose.category] = (bucket[pose.category] ?? 0) + 1
+        categoriesBySystem.set(pose.systemId, bucket)
       }
     }
     return catalog
@@ -275,21 +281,24 @@ export function createPosesIndex(dataDir: string, bundledFile?: string): PosesIn
         droppedTail: outcome.droppedTail,
       }
     },
-    stats: () => {
+    stats: (system?: string) => {
       const loaded = ensure()
-      if (stats !== null) return stats
-      stats = {
-        systems: loaded.systems,
-        categories: loaded.categories,
-        poseCount: loaded.poseCount,
-        viewCount: loaded.viewCount,
-        adultPoseCount: loaded.adultPoseCount,
-        safePoseCount: loaded.poses.filter(pose => !pose.adult).length,
-        attribution: loaded.attribution,
-        source: loaded.source,
-        origin: loaded.origin,
+      if (stats === null) {
+        stats = {
+          systems: loaded.systems,
+          categories: loaded.categories,
+          poseCount: loaded.poseCount,
+          viewCount: loaded.viewCount,
+          adultPoseCount: loaded.adultPoseCount,
+          safePoseCount: loaded.poses.filter(pose => !pose.adult).length,
+          attribution: loaded.attribution,
+          source: loaded.source,
+          origin: loaded.origin,
+        }
       }
-      return stats
+      // 带体系时只回该体系的分类；其余字段照旧复用全局缓存。
+      if (system === undefined || system === '') return stats
+      return { ...stats, categories: categoriesBySystem.get(system) ?? {} }
     },
     get: id => {
       ensure()

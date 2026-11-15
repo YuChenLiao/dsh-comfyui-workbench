@@ -75,13 +75,15 @@ export function createPosesRoutes(deps: PosesRoutesDeps): PosesRoutes {
         }
       },
 
-      '/poses/stats': (_url, res, req) => {
+      '/poses/stats': (url, res, req) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
           return
         }
         try {
-          sendJson(res, 200, { ok: true, ...index.stats() })
+          // `?system=full` 只回该体系下的分类，面板据此收缩分类 tab。
+          const system = url.searchParams.get('system') ?? ''
+          sendJson(res, 200, { ok: true, ...index.stats(system === '' ? undefined : system) })
         } catch (error) {
           sendJson(res, 500, { ok: false, error: 'index-failed', message: error instanceof Error ? error.message : String(error) })
         }

@@ -437,8 +437,9 @@ export async function fetchPoses(
 }
 
 /** 取姿势库统计（体系、分类、成人向计数）。 */
-export async function fetchPoseStats(): Promise<PoseStats> {
-  const res = await fetch(`${API}/poses/stats`)
+export async function fetchPoseStats(system?: string): Promise<PoseStats> {
+  const query = system !== undefined && system !== '' ? `?system=${encodeURIComponent(system)}` : ''
+  const res = await fetch(`${API}/poses/stats${query}`)
   const data: unknown = await res.json().catch(() => null)
   const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
   if (bag?.ok !== true) {

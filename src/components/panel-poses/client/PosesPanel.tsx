@@ -115,14 +115,21 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
   useEffect(() => {
     if (!visible) return undefined
     let alive = true
-    fetchPoseStats()
+    void load('', '', '', false)
+    return () => { alive = false }
+  }, [visible, load])
+
+  // 体系变了，分类集合也跟着变（26 个分类里通常只剩 6-12 个），所以要带 system 重取统计。
+  useEffect(() => {
+    if (!visible) return undefined
+    let alive = true
+    fetchPoseStats(system)
       .then(value => {
         if (alive) setStats(value)
       })
       .catch(() => { /* 统计失败不影响列表 */ })
-    void load('', '', '', false)
     return () => { alive = false }
-  }, [visible, load])
+  }, [visible, system])
 
   /** 条件变了：防抖后重查。 */
   const schedule = useCallback((next: { query?: string; system?: string; category?: string; safe?: boolean }) => {
@@ -143,6 +150,25 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
   }, [load, query, system, category, onlySafe])
 
   const viewOf = (pose: PoseHit): string => angleOf[pose.id] ?? pose.cover.viewId
+
+  /**
+   * 换体系。分类要一并清掉：不同体系的分类集合不重叠，留着旧分类会查到空。
+   * 滚动位置也要归零——`schedule` 清空列表重载，停在原位会看到一片空白。
+   */
+  const pickSystem = useCallback((value: string): void => {
+    setSystem(value)
+    setCategory('')
+    schedule({ system: value, category: '' })
+    const element = scroller.current
+    if (element) element.scrollTop = 0
+  }, [schedule])
+
+  const pickCategory = useCallback((value: string): void => {
+    setCategory(value)
+    schedule({ category: value })
+    const element = scroller.current
+    if (element) element.scrollTop = 0
+  }, [schedule])
 
   /** 滚到底部自动加载下一页（与标签库同一套判定）。 */
   const onScroll = (): void => {
@@ -279,34 +305,6 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
             schedule({ query: value })
           }}
         />
-        <select
-          className="cps-select"
-          value={system}
-          onChange={event => {
-            const value = event.target.value
-            setSystem(value)
-            schedule({ system: value })
-          }}
-        >
-          <option value="">{t('posesAllSystems')}</option>
-          {(stats?.systems ?? []).map(item => (
-            <option key={item.id} value={item.id}>{`${item.name}（${item.poseCount}）`}</option>
-          ))}
-        </select>
-        <select
-          className="cps-select"
-          value={category}
-          onChange={event => {
-            const value = event.target.value
-            setCategory(value)
-            schedule({ category: value })
-          }}
-        >
-          <option value="">{t('posesAllCategories')}</option>
-          {Object.keys(stats?.categories ?? {}).map(name => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
         <label className="cps-toggle">
           <input
             type="checkbox"
@@ -320,6 +318,56 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
           />
           {t('posesOnlySafe')}
         </label>
+        {/* 两级 tab：体系只有 4 个，分类 26 个但按体系收窄后会少很多。
+            都放进 .cps-search 里跟着吸顶，翻到中途也能换。 */}
+        <div className="cps-tabs" role="tablist" aria-label={t('posesSystemsLabel')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={system === ''}
+            className={`cps-tab${system === '' ? ' is-on' : ''}`}
+            onClick={() => { pickSystem('') }}
+          >
+            {t('posesAllSystems')}
+          </button>
+          {(stats?.systems ?? []).map(item => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={system === item.id}
+              className={`cps-tab${system === item.id ? ' is-on' : ''}`}
+              onClick={() => { pickSystem(item.id) }}
+            >
+              {item.name}
+              <span className="cps-tab-n">{item.poseCount}</span>
+            </button>
+          ))}
+        </div>
+        <div className="cps-tabs" role="tablist" aria-label={t('posesCategoriesLabel')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={category === ''}
+            className={`cps-tab${category === '' ? ' is-on' : ''}`}
+            onClick={() => { pickCategory('') }}
+          >
+            {t('posesAllCategories')}
+          </button>
+          {Object.entries(stats?.categories ?? {}).map(([name, count]) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={category === name}
+              className={`cps-tab${category === name ? ' is-on' : ''}`}
+              onClick={() => { pickCategory(name) }}
+            >
+              {name}
+              <span className="cps-tab-n">{count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {error !== '' && <div className="cps-note bad">{error}</div>}

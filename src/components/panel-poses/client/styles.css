@@ -11,13 +11,30 @@
 .cps-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .cps-title{font-size:1.02em;font-weight:600}
 .cps-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
-.cps-search{display:flex;flex-wrap:wrap;gap:8px}
+/* 筛选区吸顶：分类多，翻到中途还想换体系/分类时不该滚回去找。
+   top 取 -14px 抵消 .cps-root 的 padding-top，左右各 -20px 抵消左右 padding ——
+   不抵消的话卡片会从 padding 区透出来。背景必须实色。 */
+.cps-search{
+  display:flex;flex-wrap:wrap;gap:8px;
+  position:sticky;top:-14px;z-index:3;
+  margin:0 -20px;padding:14px 20px 10px;
+  background:var(--w-bg);
+  box-shadow:0 8px 12px -10px rgba(0,0,0,.45);
+}
 .cps-input{flex:1;min-width:180px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.9em;padding:8px 10px}
 .cps-input:focus{border-color:var(--w-accent);outline:none}
 .cps-input::placeholder{color:var(--w-muted)}
 .cps-select{border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.86em;padding:8px 6px}
 .cps-toggle{display:inline-flex;align-items:center;gap:6px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.82em;padding:7px 10px;cursor:pointer}
 .cps-toggle input{accent-color:var(--w-accent)}
+/* 两级 tab 各占一整行（flex:1 0 100%），放不下横向滚，不换行也不压缩。
+   胶囊形与搜索框/复选框区分开：一眼看出这是导航不是输入。 */
+.cps-tabs{display:flex;flex:1 0 100%;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px;scrollbar-width:thin}
+.cps-tab{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;border-radius:999px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.76em;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.cps-tab:hover{border-color:var(--w-accent)}
+.cps-tab.is-on{border-color:var(--w-accent);background:var(--w-accent);color:var(--w-bg)}
+.cps-tab-n{font-size:.88em;opacity:.72}
+.cps-tab.is-on .cps-tab-n{opacity:.9}
 .cps-chips{display:flex;flex-wrap:wrap;gap:6px}
 .cps-chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.78em;padding:4px 10px;cursor:pointer;transition:border-color .12s ease,background-color .12s ease}
 .cps-chip:hover{border-color:var(--w-accent)}
