@@ -27,6 +27,14 @@
 .cct-select{border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.86em;padding:8px 6px}
 .cct-toggle{display:inline-flex;align-items:center;gap:6px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.82em;padding:7px 10px;cursor:pointer}
 .cct-toggle input{accent-color:var(--w-accent)}
+/* 分类 tab 独占一行（flex:1 0 100%），放不下时横向滚，不换行也不压缩。
+   用胶囊形是为了和搜索框/复选框区分开：一眼能看出这是导航不是输入。 */
+.cct-tabs{display:flex;flex:1 0 100%;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px;scrollbar-width:thin}
+.cct-tab{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;border-radius:999px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.78em;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.cct-tab:hover{border-color:var(--w-accent)}
+.cct-tab.is-on{border-color:var(--w-accent);background:var(--w-accent);color:var(--w-bg)}
+.cct-tab-n{font-size:.88em;opacity:.72}
+.cct-tab.is-on .cct-tab-n{opacity:.9}
 .cct-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
 .cct-card{display:flex;flex-direction:column;gap:6px;border:1px solid var(--w-line);border-radius:11px;background:var(--w-surface);overflow:hidden}
 .cct-card:hover{border-color:var(--w-accent)}

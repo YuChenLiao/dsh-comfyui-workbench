@@ -122,6 +122,17 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     }, DEBOUNCE_MS)
   }, [load, query, category, onlySafe, source])
 
+  /**
+   * 换分类。除了重查，还必须把列表滚回顶部：`schedule` 会清空 items 从头加载，
+   * 但滚动容器仍停在原位，不归零就会看到一片空白，像是点了没反应。
+   */
+  const pickCategory = useCallback((value: string): void => {
+    setCategory(value)
+    schedule({ category: value })
+    const element = scroller.current
+    if (element) element.scrollTop = 0
+  }, [schedule])
+
   /** 滚到底部自动加载（与标签库、姿势库同一套判定）。 */
   const onScroll = (): void => {
     const element = scroller.current
@@ -240,20 +251,6 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
             schedule({ query: value })
           }}
         />
-        <select
-          className="cct-select"
-          value={category}
-          onChange={event => {
-            const value = event.target.value
-            setCategory(value)
-            schedule({ category: value })
-          }}
-        >
-          <option value="">{t('costumesAllCategories')}</option>
-          {Object.entries(stats?.categories ?? {}).map(([name, count]) => (
-            <option key={name} value={name}>{`${name}（${count}）`}</option>
-          ))}
-        </select>
         <label className="cct-toggle">
           <input
             type="checkbox"
@@ -267,6 +264,33 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
           />
           {t('costumesOnlySafe')}
         </label>
+        {/* 分类做成横向 tab：一百多套时下拉框要先展开再选，翻找成本高。
+            放在 .cct-search 内部是为了跟着它一起吸顶，翻到中途也能换分类。 */}
+        <div className="cct-tabs" role="tablist" aria-label={t('costumesCategoriesLabel')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={category === ''}
+            className={`cct-tab${category === '' ? ' is-on' : ''}`}
+            onClick={() => { pickCategory('') }}
+          >
+            {t('costumesAllCategories')}
+            <span className="cct-tab-n">{stats?.total ?? 0}</span>
+          </button>
+          {Object.entries(stats?.categories ?? {}).map(([name, count]) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={category === name}
+              className={`cct-tab${category === name ? ' is-on' : ''}`}
+              onClick={() => { pickCategory(name) }}
+            >
+              {name}
+              <span className="cct-tab-n">{count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {error !== '' && <div className="cct-note bad">{error}</div>}
