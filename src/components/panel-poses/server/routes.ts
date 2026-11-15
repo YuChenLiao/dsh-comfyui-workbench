@@ -82,7 +82,7 @@ export function createPosesRoutes(deps: PosesRoutesDeps): PosesRoutes {
         }
         try {
           // `?system=full` 只回该体系下的分类，面板据此收缩分类 tab。
-          const system = url.searchParams.get('system') ?? ''
+          const system = (url.searchParams.get('system') ?? '').trim()
           sendJson(res, 200, { ok: true, ...index.stats(system === '' ? undefined : system) })
         } catch (error) {
           sendJson(res, 500, { ok: false, error: 'index-failed', message: error instanceof Error ? error.message : String(error) })

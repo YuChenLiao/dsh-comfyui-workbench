@@ -46,6 +46,11 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
   const [items, setItems] = useState<PoseHit[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<PoseStats | null>(null)
+  /**
+   * 这份 `stats` 属于哪个体系。切体系后新数据回来之前，`stats` 还是旧体系的，
+   * 直接渲染会给出「新体系 + 旧分类」的按钮，点下去必然空结果。
+   */
+  const [statsFor, setStatsFor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   /** 每张卡片当前看的是哪个角度（视角 id）。 */
@@ -111,12 +116,11 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
     }
   }, [])
 
-  // 首次可见时拉统计与第一页
+  // 首次可见时拉第一页
   useEffect(() => {
     if (!visible) return undefined
-    let alive = true
     void load('', '', '', false)
-    return () => { alive = false }
+    return undefined
   }, [visible, load])
 
   // 体系变了，分类集合也跟着变（26 个分类里通常只剩 6-12 个），所以要带 system 重取统计。
@@ -125,11 +129,17 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
     let alive = true
     fetchPoseStats(system)
       .then(value => {
-        if (alive) setStats(value)
+        if (alive) {
+          setStats(value)
+          setStatsFor(system)
+        }
       })
       .catch(() => { /* 统计失败不影响列表 */ })
     return () => { alive = false }
   }, [visible, system])
+
+  /** 只认当前体系那份分类：换了体系但新统计还没回来时先不显示，避免点到必空的旧分类。 */
+  const categories = statsFor === system ? (stats?.categories ?? {}) : {}
 
   /** 条件变了：防抖后重查。 */
   const schedule = useCallback((next: { query?: string; system?: string; category?: string; safe?: boolean }) => {
@@ -318,13 +328,14 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
           />
           {t('posesOnlySafe')}
         </label>
-        {/* 两级 tab：体系只有 4 个，分类 26 个但按体系收窄后会少很多。
-            都放进 .cps-search 里跟着吸顶，翻到中途也能换。 */}
-        <div className="cps-tabs" role="tablist" aria-label={t('posesSystemsLabel')}>
+        {/* 两级筛选：体系只有 4 个，分类 26 个但按体系收窄后会少很多。
+            都放进 .cps-search 里跟着吸顶，翻到中途也能换。
+            用 group + aria-pressed 而不是 tab/tablist：这是筛选开关，不是页签 ——
+            页签语义承诺 aria-controls 与方向键，而内容区是同一个网格，配不齐反而误导读屏。 */}
+        <div className="cps-tabs" role="group" aria-label={t('posesSystemsLabel')}>
           <button
             type="button"
-            role="tab"
-            aria-selected={system === ''}
+            aria-pressed={system === ''}
             className={`cps-tab${system === '' ? ' is-on' : ''}`}
             onClick={() => { pickSystem('') }}
           >
@@ -334,8 +345,7 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
             <button
               key={item.id}
               type="button"
-              role="tab"
-              aria-selected={system === item.id}
+              aria-pressed={system === item.id}
               className={`cps-tab${system === item.id ? ' is-on' : ''}`}
               onClick={() => { pickSystem(item.id) }}
             >
@@ -344,22 +354,20 @@ export function PosesPanel({ t, visible, goToConversation }: PosesPanelProps): R
             </button>
           ))}
         </div>
-        <div className="cps-tabs" role="tablist" aria-label={t('posesCategoriesLabel')}>
+        <div className="cps-tabs" role="group" aria-label={t('posesCategoriesLabel')} title={t('tabCountHint')}>
           <button
             type="button"
-            role="tab"
-            aria-selected={category === ''}
+            aria-pressed={category === ''}
             className={`cps-tab${category === '' ? ' is-on' : ''}`}
             onClick={() => { pickCategory('') }}
           >
             {t('posesAllCategories')}
           </button>
-          {Object.entries(stats?.categories ?? {}).map(([name, count]) => (
+          {Object.entries(categories).map(([name, count]) => (
             <button
               key={name}
               type="button"
-              role="tab"
-              aria-selected={category === name}
+              aria-pressed={category === name}
               className={`cps-tab${category === name ? ' is-on' : ''}`}
               onClick={() => { pickCategory(name) }}
             >

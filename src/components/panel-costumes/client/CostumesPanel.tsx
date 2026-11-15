@@ -43,6 +43,11 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
   const [items, setItems] = useState<CostumeItem[]>([])
   const [total, setTotal] = useState(0)
   const [stats, setStats] = useState<CostumeStats | null>(null)
+  /**
+   * 这份 `stats` 属于哪个画风。换画风后新数据回来之前，`stats` 还是旧画风的，
+   * 直接渲染会给出「新画风 + 旧分类」的按钮，点下去必然空结果。
+   */
+  const [statsFor, setStatsFor] = useState<'real' | 'anime' | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -104,12 +109,18 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
     let alive = true
     fetchCostumeStats(source)
       .then(value => {
-        if (alive) setStats(value)
+        if (alive) {
+          setStats(value)
+          setStatsFor(source)
+        }
       })
       .catch(() => { /* 统计失败不影响列表 */ })
     void load('', '', false, source)
     return () => { alive = false }
   }, [visible, load, source])
+
+  /** 只认当前画风那份分类：换了画风但新统计还没回来时先不显示，避免点到必空的旧分类。 */
+  const categories = statsFor === source ? (stats?.categories ?? {}) : {}
 
   /** 条件变了：防抖后重查。先关掉在飞窗口并清空快照，否则滚动加载会拿旧 offset。 */
   const schedule = useCallback((next: { query?: string; category?: string; safe?: boolean; source?: 'real' | 'anime' }) => {
@@ -265,24 +276,24 @@ export function CostumesPanel({ t, visible, goToConversation }: CostumesPanelPro
           {t('costumesOnlySafe')}
         </label>
         {/* 分类做成横向 tab：一百多套时下拉框要先展开再选，翻找成本高。
-            放在 .cct-search 内部是为了跟着它一起吸顶，翻到中途也能换分类。 */}
-        <div className="cct-tabs" role="tablist" aria-label={t('costumesCategoriesLabel')}>
+            放在 .cct-search 内部是为了跟着它一起吸顶，翻到中途也能换分类。
+            用 group + aria-pressed 而不是 tab/tablist：这是筛选开关，不是页签 ——
+            页签语义承诺 aria-controls 与方向键，而内容区是同一个网格，配不齐反而误导读屏。 */}
+        <div className="cct-tabs" role="group" aria-label={t('costumesCategoriesLabel')} title={t('tabCountHint')}>
           <button
             type="button"
-            role="tab"
-            aria-selected={category === ''}
+            aria-pressed={category === ''}
             className={`cct-tab${category === '' ? ' is-on' : ''}`}
             onClick={() => { pickCategory('') }}
           >
             {t('costumesAllCategories')}
-            <span className="cct-tab-n">{stats?.total ?? 0}</span>
+            {stats !== null && <span className="cct-tab-n">{stats.total}</span>}
           </button>
-          {Object.entries(stats?.categories ?? {}).map(([name, count]) => (
+          {Object.entries(categories).map(([name, count]) => (
             <button
               key={name}
               type="button"
-              role="tab"
-              aria-selected={category === name}
+              aria-pressed={category === name}
               className={`cct-tab${category === name ? ' is-on' : ''}`}
               onClick={() => { pickCategory(name) }}
             >

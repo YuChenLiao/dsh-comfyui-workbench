@@ -43,6 +43,28 @@ test('随包目录：288 组 / 1439 视角 / 四体系与上游一致', () => {
   assert.equal(Object.keys(stats.categories).length, 26)
 })
 
+test('统计：带体系只回该体系的分类，且不污染全局缓存', () => {
+  const index = createPosesIndex(tempDir(), BUNDLED)
+  const full = index.stats('full')
+  assert.equal(Object.keys(full.categories).length, 9, 'full 下只有 9 类')
+  assert.equal(
+    Object.values(full.categories).reduce((sum, n) => sum + n, 0),
+    73,
+    'full 的分类计数之和应等于该体系的组数',
+  )
+  // 窄化结果不能反写进全局缓存 —— 否则切回「全部体系」会只剩 9 个分类。
+  const all = index.stats()
+  assert.equal(Object.keys(all.categories).length, 26, '全局缓存不该被窄化结果污染')
+  assert.equal(Object.values(all.categories).reduce((sum, n) => sum + n, 0), 288)
+  // 未知体系回空，不回全局。
+  assert.deepEqual(index.stats('nope').categories, {})
+  // 各体系的分类计数之和都应等于该体系组数，且四者相加等于 288。
+  const totals = ['full', 'sexy', 'bust', 'pair'].map(id =>
+    Object.values(index.stats(id).categories).reduce((sum, n) => sum + n, 0),
+  )
+  assert.deepEqual(totals, [73, 80, 80, 55])
+})
+
 test('默认全给 288 组；onlySafe 才收窄到 98 组', () => {
   const index = createPosesIndex(tempDir(), BUNDLED)
   assert.equal(index.search({ limit: 100 }).total, 288, '默认不该藏任何一组')
