@@ -3,16 +3,17 @@
  *
  * 为什么需要它：宿主只给**包根说明符**装配浏览器端
  * （`dsh-client-modules` 的 `exactPackageSpecifier` 明确排除包子路径）。
- * 七个组件是 `dsh-comfyui-workbench/<name>` 这样的子路径 entry，能注册服务端，
+ * 十个组件是 `dsh-comfyui-workbench/<name>` 这样的子路径 entry，能注册服务端，
  * 但挂不上 client —— 少了这条包根 entry，侧栏图标与 better-sidebar 页签根本不会被加载。
  *
  * 所以这条 entry 只做两件事：让包根的 `exports["./client"]` 被装配、
- * 把共享运行时初始化好（七条组件 entry 直接复用）。
+ * 把共享运行时初始化好（十条组件 entry 直接复用）。
  */
 import { apply as applyDanbooru } from './entries/danbooru.js'
 import { apply as applyEdit } from './entries/edit.js'
 import { apply as applyGallery } from './entries/gallery.js'
 import { apply as applyGenerate } from './entries/generate.js'
+import { apply as applySyncWait } from './entries/sync-wait.js'
 import { apply as applyTerminal } from './entries/terminal.js'
 import { apply as applyTags } from './entries/tags.js'
 import { apply as applyPoses } from './entries/poses.js'
@@ -94,9 +95,9 @@ export function apply(ctx: HostContext, config: unknown): void {
 }
 
 /**
- * 一次装载全部七个组件（测试与"只想挂一条 entry"的场景用）。
+ * 一次装载全部十个组件（测试与"只想挂一条 entry"的场景用）。
  *
- * 生产环境不用它：`cordis.patch.yml` 里是八条 entry（一条包根 + 七条组件），
+ * 生产环境不用它：`cordis.patch.yml` 里是十一条 entry（一条包根 + 十条组件），
  * 每条各自注册，宿主才能单独开关。
  */
 export function applyAll(ctx: HostContext, config: unknown): Runtime {
@@ -113,6 +114,9 @@ export function applyAll(ctx: HostContext, config: unknown): Runtime {
   applyCostumes(ctx, config)
   applyGenerate(ctx, config)
   applyEdit(ctx, config)
+  // sync-wait 不注册任何东西，但得在这里也走一遍：否则它的 apply 写坏了
+  // （签名不对、抛错）只有 tsc 挡得住，没有任何测试路径会装载它。
+  applySyncWait(ctx, config)
   applyDanbooru(ctx, config)
   applyTerminal(ctx, config)
   return rt
@@ -123,7 +127,7 @@ export { stripAnsi, TerminalBuffer } from './shared/comfy/output-buffer.js'
 export { TagIndex, searchTagsLinear } from './components/tool-danbooru/server/tag-index.js'
 export { applyOverrides, overrideNotes } from './shared/run/overrides.js'
 export { fileRefsOf, pickArtifacts } from './shared/run/runner.js'
-export { parseWait, WAIT_MAX_MS, WAIT_MIN_MS } from './shared/tools/types.js'
+export { parseWait, resolveWait, waitSchema, WAIT_MAX_MS, WAIT_MIN_MS } from './shared/tools/types.js'
 export { isFillerTail, searchWithPrefixFallback } from './shared/search/fallback.js'
 export { readPref, writePref } from './shared/host/prefs.js'
 export { mountWorkbenchSkill, WORKBENCH_SKILL_DESCRIPTION, WORKBENCH_SKILL_NAME } from './shared/host/skill.js'
@@ -163,7 +167,7 @@ export { createTerminalRoutes } from './components/panel-terminal/server/routes.
 export { runTool } from './components/tool-generate/tools/run.js'
 export { createGalleryRoutes } from './components/panel-gallery/server/routes.js'
 export { probeWorkspace, resolveOutputDir, sessionWorkspaceDir, workspaceDirOf } from './shared/host/workspace.js'
-export { effectiveProgressStream, readToggles, resetToggleCache, togglesPath, writeToggles } from './shared/host/toggles.js'
+export { effectiveProgressStream, effectiveRunWait, readToggles, resetToggleCache, togglesPath, writeToggles } from './shared/host/toggles.js'
 export type { TogglePatch, Toggles } from './shared/host/toggles.js'
 export { isAuthorized } from './shared/authz/authorize.js'
 export { foldPathCase } from './shared/host/paths.js'

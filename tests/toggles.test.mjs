@@ -17,6 +17,7 @@ process.env.HOME = isoHome
 
 const {
   effectiveProgressStream,
+  effectiveRunWait,
   readToggles,
   resetToggleCache,
   togglesPath,
@@ -97,4 +98,30 @@ test('有效值：面板开关 > 配置默认值', () => {
   assert.equal(effectiveProgressStream({ progressStream: false }, {}), false, '没覆盖时用配置')
   assert.equal(effectiveProgressStream({ progressStream: false }, { progressStream: true }), true, '面板开了就开')
   assert.equal(effectiveProgressStream({ progressStream: true }, { progressStream: false }), false, '面板关了也按面板')
+})
+
+test('runWait 开关：写入能读回，null 回退到配置', () => {
+  reset()
+  assert.deepEqual(writeToggles({ runWait: 'sync' }), { runWait: 'sync' })
+  assert.deepEqual(readToggles(), { runWait: 'sync' })
+
+  writeToggles({ runWait: null })
+  assert.deepEqual(readToggles(), {}, 'null 要把这一项删掉，回退到配置的 runWait')
+})
+
+test('runWait 开关：非法值当没写，不污染其它键', () => {
+  reset()
+  fs.writeFileSync(togglesPath(), JSON.stringify({ progressStream: true, runWait: 'later' }), 'utf8')
+  assert.deepEqual(readToggles(), { progressStream: true }, '只认 async / sync')
+
+  writeToggles({ runWait: 'async' })
+  const raw = JSON.parse(fs.readFileSync(togglesPath(), 'utf8'))
+  assert.equal(raw.progressStream, true, '改 runWait 不该动 progressStream')
+  assert.equal(raw.runWait, 'async')
+})
+
+test('runWait 有效值：面板开关 > 配置 > 内置默认 async', () => {
+  assert.equal(effectiveRunWait({ runWait: 'async' }, {}), 'async')
+  assert.equal(effectiveRunWait({ runWait: 'async' }, { runWait: 'sync' }), 'sync', '面板开了同步就用面板')
+  assert.equal(effectiveRunWait({ runWait: 'sync' }, { runWait: 'async' }), 'async', '面板关了自己等也按面板')
 })

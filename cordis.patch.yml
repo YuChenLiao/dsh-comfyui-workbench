@@ -9,7 +9,7 @@
 # 全部字段都可省略。下面的 config 只是把默认值写出来，方便对照修改。
 # 优先级：profile 配置 > 环境变量（COMFYUI_URL / COMFYUI_BASE_URL / COMFYUI_TIMEOUT_MS）> 内置默认。
 - insert:
-    # 十条 entry：包根 core（承载浏览器端 + 共享运行时）+ 九个组件。
+    # 十一条 entry：包根 core（承载浏览器端 + 共享运行时）+ 十个组件。
     # 宿主「设置 → 插件」里能看到并单独开关。
     # 配置用 YAML 锚点共享 —— 只写一次，改的时候也只改一处。
     # 包根 entry：只为让宿主装配 exports["./client"]（侧栏图标与 better-sidebar 页签）。
@@ -45,7 +45,7 @@
         uploadsDir: null
         # 资产索引文件；不写则用 ~/.dsh-comfyui-workbench/assets.jsonl。
         indexFile: null
-        # 关掉的组件（默认全开）。九个组件互相独立，某个出问题可以只关它：
+        # 关掉的组件（默认全开）。十个组件互相独立，某个出问题可以只关它：
         #   panel.workflow     用户面板 · 工作流
         #   panel.gallery      用户面板 · 相册
         #   panel.tags         用户面板 · 标签库（只读浏览 / 搜索 / 复制 tag）
@@ -55,6 +55,7 @@
         #   tool.generate      模型工具 · 生图（含列出/查看工作流）
         #   tool.workflow-edit 模型工具 · 工作流编辑
         #   tool.danbooru      模型工具 · Danbooru 标签查询与同步
+        #   tool.sync-wait     模型工具 · 出图是否接受 wait（关掉 = 一律异步）
         disabledComponents: []
 
         # ── 服务托管 ──
@@ -80,7 +81,7 @@
         runMode: conversation
         # 工具响应带回几张图：first | all（上限 3）| none。
         returnImages: first
-        # 单次运行等待上限。
+        # 单次 HTTP 请求超时。**不是**同步等待上限 —— 那个是下面的 runWaitMaxMs。
         timeoutMs: 300000
         # 轮询 /history 的间隔。
         pollIntervalMs: 1000
@@ -96,6 +97,15 @@
         # 这里只是**默认值** —— 「工作流管理」面板上可以直接开关，不用改这个文件也不用重启。
         # 也可用环境变量 COMFYUI_PROGRESS_WS=1 打开。
         progressStream: true
+        # 出图工具默认等不等：async（提交完就还控制权，出图后插件推一条消息）| sync（等到产物落盘）。
+        # 这里只是**默认值** —— 「工作流管理」面板上可以直接开关，改完下一次提交即生效，不用重启。
+        # 注意：配置 > 环境变量（`pick` 是「raw 有值就用 raw」），所以下面这行写了 async 之后
+        # `COMFYUI_RUN_WAIT=sync` 不会生效。想用环境变量，先把这一行删掉或注释掉。
+        runWait: async
+        # 同步等待的上限（毫秒）。默认 30 分钟，夹到 [1s, 30min]。
+        # 不要跟上面的 timeoutMs 混：那个是单次 HTTP 请求超时（见上面那行），
+        # 出图普遍比它久，拿它当等待上限会让「同步」变成「等 2 分钟然后返回 pending」。
+        runWaitMaxMs: 1800000
 
         # ── 姿势库 ──
         # 姿势线稿的图床根地址，**必须 https**（否则回退默认）。图不随包分发，
@@ -122,6 +132,11 @@
       config: *cwf
     - id: comfyui-workbench:edit
       name: dsh-comfyui-workbench/edit
+      config: *cwf
+    # 出图工具的「同步等待」能力。关掉之后三个工具不再暴露 wait 参数、一律异步，
+    # 面板上「出图后同步等结果」那个开关也一并隐藏。
+    - id: comfyui-workbench:sync-wait
+      name: dsh-comfyui-workbench/sync-wait
       config: *cwf
     - id: comfyui-workbench:danbooru
       name: dsh-comfyui-workbench/danbooru

@@ -395,6 +395,60 @@ test('面板开关：POST /config 切 progressStream，且 GET 能读回（不�
   }
 })
 
+test('POST /config 的 runWait 开关：与 progressStream 互不覆盖', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    const before = await (await fetch(`${app.origin}/comfyui-workbench/api/config`)).json()
+    assert.equal(before.config.toggles.runWait, 'async', '内置默认是 async')
+    assert.equal(before.config.toggles.runWaitSource, 'config')
+
+    // 只切 runWait：progressStream 不能被顺手清掉
+    await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progressStream: true }),
+    })
+    const sync = await (await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runWait: 'sync' }),
+    })).json()
+    assert.equal(sync.ok, true)
+    assert.equal(sync.toggles.runWait, 'sync')
+    assert.equal(sync.toggles.runWaitSource, 'toggle')
+    assert.equal(sync.toggles.progressStream, true, '切 runWait 不该把 progressStream 冲掉')
+
+    // 反过来：只切 progressStream 时 runWait 也要留着
+    const off = await (await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progressStream: false }),
+    })).json()
+    assert.equal(off.toggles.runWait, 'sync', '切 progressStream 不该把 runWait 冲掉')
+
+    // null 清掉覆盖，回退到配置
+    const cleared = await (await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runWait: null }),
+    })).json()
+    assert.equal(cleared.toggles.runWait, 'async')
+    assert.equal(cleared.toggles.runWaitSource, 'config')
+
+    // 非法值要拒绝，而不是静默当成 async
+    for (const bad of ['later', 1, true, {}]) {
+      const res = await (await fetch(`${app.origin}/comfyui-workbench/api/config`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runWait: bad }),
+      })).json()
+      assert.equal(res.error, 'bad-body', `runWait=${JSON.stringify(bad)} 该被拒`)
+    }
+  } finally {
+    await app.close()
+  }
+})
+
 test('POST /workflows/import：贴 API JSON 能导入，同名覆盖保留备注，UI 格式明确拒绝', async () => {
   const dirs = tmpDirs()
   const app = await boot({

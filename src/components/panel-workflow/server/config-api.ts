@@ -1,5 +1,5 @@
 import type { Settings } from '../../../shared/host/config.js'
-import { effectiveProgressStream } from '../../../shared/host/toggles.js'
+import { effectiveProgressStream, effectiveRunWait } from '../../../shared/host/toggles.js'
 import type { TogglePatch, Toggles } from '../../../shared/host/toggles.js'
 import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
@@ -33,11 +33,18 @@ export function createConfigHandler(deps: {
   }
 }): (url: URL, res: import('node:http').ServerResponse, req: import('node:http').IncomingMessage) => Promise<void> {
   /** 开关的当前有效值 + 它来自哪里（面板改过就是 toggle，否则是配置）。 */
-  const togglesView = (): { progressStream: boolean; progressStreamSource: 'toggle' | 'config' } => {
+  const togglesView = (): {
+    progressStream: boolean
+    progressStreamSource: 'toggle' | 'config'
+    runWait: 'async' | 'sync'
+    runWaitSource: 'toggle' | 'config'
+  } => {
     const stored = deps.toggles?.read() ?? {}
     return {
       progressStream: effectiveProgressStream(deps.settings, stored),
       progressStreamSource: stored.progressStream === undefined ? 'config' : 'toggle',
+      runWait: effectiveRunWait(deps.settings, stored),
+      runWaitSource: stored.runWait === undefined ? 'config' : 'toggle',
     }
   }
 
@@ -90,7 +97,14 @@ export function createConfigHandler(deps: {
         sendJson(res, 400, { ok: false, error: 'bad-body', message: 'progressStream 只接受布尔值或 null。' })
         return
       }
-      if (patch.progressStream === undefined) {
+      // 出图默认等不等：'async' / 'sync' 写入，null 删掉覆盖、回退到配置默认值
+      if (bag.runWait === 'async' || bag.runWait === 'sync') patch.runWait = bag.runWait
+      else if (bag.runWait === null) patch.runWait = null
+      else if (bag.runWait !== undefined) {
+        sendJson(res, 400, { ok: false, error: 'bad-body', message: "runWait 只接受 'async' / 'sync' 或 null。" })
+        return
+      }
+      if (patch.progressStream === undefined && patch.runWait === undefined) {
         sendJson(res, 400, { ok: false, error: 'bad-body', message: '没有要改的开关。' })
         return
       }

@@ -7,6 +7,7 @@
 import { registerTools, TOOL_GROUPS } from '../components/tool-generate/index.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
+import { effectiveRunWait, readToggles } from '../shared/host/toggles.js'
 import { acquire, release } from '../runtime.js'
 
 /** 组件被配置关闭时的统一提示。 */
@@ -43,6 +44,10 @@ export function apply(ctx: HostContext, config: unknown): void {
     resolveOutputDirFor: rt.resolveOutputDirFor,
     timeoutMs: rt.settings.timeoutMs,
     pollIntervalMs: rt.settings.pollIntervalMs,
+    runWait: () => effectiveRunWait(rt.settings, readToggles()),
+    runWaitMaxMs: rt.settings.runWaitMaxMs,
+    // 组件 tool.sync-wait 关掉时，三个出图工具不再暴露 wait 参数。
+    syncWait: !new Set(rt.settings.disabledComponents).has('tool.sync-wait'),
     overrides: new Map(),
     runs: rt.runs,
     index: rt.index,

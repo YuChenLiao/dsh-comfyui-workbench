@@ -6,7 +6,7 @@
  * 上下文。批量提交在**一次工具调用里**把所有 promptId 拿回来。
  *
  * 两条设计约束：
- * - **默认全部异步**：批量场景更不该阻塞。提交完立刻返回，出图各自推回对话。
+ * - **默认按 `runWait`（内置 async）**：批量场景更不该阻塞。提交完立刻返回，出图各自推回对话。
  * - **部分失败不整体失败**：一条参数名写错不该让另外九条也发不出去。逐条报结果。
  */
 import path from 'node:path'
@@ -16,7 +16,7 @@ import { sweepRun } from '../../../shared/run/index.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
 import { BatchCollector } from '../../../shared/run/batch-notify.js'
 import { codeOf, finalStateOf } from '../../../shared/run/policy.js'
-import { asString, parseWait } from '../../../shared/tools/types.js'
+import { asString, resolveWait, waitSchema } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
 import type { NotifyTarget } from '../../../shared/run/notify.js'
@@ -72,7 +72,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       '一次提交多个 ComfyUI 任务（同一工作流跑多组参数，或不同工作流各跑一次）。'
       + '服务没在跑时会自动拉起，不用先手动启动，也不要 kill / 重启 ComfyUI 进程。'
       + '返回每条的 promptId 或错误；**部分失败不影响其它条目**。'
-      + '默认异步：提交完立刻返回，出图后各自推回对话。'
+      + '默认按配置 `runWait`（内置 async）：提交完立刻返回，出图后各自推回对话。'
       + `一次最多 ${MAX_RUNS} 条。`
       + '注意：一次性参数覆盖（comfyui_workflow_edit persist=false）用完即清，'
       + '所以通常只有**第一条**会带上它（若第一条提交失败，会顺延给下一条）；'
@@ -106,10 +106,9 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
             },
           },
         },
-        wait: {
-          type: ['boolean', 'integer'],
-          description: '是否同步等全部出图。默认 false（全部异步）。批量同步等待很容易撞超时，一般不要开。',
-        },
+        ...waitSchema(deps,
+          '是否同步等全部出图。不传时按配置 `runWait`（内置 async，即全部异步）。'
+          + '批量同步等待很容易撞超时，一般不要开。'),
 
       },
     },
@@ -127,7 +126,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       const sessionDir = deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir
       // 与 comfyui_run / rerun 共用同一份解析，并且**用它决定同步与否** ——
       // 上一版只解析不消费，`wait: 3000` 会立刻返回，参数等于摆设。
-      const parsedWait = parseWait(args.wait, deps.timeoutMs)
+      const parsedWait = resolveWait(deps, args.wait)
       const shouldWait = parsedWait.shouldWait
       const timeoutMs = parsedWait.waitMs
       const agent = exec?.agent as NotifyTarget | undefined

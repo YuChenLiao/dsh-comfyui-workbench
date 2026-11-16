@@ -35,9 +35,10 @@ export interface Settings {
   /** 资产索引文件；null 表示用默认（~/.dsh-comfyui-workbench/assets.jsonl）。 */
   indexFile: string | null
   /**
-   * 关掉的组件 id。可用的有：
-   * `panel.workflow` / `panel.gallery` / `panel.tags` / `panel.poses` / `panel.terminal`
-   * / `tool.generate` / `tool.workflow-edit` / `tool.danbooru`。
+   * 关掉的组件 id。可用的有（与 `runtime.ts` 的 `componentStateOf` 一一对应）：
+   * `panel.gallery` / `panel.workflow` / `panel.tags` / `panel.poses` / `panel.costumes`
+   * / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru`
+   * / `tool.sync-wait`（关掉后出图工具不再接受 `wait`，一律异步）。
    * 空数组表示全开；某个组件出问题时可以单独关掉，不影响其他。
    */
   disabledComponents: string[]
@@ -59,7 +60,7 @@ export interface Settings {
   readyTimeoutMs: number
   /** 空闲回收毫秒数；0 表示不回收。 */
   idleShutdownMs: number
-  /** 单次运行等待上限。 */
+  /** 单次 HTTP 请求超时（同步等待上限见 `runWaitMaxMs`，两者不是一回事）。 */
   timeoutMs: number
   /** 轮询 /history 的间隔。 */
   pollIntervalMs: number
@@ -74,6 +75,17 @@ export interface Settings {
    * `{value, max}` 写进运行记录。连不上只是没有百分比，出图不受影响。
    */
   progressStream: boolean
+
+  /** 出图工具默认等不等：`async` 提交完就还控制权（默认），`sync` 等到产物落盘。 */
+  runWait: 'async' | 'sync'
+  /**
+   * 同步等待的上限（毫秒），默认 30 分钟。
+   *
+   * 不能借 `timeoutMs`：那个是单次 HTTP 请求超时（默认 2 分钟），而出图普遍比它久。
+   * 当初共用一个数，「同步」就变成「最多等 2 分钟然后返回 pending」，与用户开这个开关的
+   * 意图相反。`parseWait` 会把它夹到 `[1s, 30min]`，所以超过 30 分钟的值没有意义。
+   */
+  runWaitMaxMs: number
 
   // ── 姿势库 ──
   /**
@@ -90,6 +102,7 @@ const ENV_KEYS: Array<[string, keyof Settings]> = [
   ['COMFYUI_URL', 'baseUrl'],
   ['COMFYUI_BASE_URL', 'baseUrl'],
   ['COMFYUI_TIMEOUT_MS', 'timeoutMs'],
+  ['COMFYUI_RUN_WAIT', 'runWait'],
 ]
 
 /** 从环境变量读一层。 */
@@ -169,6 +182,10 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     // 卡在下载状态"的经典事故。想省显存自己设成 300000；开着时回收前会先问 `/queue`。
     idleShutdownMs: int(raw.idleShutdownMs, 0, 0, 3_600_000),
     timeoutMs: int(pick('timeoutMs'), 120_000, 1_000, 3_600_000),
+    // 默认异步：出图要几分钟，让工具调用一直挂着会让用户以为连接断了。
+    // 想每次都同步拿产物（顺带登记资产索引）就设成 sync。
+    runWait: oneOf(pick('runWait'), ['async', 'sync'] as const, 'async'),
+    runWaitMaxMs: int(raw.runWaitMaxMs, 1_800_000, 1_000, 1_800_000),
     pollIntervalMs: int(raw.pollIntervalMs, 1_000, 100, 10_000),
     indexMode: oneOf(raw.indexMode, ['auto', 'off'] as const, 'auto'),
     betterSidebarTab: oneOf(raw.betterSidebarTab, ['auto', 'on', 'off'] as const, 'auto'),

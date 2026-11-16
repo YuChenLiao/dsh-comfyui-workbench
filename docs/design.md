@@ -686,6 +686,8 @@ ctx.inject(['betterSidebar'], (scope) => {
     indexMode: auto           # auto | off
     betterSidebarTab: auto    # auto | on | off
     progressStream: false     # 用 /ws 读精确进度；也可 COMFYUI_PROGRESS_WS=1
+    runWait: async            # async（提交完就还控制权）| sync（等到产物落盘）
+    runWaitMaxMs: 1800000     # 同步等待上限，夹到 [1s, 30min]；不是 timeoutMs
 ```
 
 优先级与 `dsh-comfyui-image` 同链：profile 配置 → `~/.dsh-comfyui-workbench/config.json` → 环境变量（复用 `COMFYUI_URL` / `COMFYUI_BASE_URL` / `COMFYUI_TIMEOUT_MS` 同名键，保证三个插件指向同一台服务）→ 内置默认。`~/.dsh-comfyui-image/config.json` 的 `outputDir` 作为**扫描根来源**继续读取，不作为本插件配置项。

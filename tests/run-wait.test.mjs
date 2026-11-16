@@ -15,7 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { RunRegistry, parseWait, runBatchTool, runTool } from '../lib/index.js'
+import { RunRegistry, parseWait, rerunTool, resolveWait, runBatchTool, runTool } from '../lib/index.js'
 
 const WF = {
   1: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'x.safetensors' } },
@@ -69,6 +69,28 @@ test('wait: false —— 提交后立刻返回，不轮询', async () => {
   assert.equal(result.ok, true)
   assert.equal(result.pending, true, '异步路径回的是 pending，不是 state')
   assert.equal(polls(), 0, '异步路径不该去 poll')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('配置 runWait: sync —— 不传 wait 也会真的去等（接线没断）', async () => {
+  const { deps, file, dir, polls } = makeDeps()
+  // 只注入 runWait，不传 wait：走的是「配置默认」这条路径。
+  // 上限收到 1 秒，否则会按默认的 30 分钟等满 —— 这个用例本身不该花 30 秒。
+  const syncDeps = { ...deps, runWaitMaxMs: 1_000, runWait: () => 'sync' }
+  const result = await runTool(syncDeps).execute({ workflow: { path: file }, vars: { seed: 1 } })
+
+  assert.ok(polls() > 0, 'runWait 注入 sync 之后，不传 wait 也要去 poll —— 否则开关是摆设')
+  assert.equal(result.pending, true, '等不到产物时仍是 pending')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('配置 runWait: sync 也压不过显式的 wait: false', async () => {
+  const { deps, file, dir, polls } = makeDeps()
+  const syncDeps = { ...deps, runWaitMaxMs: 1_000, runWait: () => 'sync' }
+  const result = await runTool(syncDeps).execute({ workflow: { path: file }, vars: { seed: 1 }, wait: false })
+
+  assert.equal(result.pending, true)
+  assert.equal(polls(), 0, '显式 false 要压过配置的 sync')
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -132,6 +154,22 @@ test('parseWait 的规则：布尔 / 数字 / 字符串 / 夹值 / 零与负数'
   assert.equal(parseWait(true, 3_600_000).waitMs, 1_800_000)
   // 认不出的字符串按"不等"处理，不抛
   assert.equal(parseWait('abc', 300_000).shouldWait, false)
+})
+
+test('parseWait 的配置默认：runWait 决定不传时等不等，显式值仍压过它', () => {
+  // 不传：跟配置走
+  assert.deepEqual(parseWait(undefined, 5_000, 'sync'), { shouldWait: true, waitMs: 5_000 })
+  assert.deepEqual(parseWait(undefined, 5_000, 'async'), { shouldWait: false, waitMs: 5_000 })
+  assert.deepEqual(parseWait(undefined, 5_000), { shouldWait: false, waitMs: 5_000 }, '默认仍是 async')
+  // 显式值压过配置 —— 这是这个开关能被单次调用覆盖的前提
+  assert.equal(parseWait(false, 5_000, 'sync').shouldWait, false, '显式 false 要压过 sync')
+  assert.equal(parseWait(true, 5_000, 'async').shouldWait, true, '显式 true 要压过 async')
+  assert.equal(parseWait(3_000, 5_000, 'async').shouldWait, true, '显式毫秒也要压过 async')
+  assert.equal(parseWait(0, 5_000, 'sync').shouldWait, false, '0 在 sync 下也不等')
+  // 模型把布尔写成字符串时不能掉进 fallback：sync 下 "false" 会变成阻塞
+  assert.equal(parseWait('false', 5_000, 'sync').shouldWait, false, '字符串 false 要当布尔')
+  assert.equal(parseWait('true', 5_000, 'async').shouldWait, true, '字符串 true 要当布尔')
+  assert.equal(parseWait(' FALSE ', 5_000, 'sync').shouldWait, false, '大小写与空白都认')
 })
 
 /** run_batch 的依赖：与 run 同构，只是多一个 runs 数组。 */
@@ -203,4 +241,48 @@ test('run_batch 的 schema 也接受两种类型（三个工具一致）', () =>
   const wait = runBatchTool(deps).parameters.properties.wait
   assert.deepEqual(wait.type, ['boolean', 'integer'])
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('run_batch 也认配置 runWait（三处手抄同一行，抄漏一处就静默退回 async）', async () => {
+  const batch = makeBatchDeps()
+  const syncDeps = { ...batch.deps, runWaitMaxMs: 1_000, runWait: () => 'sync' }
+  await runBatchTool(syncDeps).execute({
+    workflow: { path: batch.file },
+    runs: [{ vars: { seed: 1 } }],
+  })
+  assert.ok(batch.polls() > 0, 'runWait: sync 下不传 wait 也要去 poll')
+  fs.rmSync(batch.dir, { recursive: true, force: true })
+})
+
+test('组件 tool.sync-wait 关掉时，三个工具都不再暴露 wait 参数', async () => {
+  const { deps, dir } = makeDeps()
+  const off = { ...deps, syncWait: false }
+  for (const tool of [runTool(off), runBatchTool(off), rerunTool(off)]) {
+    assert.equal('wait' in tool.parameters.properties, false, `${tool.name} 关掉组件后不该有 wait 参数`)
+  }
+  // 开着的默认形态仍带这个参数
+  assert.equal('wait' in runTool(deps).parameters.properties, true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('组件关掉时即使传了 wait 也按异步走（参数不在 schema，但也不能反过来阻塞）', async () => {
+  const { deps, file, dir, polls } = makeDeps()
+  const off = { ...deps, syncWait: false, runWait: () => 'sync' }
+  const result = await runTool(off).execute({ workflow: { path: file }, vars: { seed: 1 } })
+  assert.equal(result.pending, true)
+  assert.equal(polls(), 0, '组件关掉 = 一律异步，配置成 sync 也不该去等')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('resolveWait 一处收口：三个工具共享同一份默认值逻辑', () => {
+  // 直接测收口函数本身 —— 三处手抄的风险已被消除，这里保证实现没跑偏
+  const base = { timeoutMs: 120_000 }
+  assert.deepEqual(resolveWait(base, undefined), { shouldWait: false, waitMs: 120_000 }, '全缺省按 async、退回 timeoutMs')
+  assert.deepEqual(
+    resolveWait({ timeoutMs: 120_000, runWaitMaxMs: 1_800_000, runWait: () => 'sync' }, undefined),
+    { shouldWait: true, waitMs: 1_800_000 },
+    '配置 sync 时等 runWaitMaxMs，而不是 HTTP 超时',
+  )
+  assert.equal(resolveWait({ timeoutMs: 5_000, runWaitMaxMs: 1_800_000, runWait: () => 'sync' }, false).shouldWait, false)
+  assert.equal(resolveWait({ timeoutMs: 5_000, runWait: () => 'async' }, 2_000).waitMs, 2_000)
 })

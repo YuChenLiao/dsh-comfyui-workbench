@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { fetchConfig, fetchWorkflowList, importWorkflow, setProgressStream, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
+import { fetchConfig, fetchWorkflowList, importWorkflow, setProgressStream, setRunWait, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
 import type { TogglesView } from '../../../client/api.js'
 import type { WorkflowListItem } from '../../../client/types.js'
 import type { Translate } from '../../../client/i18n.js'
@@ -29,7 +29,9 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
   const [error, setError] = useState<string>('')
   /** 面板开关：`null` 表示还没拿到（或这个部署不给改）。 */
   const [toggles, setToggles] = useState<TogglesView | null>(null)
-  const [toggleSaving, setToggleSaving] = useState(false)
+  /** 组件开关状态；组件 `tool.sync-wait` 关掉时不显示「同步等结果」这个开关。 */
+  const [components, setComponents] = useState<Record<string, boolean> | null>(null)
+  const [toggleSaving, setToggleSaving] = useState<'progress' | 'runWait' | null>(null)
   /** 导入区：展开状态、文件名提示、粘贴的 JSON、提交中。 */
   const [importOpen, setImportOpen] = useState(false)
   const [importName, setImportName] = useState('')
@@ -46,6 +48,7 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
       .then(([data, config]) => {
         setItems(data.workflows)
         setToggles(config?.toggles ?? null)
+        setComponents(config?.components ?? null)
         setError('')
       })
       .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
@@ -85,7 +88,7 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
    * 下一次从面板提交的运行就带 `progress`。
    */
   const toggleProgress = async (next: boolean): Promise<void> => {
-    setToggleSaving(true)
+    setToggleSaving('progress')
     try {
       const updated = await setProgressStream(next)
       setToggles(updated)
@@ -94,7 +97,28 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setToggleSaving(false)
+      setToggleSaving(null)
+    }
+  }
+
+  /**
+   * 切「出图等不等」。
+   *
+   * 同步等到产物落盘才返回（顺带登记资产索引），异步提交完就把控制权交回对话、
+   * 出图完成后插件再往会话里推一条。写的是 `settings.json`，下一次提交就生效。
+   * 组件 `tool.sync-wait` 被关掉时这个开关不显示（工具那边也没有 wait 参数）。
+   */
+  const toggleRunWait = async (next: 'async' | 'sync'): Promise<void> => {
+    setToggleSaving('runWait')
+    try {
+      const updated = await setRunWait(next)
+      setToggles(updated)
+      setNotice(t('adminSaved'))
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setToggleSaving(null)
     }
   }
 
@@ -248,7 +272,7 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
                 <input
                   type="checkbox"
                   checked={toggles.progressStream}
-                  disabled={toggleSaving}
+                  disabled={toggleSaving !== null}
                   onChange={event => { void toggleProgress(event.target.checked) }}
                 />
                 <span className="cwa-track" aria-hidden="true"><span className="cwa-knob" /></span>
@@ -264,6 +288,30 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
           </article>
         )
       })()}
+
+      {/* 组件 tool.sync-wait 关掉时，工具那边连 wait 参数都没有，这个开关也不该出现。 */}
+      {toggles === null || components?.['tool.sync-wait'] === false ? null : (
+        <article className={`cwa-row${toggles.runWait === 'sync' ? '' : ' off'}`}>
+          <div className="cwa-row-head">
+            <label className="cwa-switch" title={t('runWaitHint')}>
+              <input
+                type="checkbox"
+                checked={toggles.runWait === 'sync'}
+                disabled={toggleSaving !== null}
+                onChange={event => { void toggleRunWait(event.target.checked ? 'sync' : 'async') }}
+              />
+              <span className="cwa-track" aria-hidden="true"><span className="cwa-knob" /></span>
+            </label>
+            <div className="cwa-meta">
+              <div className="cwa-name">{t('runWaitToggle')}</div>
+              <div className="cwa-facts">
+                <span>{t('runWaitHint')}</span>
+                {toggles.runWaitSource === 'config' ? <span className="cwa-badge">{t('progressToggleFromConfig')}</span> : null}
+              </div>
+            </div>
+          </div>
+        </article>
+      )}
 
       {items.length === 0 ? (
         <div className="cwf-empty">

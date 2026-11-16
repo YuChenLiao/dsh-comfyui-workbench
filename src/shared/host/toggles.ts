@@ -23,10 +23,15 @@ import { ensureDir, pluginDataDir } from './paths.js'
 export interface Toggles {
   /** 用 `/ws` 读精确进度。 */
   progressStream?: boolean
+  /** 出图默认同步等产物还是异步立刻返回。 */
+  runWait?: 'async' | 'sync'
 }
 
 /** 写开关时的补丁：`null` 表示删掉这一项（回退到配置默认值），`undefined` 表示不动。 */
-export type TogglePatch = { progressStream?: boolean | null }
+export type TogglePatch = {
+  progressStream?: boolean | null
+  runWait?: 'async' | 'sync' | null
+}
 
 /** 文件名。 */
 const FILE_NAME = 'settings.json'
@@ -55,9 +60,12 @@ function readRaw(): Record<string, unknown> {
   }
 }
 
-/** 只认布尔值，别的（字符串、数字）一律当没写。 */
+/** 只认合法值，别的（字符串、数字）一律当没写。 */
 function normalize(raw: Record<string, unknown>): Toggles {
-  return typeof raw.progressStream === 'boolean' ? { progressStream: raw.progressStream } : {}
+  const out: Toggles = {}
+  if (typeof raw.progressStream === 'boolean') out.progressStream = raw.progressStream
+  if (raw.runWait === 'async' || raw.runWait === 'sync') out.runWait = raw.runWait
+  return out
 }
 
 /**
@@ -84,6 +92,10 @@ export function writeToggles(patch: TogglePatch): Toggles {
   const next = patch.progressStream
   if (next === null) delete raw.progressStream
   else if (typeof next === 'boolean') raw.progressStream = next
+
+  const wait = patch.runWait
+  if (wait === null) delete raw.runWait
+  else if (wait === 'async' || wait === 'sync') raw.runWait = wait
 
   const target = togglesPath()
   ensureDir(path.dirname(target))
@@ -116,4 +128,19 @@ export function effectiveProgressStream(
   toggles: Toggles,
 ): boolean {
   return toggles.progressStream ?? settings.progressStream
+}
+
+/**
+ * 求「出图等不等」的**有效值**：面板开关 > 配置 / 环境变量 > 内置默认（async）。
+ *
+ * 工具侧每次提交都会读一次，所以面板上改完下一次提交就生效，不用重启。
+ *
+ * @param settings - 启动时解析出来的配置快照。
+ * @param toggles - 面板上存下来的覆盖值。
+ */
+export function effectiveRunWait(
+  settings: { runWait: 'async' | 'sync' },
+  toggles: Toggles,
+): 'async' | 'sync' {
+  return toggles.runWait ?? settings.runWait
 }

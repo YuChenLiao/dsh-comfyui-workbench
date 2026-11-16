@@ -92,6 +92,7 @@ const jobs = [
   entryJob('costumes'),
   entryJob('generate'),
   entryJob('edit'),
+  entryJob('sync-wait'),
   entryJob('danbooru'),
   entryJob('terminal'),
   hostJob,

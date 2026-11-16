@@ -123,6 +123,21 @@ export interface ToolDeps {
   resolveOutputDirFor?: (agent: unknown) => string
   timeoutMs: number
   pollIntervalMs: number
+  /**
+   * 出图默认同步还是异步（面板开关 > 配置 `runWait`）；每次调用时求值，改完立刻生效。
+   * 省略时按 `async`（提交完就还控制权）。
+   */
+  runWait?: () => 'async' | 'sync'
+  /**
+   * 同步等待的上限（配置 `runWaitMaxMs`，默认 30 分钟）。省略时退回 `timeoutMs` ——
+   * 那是 HTTP 请求超时，语义上不对，只作兼容兜底。
+   */
+  runWaitMaxMs?: number
+  /**
+   * 是否暴露 `wait` 参数（组件 `tool.sync-wait`）。关掉时三个出图工具不带这个参数、
+   * 一律异步；省略按开启处理。
+   */
+  syncWait?: boolean
   /** 运行注册表：提交后把状态写进去，供面板与 comfyui_runs 读。 */
   runs: RunsLike
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */
@@ -177,14 +192,21 @@ export const WAIT_MAX_MS = 1_800_000
  * 规则：
  * - 数字 `<= 0` → 当作 **不等**。`wait: 0` 最可能表达"别等"，把它变成"同步等 1 秒"是反直觉的。
  * - 数字夹到 `[WAIT_MIN_MS, WAIT_MAX_MS]`。
- * - 只给 `true` 时用 `defaultMs`，**同样夹上限** —— 否则配置里把 `timeoutMs` 调到 60 分钟时，
- *   `wait: true` 的同步等待会跟着翻倍到 60 分钟。
+ * - 只给 `true` 时用 `defaultMs`，**同样夹上限** —— 否则 `runWaitMaxMs` 被调到 30 分钟以上时
+ *   （或调用方省略它、退回 `timeoutMs` 这一兼容兜底时），`wait: true` 的同步等待会跟着翻倍。
  * - 字符串数字也认（模型偶尔给 `"120000"`）。
+ * - `undefined` 时用 `fallback`：配置项 `runWait` 决定全局默认等不等，
+ *   调用方给了明确的 `wait` 就覆盖它。
  *
  * @param value - 原始参数值。
  * @param defaultMs - 只给 `true` 时用的默认等待上限（取自配置）。
+ * @param fallback - 没给 `wait` 时的默认同步/异步（取自配置 `runWait`）。
  */
-export function parseWait(value: unknown, defaultMs: number): { shouldWait: boolean; waitMs: number } {
+export function parseWait(
+  value: unknown,
+  defaultMs: number,
+  fallback: 'async' | 'sync' = 'async',
+): { shouldWait: boolean; waitMs: number } {
   const clampDefault = (): number => Math.min(WAIT_MAX_MS, Math.max(WAIT_MIN_MS, defaultMs))
   const numeric = typeof value === 'number'
     ? value
@@ -194,6 +216,52 @@ export function parseWait(value: unknown, defaultMs: number): { shouldWait: bool
     if (numeric <= 0) return { shouldWait: false, waitMs: clampDefault() }
     return { shouldWait: true, waitMs: Math.min(WAIT_MAX_MS, Math.max(WAIT_MIN_MS, numeric)) }
   }
+  // 模型偶尔把布尔写成字符串。不认的话 `"false"` 会掉进下面的 fallback 分支，
+  // 配置成 sync 时就从"不等"变成"阻塞到超时" —— 与模型明确的意图相反。
+  const lowered = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (lowered === 'true' || lowered === 'false') {
+    return parseWait(lowered === 'true', defaultMs, fallback)
+  }
   if (value === true) return { shouldWait: true, waitMs: clampDefault() }
-  return { shouldWait: false, waitMs: clampDefault() }
+  if (value === false) return { shouldWait: false, waitMs: clampDefault() }
+  // 没给：看配置默认值。sync 时等默认上限，async 时立刻返回。
+  return { shouldWait: fallback === 'sync', waitMs: clampDefault() }
+}
+
+/**
+ * 三个出图工具统一取「这次要不要等、等多久」。
+ *
+ * 这段本来在 `run` / `rerun` / `run_batch` 里各抄一遍。三份手抄最容易出的错是
+ * **某一份忘了接 `runWait`**：那份会静默按 async 走，配置成 sync 也不生效，而且不报错。
+ * 收成一个函数之后，接线只有一处可漏。
+ *
+ * @param deps - 取上限与默认模式。
+ * @param value - 调用方传的 `wait` 原值。
+ */
+export function resolveWait(
+  deps: Pick<ToolDeps, 'runWaitMaxMs' | 'runWait' | 'timeoutMs' | 'syncWait'>,
+  value: unknown,
+): { shouldWait: boolean; waitMs: number } {
+  const ceiling = deps.runWaitMaxMs ?? deps.timeoutMs
+  // 组件 `tool.sync-wait` 关掉 = 一律异步。不能只靠 schema 里没有 wait 参数：
+  // 配置里若还是 sync，这里会照着等，行为与「关掉同步等待」自相矛盾。
+  if (deps.syncWait === false) return { shouldWait: false, waitMs: ceiling }
+  return parseWait(value, ceiling, deps.runWait?.() ?? 'async')
+}
+
+/**
+ * 三个出图工具共用的 `wait` 参数声明。
+ *
+ * 组件 `tool.sync-wait` 关掉时返回空对象 —— 参数从 schema 里消失，模型看不到也就不会传。
+ * 与 `resolveWait` 配套：那边负责"传了怎么解析"，这边负责"要不要让它出现在台面上"。
+ *
+ * @param deps - 看 `syncWait`。
+ * @param description - 每个工具自己的措辞。
+ */
+export function waitSchema(
+  deps: Pick<ToolDeps, 'syncWait'>,
+  description: string,
+): Record<string, unknown> {
+  if (deps.syncWait === false) return {}
+  return { wait: { type: ['boolean', 'integer'], description } }
 }

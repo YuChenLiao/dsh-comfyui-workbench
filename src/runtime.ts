@@ -91,6 +91,7 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
     'tool.generate': !disabled.has('tool.generate'),
     'tool.workflow-edit': !disabled.has('tool.workflow-edit'),
     'tool.danbooru': !disabled.has('tool.danbooru'),
+    'tool.sync-wait': !disabled.has('tool.sync-wait'),
   }
 }
 

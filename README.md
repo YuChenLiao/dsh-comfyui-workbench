@@ -8,7 +8,7 @@
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
-## 九个组件
+## 十个组件
 
 装载在 profile 的 `cordis.patch.yml` 里，每一条都是独立的 loader entry —— 在宿主「设置 → 插件」里能看到、能单独开关。
 
@@ -22,10 +22,13 @@
 | `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：**面板只展示写实版**（1407 套实拍照风）；另有一批 1320 套二次元版，经 `comfyui_costume { source: "anime" }` 使用。两批都不含人物，搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
+| `comfyui-workbench:sync-wait` | 工具（能力开关） | 决定三个出图工具是否暴露 `wait` 参数；关掉后一律异步、面板上「同步等结果」开关一并隐藏。本身不注册工具或路由，**只能通过 `disabledComponents` 关**（见下） |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
 | `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务 |
 
 关掉某一条只影响它自己：例如关掉 `gallery`，资产库路由随之 404，工作流管理与工具照常（两个例外：批量导出工作流 ZIP 要读图与 sidecar，依赖相册；关掉 `core` 等于关掉整个插件——HTTP API 与浏览器端都会消失）。
+
+**`sync-wait` 是唯一的例外，它只能通过 `disabledComponents` 关。** 这条 entry 本身不注册任何东西，真正读开关的是 `generate` 这个 entry（它才是装配 `comfyui_run` / `comfyui_rerun` / `comfyui_run_batch` 的那一处）。在宿主插件页里把它停掉，`disabledComponents` 里并没有这个键，`wait` 参数照旧存在——要关就在配置里写 `disabledComponents: ['tool.sync-wait']`。
 
 ## 安装
 
@@ -37,7 +40,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-装完重启 DSH。`cordis.patch.yml` 里会插入十条 entry（包根 core + 九个组件），配置用 YAML 锚点共享，只写一次：
+装完重启 DSH。`cordis.patch.yml` 里会插入十一条 entry（包根 core + 十个组件），配置用 YAML 锚点共享，只写一次：
 
 ```yaml
 - insert:
@@ -62,9 +65,11 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `workflowsDir` | 工作流仓库，默认 `~/.dsh-comfyui-workbench/workflows` |
 | `autoStart` | 探测到本机安装时是否自动拉起 ComfyUI。**提交任务、列工作流、看工作流详情都会触发这一步**（等到 `/system_stats` 通为止，上限 `readyTimeoutMs`），所以不用先手动启动；只停自己拉起的进程 |
 | `idleShutdownMs` | 空闲多久后停止「自己拉起的」进程。**默认 `0`（不回收）**——`/queue` 只能看到 prompt 队列、看不到模型下载，回收容易在你拉大模型时把进程打断；想省显存再设成 `300000`。开着时回收前会先问 `/queue`，**有任务在跑或在排队就顺延**；外部实例永不被停 |
-| `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开 |
+| `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开。可关的：`panel.gallery` / `panel.workflow` / `panel.tags` / `panel.poses` / `panel.costumes` / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru` / `tool.sync-wait`（关掉后出图工具不再接受 `wait`，一律异步） |
 | `timeoutMs` | 单次 HTTP 请求超时。`/run`、`/rerun` 的 `timeoutMs` 另外用来**放宽**后台盯守时长（下限 30 分钟，传更小的值会被抬高，实际预算写在返回的 `notes` 里） |
 | `pollIntervalMs` | 执行状态轮询间隔 |
+| `runWait` | 出图工具默认等不等：`async`（默认，提交完就把控制权交回对话，出图完成后插件往会话推一条消息）或 `sync`（等到产物落盘才返回，顺带登记资产索引）。**可以在「工作流管理」面板上直接开关**，改完下一次提交即生效；工具调用里显式传 `wait` 仍以它为准。注意**配置优先于环境变量**：patch 里写了这一项之后 `COMFYUI_RUN_WAIT` 就不生效了，想用环境变量要先删掉那一行 |
+| `runWaitMaxMs` | 同步等待的上限，默认 `1800000`（30 分钟），夹到 `[1s, 30min]`。**与 `timeoutMs` 是两件事**：后者是单次 HTTP 请求超时（默认 2 分钟），拿它当等待上限会让「同步」变成「等 2 分钟然后返回 pending」，而正常出图就能超过 2 分钟 |
 | `progressStream` | 用 `/ws` 读精确进度（默认 `false`）。**可以在「工作流管理」面板上直接开关**，不用改这个文件 —— 这里的值只是"默认值"，面板上的开关写的是插件数据目录的 `settings.json`，改完下一次提交就生效。也可用 `COMFYUI_PROGRESS_WS=1`。开了之后面板提交的记录会带 `progress: {value, max}`；只影响 `/run`、`/rerun`，工具侧没有 |
 | `roots` | 额外纳入资产库的目录（默认已含当前工作区、`dsh-comfyui-image` 的 `outputDir`、产物目录） |
 | `assetRoots` | 额外的**可写**根。`assertWritable` 取的是全部授权根的合集（`roots` / 工作区 / cwd / 产物目录 / uploads / assetRoots），只有落在合集之外才拒绝写入 |
@@ -74,12 +79,12 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | 工具 | 作用 |
 | --- | --- |
 | `comfyui_workflow` | 工作流的**四档只读视角**：不给参数列可用工作流（id、标题、用途、底模、输入种类、输出形状；被停用的不列出，`hiddenCount` 告知藏了几条）；给 `workflowId` 看 IO 面与节点清单（顺带报缺节点、缺模型与替代建议）；再加 `nodeId` 看单节点完整配置；给 `audit: true` 体检全库。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
-| `comfyui_run` | **默认异步**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait` 同步等（`true` 或直接给毫秒数，一参两用）、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
+| `comfyui_run` | **默认按配置 `runWait`（内置 async）**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait` 同步等（`true` 或直接给毫秒数，一参两用）、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
 | `comfyui_node_search` | 按类名 / 显示名 / 别名 / 分类 / 输入输出类型 / 包名搜索本机节点，四档排序。默认只回一行摘要，`detail` 才给输入输出 |
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |
 | `comfyui_runs` | 查任务状态：正在跑（`state: running`）、排队中（带 `queuePosition`）、最近完成或失败的。进度只落记录、**不进对话**，所以不打断当前回合。`progress` 字段只在开启 `progressStream` 时出现，而且**只对面板 `/run`、`/rerun` 提交的运行有**（工具提交的没有）——缺这个字段不代表异常；开启后百分比按采样节点重置，会回跳 |
-| `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数，或不同工作流各跑一次）。逐条报结果，**一条失败不影响其它条**；默认全部异步 |
+| `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数，或不同工作流各跑一次）。逐条报结果，**一条失败不影响其它条**；默认按配置 `runWait`（内置 async，即全部异步） |
 | `danbooru_lookup` | 把名字转成 Danbooru tag，**两条路径**：给 `query` 查单个（走本地库，没命中自动联网兜底）；给 `queries` 查一批（上限 50，**只查本地不联网** —— 一次查几十个还逐个联网会慢且容易限流，缺哪个再用 `query` 补）。`kind` 可限定角色 / 画师 / 作品 / 通用四类。查「长发」→`long_hair`、「东方Project」→`touhou` |
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
 | `comfyui_pose` | 姿势库的**两条路径**：给 `query` 搜索（288 组 / 1439 角度，按中文名、编号、分类；返回 `id` 与角度数，不含图片；默认全给，`onlySafe` 才收窄到常规 98 组）；给 `id` 取图（某个角度或正面的线稿落进 uploads，可直接当 ControlNet / 图生图的输入图） |
@@ -269,7 +274,7 @@ src/shared/                       公用逻辑：host / comfy / workflow / run /
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
-src/entries/                      九个组件 entry 的入口（core 即 src/index.ts）
+src/entries/                      十个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 

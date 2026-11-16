@@ -34,6 +34,7 @@ function makeDeps(options = {}) {
 
   const runs = new RunRegistry(outDir)
   let submitted = 0
+  let polls = 0
   const captured = []
   const deps = {
     client: {
@@ -49,7 +50,7 @@ function makeDeps(options = {}) {
         return { promptId: `pid-${submitted}`, warnings: [] }
       },
       async queue() { return { running: [], pending: [] } },
-      async history() { return options.neverDone === true ? undefined : {} },
+      async history() { polls += 1; return options.neverDone === true ? undefined : {} },
       async view() { return Buffer.alloc(0) },
     },
     workflowsDir: wfDir,
@@ -63,6 +64,7 @@ function makeDeps(options = {}) {
     _dir: dir,
     _outDir: outDir,
     _captured: () => captured,
+    _polls: () => polls,
   }
   return deps
 }
@@ -73,6 +75,46 @@ function writeSidecar(dir, name, payload) {
   fs.writeFileSync(file, JSON.stringify(payload))
   return file
 }
+
+test('不传 wait 时按配置 runWait 决定：sync 真的等，async 立刻返回', async () => {
+  // 这条守的是「三处收口」里 rerun 那支：把 rerun.ts 的 resolveWait 换回
+  // parseWait(args.wait, deps.timeoutMs) 之后，sync 分支不会去 poll，这里会红。
+  const sync = makeDeps({ neverDone: true })
+  const sidecarSync = writeSidecar(sync._dir, 's.png.json', { workflowId: 'wf', vars: { seed: 7 } })
+  const syncResult = await rerunTool({
+    ...sync,
+    runWaitMaxMs: 300,
+    runWait: () => 'sync',
+  }).execute({ from: sidecarSync })
+  assert.equal(syncResult.ok, true)
+  assert.ok(sync._polls() > 0, '配置成 sync 时 rerun 必须真的去 poll —— 否则开关对它是摆设')
+  fs.rmSync(sync._dir, { recursive: true, force: true })
+
+  const async_ = makeDeps({ neverDone: true })
+  const sidecarAsync = writeSidecar(async_._dir, 'a.png.json', { workflowId: 'wf', vars: { seed: 7 } })
+  const asyncResult = await rerunTool({
+    ...async_,
+    runWaitMaxMs: 300,
+    runWait: () => 'async',
+  }).execute({ from: sidecarAsync })
+  assert.equal(asyncResult.ok, true)
+  assert.equal(async_._polls(), 0, '默认 async 不该 poll')
+  fs.rmSync(async_._dir, { recursive: true, force: true })
+})
+
+test('组件 tool.sync-wait 关掉时 rerun 也不等（即使配置是 sync）', async () => {
+  const deps = makeDeps({ neverDone: true })
+  const sidecar = writeSidecar(deps._dir, 'off.png.json', { workflowId: 'wf', vars: { seed: 7 } })
+  const result = await rerunTool({
+    ...deps,
+    runWaitMaxMs: 300,
+    runWait: () => 'sync',
+    syncWait: false,
+  }).execute({ from: sidecar })
+  assert.equal(result.ok, true)
+  assert.equal(deps._polls(), 0, '组件关掉 = 一律异步')
+  fs.rmSync(deps._dir, { recursive: true, force: true })
+})
 
 test('从 sidecar 复现：参数逐键沿用', async () => {
   const deps = makeDeps()

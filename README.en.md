@@ -8,7 +8,7 @@ There are six user-facing panels — Assets, Workflows, Tags, Poses, Costumes, a
 
 > This plugin is the successor to [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album); asset browsing is inherited from it (shared code lineage). Running both gives you two entry points and two delete buttons — we recommend uninstalling the album plugin. `scripts/migrate-album.mjs` ships only in the repository: if you installed from a package you'll need to clone the repo and run it there.
 
-## Nine components
+## Ten components
 
 Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — visible in the host's Settings → Plugins, and individually toggleable.
 
@@ -22,10 +22,13 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | `comfyui-workbench:costumes` | panel + tools | Costume library: **the panel shows the real-style set only** (1,407 photo-style outfits, no people in frame); a second 1,320-outfit anime-style set is available through `comfyui_costume { source: "anime" }` (no people either) — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers one `comfyui_costume` tool (give `query` to search, `id` to fetch) |
 | `comfyui-workbench:generate` | tools | `comfyui_workflow`, `comfyui_compose`, `comfyui_run`, `comfyui_run_batch`, `comfyui_rerun`, `comfyui_runs`, `comfyui_node_search` |
 | `comfyui-workbench:edit` | tools | `comfyui_workflow_edit` |
+| `comfyui-workbench:sync-wait` | tools (capability switch) | Decides whether the three generation tools expose a `wait` argument; when off they always run async and the panel's "wait for the result" switch disappears. Registers no tools or routes — **it can only be turned off via `disabledComponents`** (see below) |
 | `comfyui-workbench:danbooru` | tools | `danbooru_lookup`, `danbooru_sync`: character / artist / copyright / general tag library with Chinese names (99,372 tags). Does not touch the ComfyUI runtime, so it can be disabled on its own |
 | `comfyui-workbench:terminal` | panel | ComfyUI terminal: shows child-process output or `user/comfyui.log` and can start the service from the panel |
 
 Disabling one affects only that one. Turn off `gallery`, for example and its routes 404 while workflow admin and the tools keep working. Two exceptions: bulk workflow ZIP export needs images and sidecars, so it depends on the gallery; and disabling `core` disables the whole plugin — the HTTP API and browser bundle both disappear.
+
+**`sync-wait` is the one exception that can only be turned off via `disabledComponents`.** The entry itself registers nothing; the switch is read by the `generate` entry (the one that actually assembles `comfyui_run` / `comfyui_rerun` / `comfyui_run_batch`). Stopping it in the host's plugin page leaves no `tool.sync-wait` key in `disabledComponents`, so the `wait` argument stays — write `disabledComponents: ['tool.sync-wait']` instead.
 
 ## Install
 
@@ -37,7 +40,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-Restart DSH afterwards. Ten entries get inserted into `cordis.patch.yml` (the root `core` plus nine components); their config is shared through a YAML anchor so you write it once:
+Restart DSH afterwards. Eleven entries get inserted into `cordis.patch.yml` (the root `core` plus ten components); their config is shared through a YAML anchor so you write it once:
 
 ```yaml
 - insert:
@@ -62,9 +65,11 @@ Restart DSH afterwards. Ten entries get inserted into `cordis.patch.yml` (the ro
 | `workflowsDir` | Workflow repository, default `~/.dsh-comfyui-workbench/workflows` |
 | `autoStart` | Whether to launch ComfyUI when a local installation is detected. **Submitting a run, listing workflows and inspecting a workflow all trigger it** (waits until `/system_stats` responds, capped by `readyTimeoutMs`), so there is no need to start it by hand. Only processes we started are ever stopped |
 | `idleShutdownMs` | How long an **idle** instance we started is kept. **Defaults to `0` (never reclaimed)** — `/queue` only shows the prompt queue, not model downloads, so reclaiming tends to interrupt you mid-download; set `300000` if you want the memory back. When enabled it asks `/queue` first and **anything running or queued postpones it**; external instances are never stopped |
-| `disabledComponents` | Components to turn off, e.g. `['panel.gallery']`. An empty array means all are on |
-| `timeoutMs` | Per-request HTTP timeout; also the default wait ceiling for `comfyui_run` |
+| `disabledComponents` | Components to turn off, e.g. `['panel.gallery']`. An empty array means all are on. Available: `panel.gallery` / `panel.workflow` / `panel.tags` / `panel.poses` / `panel.costumes` / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru` / `tool.sync-wait` (the last one hides the `wait` argument, so generation always runs async) |
+| `timeoutMs` | Per-request HTTP timeout. **Not** the wait ceiling — that is `runWaitMaxMs` |
 | `pollIntervalMs` | Status polling interval while a run is in flight |
+| `runWait` | Whether tool runs wait by default: `async` (default — hands control back to the conversation, the plugin pushes a message when the image lands) or `sync` (waits for artifacts on disk and indexes them). Toggle it in the Workflow Admin panel; takes effect on the next submission. An explicit `wait` argument still wins. Note **config beats environment variables**: once this key is written in the patch, `COMFYUI_RUN_WAIT` has no effect |
+| `runWaitMaxMs` | Ceiling for the synchronous wait, default `1800000` (30 min), clamped to `[1s, 30min]`. **Not the same thing as `timeoutMs`** — that is the per-request HTTP timeout (default 2 min), and using it as the wait ceiling turns "sync" into "wait 2 minutes then return pending", while real generations regularly exceed 2 minutes |
 | `roots` | Extra directories to include in the asset library (the current workspace, `dsh-comfyui-image`'s `outputDir` and the output dir are already included) |
 | `assetRoots` | Extra **writable** roots. `assertWritable` takes the union of all authorized roots (`roots` / workspaces / cwd / output dir / uploads / `assetRoots`) and rejects writes that land outside it |
 
@@ -73,12 +78,12 @@ Restart DSH afterwards. Ten entries get inserted into `cordis.patch.yml` (the ro
 | tool | what it does |
 | --- | --- |
 | `comfyui_workflow` | **Four read-only views of one object**: no args lists available workflows (id, title, purpose note, base model, input kinds, output shape; disabled ones omitted with `hiddenCount`); with `workflowId` gives the IO surface plus node list and flags missing nodes / missing models with substitutes; add `nodeId` for one node's full config; `audit: true` checks the whole library. When `/object_info` is unreachable it does not flag missing models — that would report "offline" as "missing models" |
-| `comfyui_run` | **Asynchronous by default**: returns a `promptId` immediately, watches in the background and pushes the result into the conversation when the image is done. Supports `wait` for synchronous waiting (pass `true`, or a millisecond count — one parameter, two meanings) and `promptId` for re-checking. Disabled workflows are rejected outright. **Starts ComfyUI automatically** when it is not running (waits until `/system_stats` responds, capped by `readyTimeoutMs`, 3 minutes by default) and submissions queue behind that startup — no need to start ComfyUI by hand, and do not kill it while it is loading or downloading models |
+| `comfyui_run` | **Depends on `runWait` (built-in async)**: by default it returns a `promptId` immediately, watches in the background and pushes the result into the conversation when the image is done. Supports `wait` for synchronous waiting (pass `true`, or a millisecond count — one parameter, two meanings) and `promptId` for re-checking. Disabled workflows are rejected outright. **Starts ComfyUI automatically** when it is not running (waits until `/system_stats` responds, capped by `readyTimeoutMs`, 3 minutes by default) and submissions queue behind that startup — no need to start ComfyUI by hand, and do not kill it while it is loading or downloading models |
 | `comfyui_workflow_edit` | Edits title / description / tags and single-node parameters. Changes apply to the next run only by default; writing back to the template requires `persist` + `expectHash`. Parameters bound to a variable cannot be edited here (`param_bound`) — pass the variable through `comfyui_run`'s `vars` instead |
 | `comfyui_node_search` | Searches installed nodes by class name / display name / alias / category / input-output type / package, with four ranking tiers. Returns a one-line summary by default; `detail` adds inputs and outputs |
 | `comfyui_rerun` | Runs again with the parameters an existing artifact used (or makes variants). Parameters come from the sidecar next to the artifact, so there is no need to copy seed / prompt by hand |
 | `comfyui_runs` | Checks run state: running (`state: running`), queued (with `queuePosition`), recently finished or failed. Progress lands in the record only and **never enters the conversation**, so it will not interrupt the current turn. `progress` appears only with `progressStream` on, and **only for runs submitted from the panel via `/run` or `/rerun`** (not tool submissions) — a missing field is not an anomaly; with it on, the percentage resets per sampling node and can jump backwards |
-| `comfyui_run_batch` | Submits several runs at once (one workflow with different parameters, or different workflows). Reports per item — **one failure does not affect the others**; asynchronous by default |
+| `comfyui_run_batch` | Submits several runs at once (one workflow with different parameters, or different workflows). Reports per item — **one failure does not affect the others**; follows `runWait` (built-in async, i.e. all asynchronous) |
 | `danbooru_lookup` | Turns names into Danbooru tags, **two paths in one tool**: give `query` for a single name (local library, falls back online when not found), give `queries` for a batch (up to 50, **local only, no network** — 50 online lookups would be slow and rate-limited; fill the gaps with `query`). `kind` narrows character / artist / copyright / general. `长发` → `long_hair`, `东方Project` → `touhou` |
 | `danbooru_sync` | Pulls character / artist tags (including Chinese names) into the local library. Thousands of requests — call it only when the user asks |
 | `comfyui_pose` | Two paths in one tool — give `query` to **search** the reference library (288 poses / 1,439 angles; by Chinese name, code or category; returns the `id` and angle count, no images; `onlySafe` narrows it to the 98 regular poses), give `id` to **fetch** that angle's sketch (or the pose's front view) into the local uploads directory — the returned path is ready as a workflow image input (ControlNet / img2img) |
@@ -265,7 +270,7 @@ src/shared/                        shared logic: host / comfy / workflow / run /
 src/http/                          HTTP prefix and dispatch (router)
 src/client/                        UI shell: tabs, api, i18n, icons
 src/index.ts                       package-root entry (browser bundle + shared runtime init)
-src/entries/                       nine component entries (core is src/index.ts)
+src/entries/                       ten component entries (core is src/index.ts)
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 

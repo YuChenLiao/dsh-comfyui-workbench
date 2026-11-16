@@ -33,6 +33,9 @@ export async function apiJson(route: string, params?: Record<string, string>): P
 export interface TogglesView {
   progressStream: boolean
   progressStreamSource: 'toggle' | 'config'
+  /** 出图默认等不等：`async` 提交完就还控制权，`sync` 等到产物落盘。 */
+  runWait: 'async' | 'sync'
+  runWaitSource: 'toggle' | 'config'
 }
 
 /** 宿主配置（界面上要显示的默认路径等）。 */
@@ -60,10 +63,25 @@ export interface HostConfig {
  * @param progressStream - 目标状态，或 `null` 清掉覆盖。
  */
 export async function setProgressStream(progressStream: boolean | null): Promise<TogglesView> {
+  return postToggles({ progressStream })
+}
+
+/**
+ * 切「出图默认等不等」这个面板开关。
+ *
+ * 与 {@link setProgressStream} 同一条路：写 `settings.json`，下一次提交就生效。
+ * 传 `null` 表示清掉覆盖、回退到配置里的 `runWait`。
+ */
+export async function setRunWait(runWait: 'async' | 'sync' | null): Promise<TogglesView> {
+  return postToggles({ runWait })
+}
+
+/** 两个开关共用的一次 POST：写 `settings.json` 并回读生效值。 */
+async function postToggles(patch: Record<string, unknown>): Promise<TogglesView> {
   const res = await fetch(`${API}/config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ progressStream }),
+    body: JSON.stringify(patch),
   })
   let data: unknown = null
   try {

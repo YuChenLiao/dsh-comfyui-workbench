@@ -8,7 +8,7 @@ import type { Artifact } from '../../../shared/run/index.js'
 import { buildSurface, readEntry } from '../../../shared/workflow/index.js'
 import { detectFormat, formatHint } from '../../../shared/workflow/detect.js'
 import type { ApiWorkflow, WorkflowIOSurface } from '../../../shared/workflow/types.js'
-import { asRecord, asString, parseWait } from '../../../shared/tools/types.js'
+import { asRecord, asString, resolveWait, waitSchema } from '../../../shared/tools/types.js'
 import type { ToolBlock, ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 
 /**
@@ -134,17 +134,15 @@ export function runTool(deps: ToolDeps): ToolSpec {
           additionalProperties: true,
         },
         outputPath: { type: 'string', description: '产物落盘目录；不传用配置的 outputDir' },
-        wait: {
-          type: ['boolean', 'integer'],
-          description:
-            '要不要同步等到出图：`false`（默认）提交后立刻返回 promptId，出完图插件会主动通知对话；'
-            + '`true` 等到产物落盘或超时；也可以直接给毫秒数（如 300000），表示等，但最多等这么久。'
-            + '不再有独立的 waitMs / timeoutMs —— 要设上限就把数字传给 wait。',
-        },
+        ...waitSchema(deps,
+          '要不要同步等到出图。不传时按配置 `runWait`（内置默认 async：提交后立刻返回 promptId，'
+          + '出完图插件主动通知对话）；`false` 强制不等；`true` 等到产物落盘或超时；'
+          + '也可以直接给毫秒数（如 300000），表示等，但最多等这么久。'
+          + '不再有独立的 waitMs / timeoutMs —— 要设上限就把数字传给 wait。'),
         tags: {
           type: 'array',
           items: { type: 'string' },
-          description: '产物标签，登记进资产索引便于之后筛选。注意只有 wait:true 同步取回产物时才会登记；默认异步路径由后台通知落盘，不写索引。',
+          description: '产物标签，登记进资产索引便于之后筛选。注意只有同步等到了产物（wait 为真，或配置 runWait: sync）才会登记；异步路径由后台通知落盘，不写索引。',
         },
 
       },
@@ -229,7 +227,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
         ? asString(args.outputPath).trim()
         : (deps.resolveOutputDirFor?.(exec?.agent) ?? deps.outputDir)
       // `wait` 一参两用：布尔表示等不等，数字表示"等，但最多这么久"。规则见 parseWait。
-      const { shouldWait, waitMs } = parseWait(args.wait, deps.timeoutMs)
+      const { shouldWait, waitMs } = resolveWait(deps, args.wait)
 
       // `RunOptions.timeoutMs` 是必填字段，但 submitWorkflow 内部并不读它 ——
       // 单次 HTTP 由 ComfyClient 的 requestTimeoutMs 管，等服务就绪由 readyTimeoutMs 管。

@@ -41,6 +41,9 @@ export function apply(ctx: HostContext, config: unknown): void {
     outputDir: rt.outputDir,
     timeoutMs: rt.settings.timeoutMs,
     pollIntervalMs: rt.settings.pollIntervalMs,
+    // 不传 runWait / runWaitMaxMs / syncWait：这条 entry 只注册 tool.workflow-edit 那一组，
+    // 而它们全在 tool.generate 组里（registry 先按 enabled 跳过再 build，所以传了也用不上）。
+    // 想要同步等待的语义，改 generate.ts —— 那是唯一真正装配这三个工具的地方。
     overrides: new Map(),
     runs: rt.runs,
     index: rt.index,
