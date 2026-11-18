@@ -90,6 +90,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
 | `comfyui_pose` | 姿势库的**两条路径**：给 `query` 搜索（288 组 / 1439 角度，按中文名、编号、分类；返回 `id` 与角度数，不含图片；默认全给，`onlySafe` 才收窄到常规 98 组）；给 `id` 取图（某个角度或正面的线稿落进 uploads，可直接当 ControlNet / 图生图的输入图） |
 | `comfyui_costume` | 衣装库的**两条路径**：给 `query` 搜索（1407 套，按中文描述、标签、英文关键词或编号；返回 `id` 与 **`keywords`**，后者可直接拼进提示词）；给 `id` 取图（落进 uploads，当服装参考图） |
+| `comfyui_character` | 角色库的**两条路径**：给 `query` 搜索（20 个 AI 娘设定板，按角色名 / 品牌 / 描述里的词；返回 `id`、副标题、品牌与可用视图）；给 `id` + `view` 取图（`turnaround` 三视图 / `expression` / `outfit` / `props` / `sheet`，落进 uploads 当参考图）。许可 CC BY-NC-SA 4.0，仅非商业参考 |
 | `comfyui_compose` | 把素材整理成**一次可直接交给 `comfyui_run` 的调用**：选工作流、把图落进 uploads、按槽位语义填 vars、拼好提示词。它自己不出图；`assumptions` 写清每条推断，不对就用 `extraVars` 覆盖 |
 
 工作流的"可用"由 `<id>.meta.json` 的 `enabled` 决定（缺省 `true`），面板与 `comfyui_workflow_edit` 写同一份文件。
@@ -215,6 +216,17 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 - **只读 + 复制**：点「复制」拿到裸 tag，没有草稿状态。想攒提示词用 `{{变量}}` 那套工作流模板。
 - 首屏约 550ms（读 129ms + 建索引 420ms，四类 99372 条），之后查询 **1–3ms**。关掉组件：`disabledComponents: ["panel.tags"]`。
 
+## 角色库
+
+**20 个 AI 娘角色设定板**（共 100 张切片），用来给工作流找一个角色的标准外观：三视图、表情、服装拆解、道具细节。素材出自 **lmy414** 的 [ai-chan-sheets](https://github.com/lmy414/ai-chan-sheets)，每个条目的具体作者见上游各目录的 `制作清单.json`（01 号起多数是 ZipZipPipe / 胖次狐）。
+
+- **一个角色挂五个槽位**，取图要指明要哪张：`turnaround`（三视图，默认）/ `expression`（表情）/ `outfit`（服装拆解）/ `props`（道具细节）/ `sheet`（整板总览）。这是它和另两个库的结构差别——姿势是「一组多角度」，衣装是「一套一张」，角色是「一个角色五张」。
+- **设定板本身就是横的**，一张板里已经排好正面 / 侧面 / 背面，所以喂给模型时通常**不用再拼图**；面板卡片也用 4:3 横版，竖卡片会把三视图裁成中间一个正面。
+- **图不随包**：`data/characters/catalog.json` 只有 id、角色名、副标题、品牌与五个槽位的相对路径。图在 GitHub 的 `设定图/` 与 `docs/previews/` 两棵子树下，运行时经服务端代理按需取、落本机缓存，**不预取也不镜像**。
+- **15 个品牌**：DeepSeek 4 / OpenAI 2 / 小米 2，其余智谱 GLM、百度、阿里、月之暗面、字节、MiniMax、xAI、Google、Anthropic、美团、Mistral、Meta 各 1。面板按品牌筛，点开卡片才拉那五张——20×5 全预加载会把上游打满。
+- **许可比另两个库严格一档**：CC BY-NC-SA 4.0，可作生成参考，但**不得商用，也不得再分发图像数据**。12–14 号上游标注作者为 `unknown`，这里照实保留。详见 [data/characters/NOTICE.md](data/characters/NOTICE.md)。
+- 关掉组件：`disabledComponents: ["panel.characters"]`。数据更新：`npm run characters:import`（`npm run characters:check` 只校验不写盘）。
+
 ## 姿势库
 
 第四块：**288 组人体姿势、1439 个角度**的人体线稿，用来给工作流找一个"人要怎么站/坐/躺"的参考图。素材出自 **ギア**（[@giaaibusi](https://x.com/giaaibusi)）的 [AI Pose Gallery](https://ai-pose-gallery.pages.dev/)；中文译名、分类体系与四体系划分来自 **Anhao** 的 [中文版镜像](https://github.com/anhao/ai-pose-gallery-zh)。本插件只做聚合，没有重画任何一张线稿 —— 详见[致谢](#数据来源与致谢)。
@@ -265,6 +277,7 @@ src/client/styles.css             工作台外壳样式（面板的样式各自�
 src/components/panel-gallery/     资产库：server/(路由/扫描/索引/缩略图) + client/
 src/components/panel-workflow/    工作流管理：server/(路由/运行/导入/配置) + client/
 src/components/panel-tags/        标签库：server/(索引/搜索/更新任务) + client/
+src/components/panel-characters/  角色库：server/(目录/路由/工具) + client/
 src/components/panel-poses/       姿势库：server/(目录/取图代理/工具) + client/
 src/components/panel-costumes/    衣装库：server/(目录/路由/工具) + client/
 src/components/panel-terminal/    终端面板：server/(日志抓取) + client/
@@ -275,11 +288,11 @@ src/shared/                       公用逻辑：host / comfy / workflow / run /
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
-src/entries/                      十个组件 entry 的入口（core 即 src/index.ts）
+src/entries/                      十一个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 
-`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条 `boot()` + 真实 fetch 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。目前覆盖 **9/14**；剩下 5 条（`/delete`、`/delete-many`、`/assets/rebuild`、`/service/stop`、`/free`）挂在脚本的 `KNOWN_UNTESTED` 白名单里，那份清单只该缩短。
+`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条 `boot()` + 真实 fetch 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。目前覆盖 **11/16**；剩下 5 条（`/delete`、`/delete-many`、`/assets/rebuild`、`/service/stop`、`/free`）挂在脚本的 `KNOWN_UNTESTED` 白名单里，那份清单只该缩短。
 
 ## 开发
 
