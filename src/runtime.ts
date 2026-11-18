@@ -87,6 +87,7 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
     'panel.tags': !disabled.has('panel.tags'),
     'panel.poses': !disabled.has('panel.poses'),
     'panel.costumes': !disabled.has('panel.costumes'),
+    'panel.characters': !disabled.has('panel.characters'),
     'panel.terminal': !disabled.has('panel.terminal'),
     'tool.generate': !disabled.has('tool.generate'),
     'tool.workflow-edit': !disabled.has('tool.workflow-edit'),

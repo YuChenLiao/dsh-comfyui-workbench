@@ -1,0 +1,750 @@
+{
+  "version": 1,
+  "source": "lmy414/ai-chan-sheets",
+  "upstream": "https://github.com/lmy414/ai-chan-sheets",
+  "commit": "415238bfdafa0fc153c8c0098e8efd4b57b2d5a5",
+  "origin": "https://raw.githubusercontent.com/lmy414/ai-chan-sheets/415238bfdafa0fc153c8c0098e8efd4b57b2d5a5",
+  "license": "CC BY-NC-SA 4.0",
+  "attribution": "角色设定图来自 lmy414/ai-chan-sheets（作者 ZipZipPipe 等），仅作非商业参考用途",
+  "note": "仓库只分发元数据，图片由插件运行时按需代理，不预取、不镜像、不再分发",
+  "characterCount": 20,
+  "categories": {
+    "智谱 GLM": 1,
+    "OpenAI": 2,
+    "DeepSeek": 4,
+    "百度": 1,
+    "阿里": 1,
+    "月之暗面": 1,
+    "字节": 1,
+    "MiniMax": 1,
+    "xAI": 1,
+    "Google": 1,
+    "Anthropic": 1,
+    "小米": 2,
+    "美团": 1,
+    "Mistral": 1,
+    "Meta": 1
+  },
+  "characters": [
+    {
+      "id": "c01",
+      "dir": "设定图/01_智谱GLM娘_阔耳狐娘",
+      "name": "智谱 GLM 娘",
+      "subtitle": "01 · 阔耳狐娘",
+      "alt": "智谱 GLM 娘（阔耳狐娘）的横版设定图",
+      "brand": "智谱 GLM",
+      "preview": "docs/previews/01.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/01_智谱GLM娘_阔耳狐娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 991321,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/01_智谱GLM娘_阔耳狐娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 737690,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/01_智谱GLM娘_阔耳狐娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 557987,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/01_智谱GLM娘_阔耳狐娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 303049,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/01_智谱GLM娘_阔耳狐娘/完整设定图_浏览预览.jpg",
+          "bytes": 1514568,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c02",
+      "dir": "设定图/02_GPT娘_白龙娘",
+      "name": "GPT 娘",
+      "subtitle": "02 · 白龙娘",
+      "alt": "GPT 娘（白龙娘）的横版设定图",
+      "brand": "OpenAI",
+      "preview": "docs/previews/02.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1212528,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 601343,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 671247,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 259196,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/02_GPT娘_白龙娘/完整设定图_浏览预览.jpg",
+          "bytes": 1271629,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c03",
+      "dir": "设定图/03_DeepSeek娘_鲸鱼娘",
+      "name": "DeepSeek 娘",
+      "subtitle": "03 · 鲸鱼娘",
+      "alt": "DeepSeek 娘（鲸鱼娘）的横版设定图",
+      "brand": "DeepSeek",
+      "preview": "docs/previews/03.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1005119,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 799522,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 754371,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 393273,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/03_DeepSeek娘_鲸鱼娘/完整设定图_浏览预览.jpg",
+          "bytes": 1935057,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c04",
+      "dir": "设定图/04_文心一言娘",
+      "name": "文心一言娘",
+      "subtitle": "04 · 蓝发轮椅少女",
+      "alt": "文心一言娘（蓝发轮椅少女）的横版设定图",
+      "brand": "百度",
+      "preview": "docs/previews/04.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/04_文心一言娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1422393,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/04_文心一言娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 846336,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/04_文心一言娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 544819,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/04_文心一言娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 416815,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/04_文心一言娘/完整设定图_浏览预览.jpg",
+          "bytes": 2078118,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c05",
+      "dir": "设定图/05_通义千问娘_Qwen",
+      "name": "通义千问娘",
+      "subtitle": "05 · Qwen",
+      "alt": "通义千问娘（Qwen）的横版设定图",
+      "brand": "阿里",
+      "preview": "docs/previews/05.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/05_通义千问娘_Qwen/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1095371,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/05_通义千问娘_Qwen/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 858221,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/05_通义千问娘_Qwen/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 606659,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/05_通义千问娘_Qwen/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 261752,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/05_通义千问娘_Qwen/完整设定图_浏览预览.jpg",
+          "bytes": 1306032,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c06",
+      "dir": "设定图/06_Kimi娘_Moonshot",
+      "name": "Kimi 娘",
+      "subtitle": "06 · Moonshot",
+      "alt": "Kimi 娘（Moonshot）的横版设定图",
+      "brand": "月之暗面",
+      "preview": "docs/previews/06.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/06_Kimi娘_Moonshot/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1177378,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/06_Kimi娘_Moonshot/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 822411,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/06_Kimi娘_Moonshot/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 813635,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/06_Kimi娘_Moonshot/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 243129,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/06_Kimi娘_Moonshot/完整设定图_浏览预览.jpg",
+          "bytes": 1303744,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c07",
+      "dir": "设定图/07_豆包Seed娘",
+      "name": "豆包 Seed 娘",
+      "subtitle": "07 · 紫发高马尾",
+      "alt": "豆包 Seed 娘（紫发高马尾）的横版设定图",
+      "brand": "字节",
+      "preview": "docs/previews/07.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/07_豆包Seed娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1013390,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/07_豆包Seed娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 734906,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/07_豆包Seed娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 829683,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/07_豆包Seed娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 406545,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/07_豆包Seed娘/完整设定图_浏览预览.jpg",
+          "bytes": 1957453,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c08",
+      "dir": "设定图/08_MiniMax娘_海螺AI",
+      "name": "MiniMax 娘",
+      "subtitle": "08 · 海螺 AI",
+      "alt": "MiniMax 娘（海螺 AI）的横版设定图",
+      "brand": "MiniMax",
+      "preview": "docs/previews/08.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/08_MiniMax娘_海螺AI/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 800284,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/08_MiniMax娘_海螺AI/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 903199,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/08_MiniMax娘_海螺AI/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 575610,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/08_MiniMax娘_海螺AI/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 370269,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/08_MiniMax娘_海螺AI/完整设定图_浏览预览.jpg",
+          "bytes": 1757628,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c09",
+      "dir": "设定图/09_Grok娘_xAI",
+      "name": "Grok 娘",
+      "subtitle": "09 · 金发吸血鬼",
+      "alt": "Grok 娘（金发吸血鬼）的横版设定图",
+      "brand": "xAI",
+      "preview": "docs/previews/09.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/09_Grok娘_xAI/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1234496,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/09_Grok娘_xAI/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 900256,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/09_Grok娘_xAI/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 594999,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/09_Grok娘_xAI/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 330412,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/09_Grok娘_xAI/完整设定图_浏览预览.jpg",
+          "bytes": 1570195,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c10",
+      "dir": "设定图/10_Gemini娘",
+      "name": "Gemini 娘",
+      "subtitle": "10 · 四角星猫耳",
+      "alt": "Gemini 娘（四角星猫耳）的横版设定图",
+      "brand": "Google",
+      "preview": "docs/previews/10.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/10_Gemini娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1139580,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/10_Gemini娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 916157,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/10_Gemini娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 655776,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/10_Gemini娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 245169,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/10_Gemini娘/完整设定图_浏览预览.jpg",
+          "bytes": 1336753,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c11",
+      "dir": "设定图/11_Claude娘_Anthropic",
+      "name": "Claude 娘",
+      "subtitle": "11 · 橘发与菊花纹",
+      "alt": "Claude 娘（橘发与菊花纹）的横版设定图",
+      "brand": "Anthropic",
+      "preview": "docs/previews/11.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1488725,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 1017009,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 656093,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 580752,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/11_Claude娘_Anthropic/完整设定图_浏览预览.jpg",
+          "bytes": 2773574,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c12",
+      "dir": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼",
+      "name": "DeepSeek 娘",
+      "subtitle": "12A · Q 版冬装 · 冬装小肥鱼",
+      "alt": "DeepSeek 娘（Q 版冬装 · 冬装小肥鱼）的横版设定图",
+      "brand": "DeepSeek",
+      "preview": "docs/previews/12a.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 998781,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 670490,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 581369,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 357439,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼/完整设定图_浏览预览.jpg",
+          "bytes": 1844814,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c12b",
+      "dir": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼2",
+      "name": "DeepSeek 娘",
+      "subtitle": "12B · Q 版冬装 · 冬装小肥鱼 2",
+      "alt": "DeepSeek 娘（Q 版冬装 · 冬装小肥鱼 2）的横版设定图",
+      "brand": "DeepSeek",
+      "preview": "docs/previews/12b.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼2/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1013687,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼2/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 666476,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼2/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 584806,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼2/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 345757,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/12_DeepSeek娘_Q版冬装/冬装小肥鱼2/完整设定图_浏览预览.jpg",
+          "bytes": 1840614,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c13",
+      "dir": "设定图/13_GPT娘_Q版白紫龙娘",
+      "name": "GPT 娘",
+      "subtitle": "13 · Q 版白紫龙娘",
+      "alt": "GPT 娘（Q 版白紫龙娘）的横版设定图",
+      "brand": "OpenAI",
+      "preview": "docs/previews/13.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/13_GPT娘_Q版白紫龙娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 975141,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/13_GPT娘_Q版白紫龙娘/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 689602,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/13_GPT娘_Q版白紫龙娘/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 551124,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/13_GPT娘_Q版白紫龙娘/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 298242,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/13_GPT娘_Q版白紫龙娘/完整设定图_浏览预览.jpg",
+          "bytes": 1689214,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c14",
+      "dir": "设定图/14_DeepSeek娘_Claude工牌工作服",
+      "name": "DeepSeek 娘",
+      "subtitle": "14 · Claude 工牌工作服",
+      "alt": "DeepSeek 娘（Claude 工牌工作服）的横版设定图",
+      "brand": "DeepSeek",
+      "preview": "docs/previews/14.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/14_DeepSeek娘_Claude工牌工作服/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 829422,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/14_DeepSeek娘_Claude工牌工作服/便于查看/横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 655313,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/14_DeepSeek娘_Claude工牌工作服/便于查看/横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 378493,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/14_DeepSeek娘_Claude工牌工作服/便于查看/横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 229566,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/14_DeepSeek娘_Claude工牌工作服/完整设定图_浏览预览.jpg",
+          "bytes": 1294721,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c15",
+      "dir": "设定图/15_MiMo兔娘_甶丶_机能外套",
+      "name": "MiMo 兔娘",
+      "subtitle": "15 · 机能外套 · @甶丶",
+      "alt": "MiMo 兔娘（机能外套 · @甶丶）的横版设定图",
+      "brand": "小米",
+      "preview": "docs/previews/15.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/15_MiMo兔娘_甶丶_机能外套/便于查看/15_MiMo兔娘_甶丶_机能外套_横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 974066,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/15_MiMo兔娘_甶丶_机能外套/便于查看/15_MiMo兔娘_甶丶_机能外套_横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 857491,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/15_MiMo兔娘_甶丶_机能外套/便于查看/15_MiMo兔娘_甶丶_机能外套_横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 616772,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/15_MiMo兔娘_甶丶_机能外套/便于查看/15_MiMo兔娘_甶丶_机能外套_横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 497463,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/15_MiMo兔娘_甶丶_机能外套/完整设定图_浏览预览.jpg",
+          "bytes": 2128334,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c16",
+      "dir": "设定图/16_MiMo兔娘_Immyxxr_女仆装",
+      "name": "MiMo 兔娘",
+      "subtitle": "16 · 女仆装 · @Immyxxr",
+      "alt": "MiMo 兔娘（女仆装 · @Immyxxr）的横版设定图",
+      "brand": "小米",
+      "preview": "docs/previews/16.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/16_MiMo兔娘_Immyxxr_女仆装/便于查看/16_MiMo兔娘_Immyxxr_女仆装_横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 893255,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/16_MiMo兔娘_Immyxxr_女仆装/便于查看/16_MiMo兔娘_Immyxxr_女仆装_横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 677393,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/16_MiMo兔娘_Immyxxr_女仆装/便于查看/16_MiMo兔娘_Immyxxr_女仆装_横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 630594,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/16_MiMo兔娘_Immyxxr_女仆装/便于查看/16_MiMo兔娘_Immyxxr_女仆装_横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 412353,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/16_MiMo兔娘_Immyxxr_女仆装/完整设定图_浏览预览.jpg",
+          "bytes": 1819311,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c17",
+      "dir": "设定图/17_LongCat娘_美团龙猫_现代外套",
+      "name": "LongCat 娘",
+      "subtitle": "17 · 现代外套 · @甶丶",
+      "alt": "LongCat 娘（现代外套 · @甶丶）的横版设定图",
+      "brand": "美团",
+      "preview": "docs/previews/17.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/17_LongCat娘_美团龙猫_现代外套/便于查看/17_LongCat娘_美团龙猫_现代外套_横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 995401,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/17_LongCat娘_美团龙猫_现代外套/便于查看/17_LongCat娘_美团龙猫_现代外套_横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 815331,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/17_LongCat娘_美团龙猫_现代外套/便于查看/17_LongCat娘_美团龙猫_现代外套_横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 567005,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/17_LongCat娘_美团龙猫_现代外套/便于查看/17_LongCat娘_美团龙猫_现代外套_横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 432904,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/17_LongCat娘_美团龙猫_现代外套/完整设定图_浏览预览.jpg",
+          "bytes": 2010958,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c18",
+      "dir": "设定图/18_Mistral娘_法棍猫猫",
+      "name": "Mistral 娘",
+      "subtitle": "18 · 法棍猫猫",
+      "alt": "Mistral 娘（法棍猫猫）的横版设定图",
+      "brand": "Mistral",
+      "preview": "docs/previews/18.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/18_Mistral娘_法棍猫猫/便于查看/18_Mistral娘_法棍猫猫_横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 2187003,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/18_Mistral娘_法棍猫猫/便于查看/18_Mistral娘_法棍猫猫_横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 1057082,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/18_Mistral娘_法棍猫猫/便于查看/18_Mistral娘_法棍猫猫_横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 878323,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/18_Mistral娘_法棍猫猫/便于查看/18_Mistral娘_法棍猫猫_横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 453040,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/18_Mistral娘_法棍猫猫/完整设定图_浏览预览.jpg",
+          "bytes": 2744689,
+          "label": "整板"
+        }
+      }
+    },
+    {
+      "id": "c19",
+      "dir": "设定图/19_Muse娘_Meta_AI",
+      "name": "Muse 娘",
+      "subtitle": "19 · Meta AI",
+      "alt": "Muse 娘（Meta AI）的横版设定图",
+      "brand": "Meta",
+      "preview": "docs/previews/19.webp",
+      "slots": {
+        "turnaround": {
+          "path": "设定图/19_Muse娘_Meta_AI/便于查看/19_Muse娘_Meta_AI_横版完整设定图_01_三视图_查看用.jpg",
+          "bytes": 1343535,
+          "label": "三视图"
+        },
+        "expression": {
+          "path": "设定图/19_Muse娘_Meta_AI/便于查看/19_Muse娘_Meta_AI_横版完整设定图_02_表情_查看用.jpg",
+          "bytes": 821881,
+          "label": "表情"
+        },
+        "outfit": {
+          "path": "设定图/19_Muse娘_Meta_AI/便于查看/19_Muse娘_Meta_AI_横版完整设定图_03_服装_查看用.jpg",
+          "bytes": 700378,
+          "label": "服装"
+        },
+        "props": {
+          "path": "设定图/19_Muse娘_Meta_AI/便于查看/19_Muse娘_Meta_AI_横版完整设定图_04_道具细节_查看用.jpg",
+          "bytes": 304265,
+          "label": "道具"
+        },
+        "sheet": {
+          "path": "设定图/19_Muse娘_Meta_AI/完整设定图_浏览预览.jpg",
+          "bytes": 2041598,
+          "label": "整板"
+        }
+      }
+    }
+  ]
+}

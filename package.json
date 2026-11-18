@@ -1,6 +1,6 @@
 {
   "name": "dsh-comfyui-workbench",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "DSH 的 ComfyUI 工作台：把 ComfyUI 生成的图片与其它产物收进资产库（浏览、检索、删除、批量导出），并支持执行任意 API 格式工作流；工作流对用户只暴露输入与输出，详细节点配置留给模型按需查看与调参。",
   "type": "module",
   "main": "lib/index.js",
@@ -18,7 +18,8 @@
     "./icon": "./icon.svg",
     "./package.json": "./package.json",
     "./terminal": "./lib/entries/terminal.js",
-    "./costumes": "./lib/entries/costumes.js"
+    "./costumes": "./lib/entries/costumes.js",
+    "./characters": "./lib/entries/characters.js"
   },
   "files": [
     "data",
@@ -35,7 +36,8 @@
     "CHANGELOG.md",
     "README.en.md",
     "scripts/import-costumes.mjs",
-    "scripts/import-costumes-anime.mjs"
+    "scripts/import-costumes-anime.mjs",
+    "scripts/import-characters.mjs"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -61,7 +63,10 @@
     "costumes:check": "node scripts/import-costumes.mjs --check",
     "precostumes:import": "node scripts/build.mjs",
     "costumes-anime:import": "node scripts/import-costumes-anime.mjs",
-    "costumes-anime:check": "node scripts/import-costumes-anime.mjs --check"
+    "costumes-anime:check": "node scripts/import-costumes-anime.mjs --check",
+    "characters:import": "node scripts/import-characters.mjs",
+    "characters:check": "node scripts/import-characters.mjs --check",
+    "precharacters:import": "node scripts/build.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -90,6 +90,7 @@ const jobs = [
   entryJob('tags'),
   entryJob('poses'),
   entryJob('costumes'),
+  entryJob('characters'),
   entryJob('generate'),
   entryJob('edit'),
   entryJob('sync-wait'),

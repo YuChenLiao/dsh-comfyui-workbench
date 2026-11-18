@@ -12,6 +12,8 @@ import POSES_CSS from '../../components/panel-poses/client/styles.css'
 import { PosesPanel } from '../../components/panel-poses/client/PosesPanel.js'
 import COSTUMES_CSS from '../../components/panel-costumes/client/styles.css'
 import { CostumesPanel } from '../../components/panel-costumes/client/CostumesPanel.js'
+import CHARACTERS_CSS from '../../components/panel-characters/client/styles.css'
+import { CharactersPanel } from '../../components/panel-characters/client/CharactersPanel.js'
 
 export interface WorkbenchProps {
   t: Translate
@@ -21,13 +23,14 @@ export interface WorkbenchProps {
   openSidebar: () => boolean
 }
 
-type TabId = 'assets' | 'workflow' | 'tags' | 'poses' | 'costumes' | 'terminal'
+type TabId = 'assets' | 'workflow' | 'tags' | 'characters' | 'poses' | 'costumes' | 'terminal'
 
 /** 页签与组件的对应关系：关掉哪个组件，对应页签就不会出现。 */
-const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' | 'tabTags' | 'tabPoses' | 'tabCostumes' | 'tabTerminal' }> = [
+const TABS: Array<{ id: TabId; component: string; label: 'tabAssets' | 'tabWorkflowAdmin' | 'tabTags' | 'tabCharacters' | 'tabPoses' | 'tabCostumes' | 'tabTerminal' }> = [
   { id: 'assets', component: 'panel.gallery', label: 'tabAssets' },
   { id: 'workflow', component: 'panel.workflow', label: 'tabWorkflowAdmin' },
   { id: 'tags', component: 'panel.tags', label: 'tabTags' },
+  { id: 'characters', component: 'panel.characters', label: 'tabCharacters' },
   { id: 'poses', component: 'panel.poses', label: 'tabPoses' },
   { id: 'costumes', component: 'panel.costumes', label: 'tabCostumes' },
   { id: 'terminal', component: 'panel.terminal', label: 'tabTerminal' },
@@ -77,7 +80,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
         浏览器端不受影响（DOM 追加多个 text node 是合法的），所以只在 SSR 里现形；
         顺带一提，拼成一个之后 SSR 与客户端的 text node 数也一致了（改前是 0 vs 2）。
       */}
-      <style>{[WORKBENCH_CSS, TAGS_CSS, POSES_CSS, COSTUMES_CSS].join('\n')}</style>
+      <style>{[WORKBENCH_CSS, TAGS_CSS, CHARACTERS_CSS, POSES_CSS, COSTUMES_CSS].join('\n')}</style>
       {available.length === 0 ? (
         <div className="cwf-empty">
           <div className="cwf-empty-title">{t('allPanelsOff')}</div>
@@ -106,6 +109,8 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
               <WorkflowAdmin t={t} visible={visible} />
             ) : current === 'tags' ? (
               <TagsPanel t={t} visible={visible} />
+            ) : current === 'characters' ? (
+              <CharactersPanel t={t} visible={visible} goToConversation={goToConversation} />
             ) : current === 'poses' ? (
               <PosesPanel t={t} visible={visible} goToConversation={goToConversation} />
             ) : current === 'costumes' ? (

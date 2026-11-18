@@ -1,0 +1,62 @@
+/**
+ * 角色库面板的样式。
+ *
+ * 沿用工作台那套 `--w-*` 变量。类名前缀 `cch-`（comfyui character），
+ * 与 `cct-`（衣装）、`cps-`（姿势）、`ctg-`（标签）、`cwb-`（相册）区分。
+ *
+ * 角色设定板是**横构图**（三视图并排），所以卡片用 4:3 而不是竖版 3:4 ——
+ * 竖卡片会把三视图裁成中间一个正面，正好丢掉最重要的侧面与背面。
+ */
+
+.cch-root{display:flex;flex-direction:column;gap:10px;padding:14px 20px 24px;min-height:0;height:100%;overflow:auto}
+.cch-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.cch-title{font-size:1.02em;font-weight:600}
+.cch-sub{font-size:.8em;color:var(--w-muted);margin-top:2px}
+/* 筛选区吸顶：20 个角色翻到下半页还想换品牌/搜索，不该滚回去找。 */
+.cch-search{
+  display:flex;flex-wrap:wrap;gap:8px;
+  position:sticky;top:-14px;z-index:3;
+  margin:0 -20px;padding:14px 20px 10px;
+  background:var(--w-bg);
+  box-shadow:0 8px 12px -10px rgba(0,0,0,.45);
+}
+.cch-input{flex:1;min-width:180px;border-radius:9px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.9em;padding:8px 10px}
+.cch-input:focus{border-color:var(--w-accent);outline:none}
+.cch-input::placeholder{color:var(--w-muted)}
+/* 品牌筛选做成胶囊 tab：15 个品牌横滚，比下拉框少一次展开。 */
+.cch-tabs{display:flex;flex:1 0 100%;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px;scrollbar-width:thin}
+.cch-tab{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;border-radius:999px;border:1px solid var(--w-line);background:var(--w-surface);color:var(--w-text);font-size:.78em;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.cch-tab:hover{border-color:var(--w-accent)}
+.cch-tab.is-on{border-color:var(--w-accent);background:var(--w-accent);color:var(--w-bg)}
+.cch-tab-n{font-size:.88em;opacity:.72}
+.cch-tab.is-on .cch-tab-n{opacity:.9}
+/* 4:3 横版：设定板本身就是横的，竖卡片会裁掉侧面与背面。 */
+.cch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.cch-card{display:flex;flex-direction:column;gap:6px;border:1px solid var(--w-line);border-radius:11px;background:var(--w-surface);overflow:hidden;cursor:pointer;text-align:left;padding:0;font:inherit;color:inherit}
+.cch-card:hover{border-color:var(--w-accent)}
+.cch-card.is-open{border-color:var(--w-accent)}
+.cch-shot{position:relative;aspect-ratio:4/3;background:var(--w-bg);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cch-shot img{width:100%;height:100%;object-fit:cover;display:block}
+.cch-shot-fail{font-size:.72em;color:var(--w-muted);text-align:center;padding:8px}
+.cch-meta{padding:0 10px 10px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.cch-name{font-size:.86em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cch-tagline{font-size:.72em;color:var(--w-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cch-badge{display:inline-block;margin-right:5px;border-radius:5px;background:var(--w-line);color:var(--w-muted);font-size:.68em;padding:0 4px;vertical-align:1px}
+/* 详情：五个槽位平铺，每个槽给一个落盘按钮。 */
+.cch-detail{border:1px solid var(--w-accent);border-radius:11px;background:var(--w-surface);padding:12px;display:flex;flex-direction:column;gap:10px}
+.cch-detail-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.cch-detail-name{font-size:.95em;font-weight:600}
+.cch-detail-sub{font-size:.76em;color:var(--w-muted)}
+.cch-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.cch-slot{display:flex;flex-direction:column;gap:5px;border:1px solid var(--w-line);border-radius:9px;overflow:hidden;background:var(--w-bg)}
+.cch-slot-shot{aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--w-bg)}
+.cch-slot-shot img{width:100%;height:100%;object-fit:cover;display:block}
+.cch-slot-bar{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 7px}
+.cch-slot-label{font-size:.74em;color:var(--w-text)}
+.cch-btn{border-radius:8px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-text);font-size:.72em;padding:4px 8px;cursor:pointer}
+.cch-btn:hover{border-color:var(--w-accent)}
+.cch-btn[disabled]{opacity:.55;cursor:default}
+.cch-note{font-size:.76em;color:var(--w-muted);padding:0 2px}
+.cch-note.bad{color:#d97757}
+.cch-empty{font-size:.82em;color:var(--w-muted);padding:18px 4px}
+.cch-attr{font-size:.72em;color:var(--w-muted);line-height:1.5;border-top:1px solid var(--w-line);padding-top:8px}

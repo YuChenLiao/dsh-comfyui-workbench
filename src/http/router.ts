@@ -68,6 +68,7 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       // /tags/…        —— 面板的写操作（/tags/sync 更新数据）
       // /poses/…       —— 姿势库的写操作（/poses/fetch 把线稿落盘给工作流当输入图）
       // /costumes/…    —— 服装库的写操作（同上）
+      // /characters/…  —— 角色库的写操作（同上）
       //                   用**前缀**判断而不是逐条列举：子路径以后还会加，列举就会漏，
       //                   而漏的后果是"单测全绿、真机 405"。
       // 注意不能把这类路径塞进 WRITABLE：那个集合的语义是"整条路径只接受 POST/DELETE"，
@@ -77,6 +78,7 @@ export function createDispatch(ctx: HostContext): (req: IncomingMessage, res: Se
       const selfManaged = sub === '/workflows' || sub.startsWith('/workflows/')
         || sub === '/terminal' || sub === '/config'
         || sub.startsWith('/tags/') || sub.startsWith('/poses/') || sub.startsWith('/costumes/')
+        || sub.startsWith('/characters/')
       const writable = WRITABLE.has(sub)
       const methodOk = POST_ONLY.has(sub)
         ? req.method === 'POST'

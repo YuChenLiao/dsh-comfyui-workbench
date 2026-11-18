@@ -604,12 +604,13 @@ test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）
   }
 })
 
-test('工具注册：12 个工具都带必要字段', async () => {
+test('工具注册：13 个工具都带必要字段', async () => {
   const dirs = tmpDirs()
   const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
   try {
     const names = app.tools.map(spec => spec.name).sort()
     assert.deepEqual(names, [
+      'comfyui_character',
       'comfyui_compose',
       'comfyui_costume',
       'comfyui_node_search',
@@ -781,6 +782,64 @@ test('api/costumes：搜索、统计，以及 /costumes/fetch 的写方法真的
     assert.equal((await fetch(`${base}/costumes/image?id=NO-SUCH-0001`)).status, 404)
     // 7) 同一路径不接受 GET
     assert.equal((await fetch(`${base}/costumes/fetch`)).status, 405, '/costumes/fetch 只有 POST 语义')
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 角色库：`POST /characters/fetch` 必须被 `selfManaged` 放行（要 404 而不是 405）。
+ *
+ * 覆盖写接口 api/characters/ 的真实入口（arch-write-routes.mjs 按这个字面量认账）。
+ *
+ * 不真的拉图：既不希望 CI 依赖 GitHub，也不该在测试里触碰素材字节（上游禁止再分发）。
+ * 所以只验「分派层按方法分流 + 索引能挡住不存在的 id」这两件在真机上会安静坏掉的事。
+ */
+test('api/characters：搜索、统计，以及 /characters/fetch 的写方法真的被放行', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    // 1) 列表：默认给全部，每条带 id / 名字 / 品牌 / 可用槽位
+    const all = await (await fetch(`${base}/characters?limit=3`)).json()
+    assert.equal(all.ok, true)
+    assert.equal(all.items.length, 3)
+    assert.equal(all.total, 20, '库内 20 个角色')
+    assert.ok(typeof all.items[0].name === 'string' && all.items[0].name !== '')
+    assert.ok(Array.isArray(all.items[0].slots) && all.items[0].slots.includes('turnaround'), '必须报告可用槽位')
+
+    // 2) 搜索走描述里的词：`狐娘` 只在副标题 / alt 里出现，光搜 name 搜不到
+    const fox = await (await fetch(`${base}/characters?q=${encodeURIComponent('狐娘')}`)).json()
+    assert.ok(fox.total >= 1, '副标题与 alt 里的词也要能命中')
+
+    // 3) 品牌筛选
+    const ds = await (await fetch(`${base}/characters?brand=${encodeURIComponent('DeepSeek')}`)).json()
+    assert.equal(ds.total, 4, 'DeepSeek 系列 4 个条目')
+
+    // 4) 统计带许可与来源
+    const stats = await (await fetch(`${base}/characters/stats`)).json()
+    assert.equal(stats.characterCount, 20)
+    assert.equal(Object.keys(stats.brands).length, 15)
+    assert.ok(stats.license.includes('CC BY-NC-SA'), '许可要进统计，面板底部直接显示')
+
+    // 5) 写接口：POST 放行到 handler（id 不存在 → 404，而不是 405）
+    const fetchMissing = await fetch(`${base}/characters/fetch?id=NOPE&slot=turnaround`, { method: 'POST' })
+    assert.equal(fetchMissing.status, 404, '405 就说明 router 的 selfManaged 漏了 /characters/')
+    assert.equal((await fetchMissing.json()).error, 'not-found')
+
+    // 6) 非法槽位要被挡（不能拼出任意路径）
+    const badSlot = await fetch(`${base}/characters/fetch?id=c01&slot=../../etc`, { method: 'POST' })
+    assert.equal(badSlot.status, 400)
+    assert.equal((await badSlot.json()).error, 'bad-slot')
+
+    // 7) 代理图同样先过索引
+    assert.equal((await fetch(`${base}/characters/image?id=NOPE&slot=preview`)).status, 404)
+    // 8) 同一路径不接受 GET
+    assert.equal((await fetch(`${base}/characters/fetch?id=c01&slot=turnaround`)).status, 405, '/characters/fetch 只有 POST 语义')
   } finally {
     await app.close()
   }

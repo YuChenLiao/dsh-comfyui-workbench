@@ -8,7 +8,7 @@
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
-## 十个组件
+## 十一个组件
 
 装载在 profile 的 `cordis.patch.yml` 里，每一条都是独立的 loader entry —— 在宿主「设置 → 插件」里能看到、能单独开关。
 
@@ -20,6 +20,7 @@
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
 | `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：**面板只展示写实版**（1407 套实拍照风）；另有一批 1320 套二次元版，经 `comfyui_costume { source: "anime" }` 使用。两批都不含人物，搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
+| `comfyui-workbench:characters` | 面板 + 工具 | 角色库：20 个 AI 娘设定板（三视图 / 表情 / 服装 / 道具 / 整板），来自 lmy414/ai-chan-sheets，**CC BY-NC-SA 4.0 仅非商业参考**；另出 `comfyui_character` 一个工具（给 `query` 搜、给 `id`+`view` 取图） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:sync-wait` | 工具（能力开关） | 决定三个出图工具是否暴露 `wait` 参数；关掉后一律异步、面板上「同步等结果」开关一并隐藏。本身不注册工具或路由，**只能通过 `disabledComponents` 关**（见下） |
@@ -40,7 +41,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-装完重启 DSH。`cordis.patch.yml` 里会插入十一条 entry（包根 core + 十个组件），配置用 YAML 锚点共享，只写一次：
+装完重启 DSH。`cordis.patch.yml` 里会插入十二条 entry（包根 core + 十一个组件），配置用 YAML 锚点共享，只写一次：
 
 ```yaml
 - insert:
@@ -65,7 +66,7 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 | `workflowsDir` | 工作流仓库，默认 `~/.dsh-comfyui-workbench/workflows` |
 | `autoStart` | 探测到本机安装时是否自动拉起 ComfyUI。**提交任务、列工作流、看工作流详情都会触发这一步**（等到 `/system_stats` 通为止，上限 `readyTimeoutMs`），所以不用先手动启动；只停自己拉起的进程 |
 | `idleShutdownMs` | 空闲多久后停止「自己拉起的」进程。**默认 `0`（不回收）**——`/queue` 只能看到 prompt 队列、看不到模型下载，回收容易在你拉大模型时把进程打断；想省显存再设成 `300000`。开着时回收前会先问 `/queue`，**有任务在跑或在排队就顺延**；外部实例永不被停 |
-| `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开。可关的：`panel.gallery` / `panel.workflow` / `panel.tags` / `panel.poses` / `panel.costumes` / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru` / `tool.sync-wait`（关掉后出图工具不再接受 `wait`，一律异步） |
+| `disabledComponents` | 关掉的组件，如 `['panel.gallery']`。空数组即全开。可关的：`panel.gallery` / `panel.workflow` / `panel.tags` / `panel.characters` / `panel.poses` / `panel.costumes` / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru` / `tool.sync-wait`（关掉后出图工具不再接受 `wait`，一律异步） |
 | `timeoutMs` | 单次 HTTP 请求超时。`/run`、`/rerun` 的 `timeoutMs` 另外用来**放宽**后台盯守时长（下限 30 分钟，传更小的值会被抬高，实际预算写在返回的 `notes` 里） |
 | `pollIntervalMs` | 执行状态轮询间隔 |
 | `runWait` | 出图工具默认等不等：`async`（默认，提交完就把控制权交回对话，出图完成后插件往会话推一条消息）或 `sync`（等到产物落盘才返回，顺带登记资产索引）。**可以在「工作流管理」面板上直接开关**，改完下一次提交即生效；工具调用里显式传 `wait` 仍以它为准。注意**配置优先于环境变量**：patch 里写了这一项之后 `COMFYUI_RUN_WAIT` 就不生效了，想用环境变量要先删掉那一行 |
@@ -353,6 +354,18 @@ Danbooru 及其贡献者所有；本插件只做了归并（把 91 组映射到�
 
 授权与姿势库**不同**：上游允许把服装图用作创作参考（含编辑与商业作品中的参考），但禁止再分发
 图像数据本身（原尺寸与加工后的都一样）。详见 [data/costumes/NOTICE.md](data/costumes/NOTICE.md)。
+
+### 角色库：lmy414 的 ai-chan-sheets
+
+| | |
+|---|---|
+| 20 个 AI 娘设定板（三视图 / 表情 / 服装 / 道具 / 整板，共 100 张切片） | **lmy414**（[lmy414/ai-chan-sheets](https://github.com/lmy414/ai-chan-sheets)），各角色的具体作者见上游 `制作清单.json`（01 号起多数为 ZipZipPipe / 胖次狐） |
+| 图片索引与预览图 | 编译期从该仓库的 README 图鉴表格与 git tree 生成，不含任何图像字节 |
+
+授权是 **CC BY-NC-SA 4.0**：可作生成参考，**不得商用，也不得再分发图像数据**（含镜像与批量预取）。
+所以本插件只把元数据随包，图片在用户点开/取图时代理一次、落本机缓存，不做预取也不做镜像。
+12–14 号在上游标注的作者为 `unknown`，这里照实保留、不代为归属。
+详见 [data/characters/NOTICE.md](data/characters/NOTICE.md)。
 
 ### 设计上的参考
 

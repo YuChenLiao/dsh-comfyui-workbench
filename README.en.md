@@ -8,7 +8,7 @@ There are six user-facing panels — Assets, Workflows, Tags, Poses, Costumes, a
 
 > This plugin is the successor to [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album); asset browsing is inherited from it (shared code lineage). Running both gives you two entry points and two delete buttons — we recommend uninstalling the album plugin. `scripts/migrate-album.mjs` ships only in the repository: if you installed from a package you'll need to clone the repo and run it there.
 
-## Ten components
+## Eleven components
 
 Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — visible in the host's Settings → Plugins, and individually toggleable.
 
@@ -20,6 +20,7 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | `comfyui-workbench:tags` | panel | Tag library: search four tag categories, filter by semantic category, copy a tag. Browsing is read-only; the "update tags" button refreshes the data from upstream |
 | `comfyui-workbench:poses` | panel + tools | Pose library: 288 poses / 1,439 angles of human reference sketches — search, filter by system and category, save a sketch into uploads as a workflow image input; also registers one `comfyui_pose` tool (give `query` to search, `id` to fetch) |
 | `comfyui-workbench:costumes` | panel + tools | Costume library: **the panel shows the real-style set only** (1,407 photo-style outfits, no people in frame); a second 1,320-outfit anime-style set is available through `comfyui_costume { source: "anime" }` (no people either) — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers one `comfyui_costume` tool (give `query` to search, `id` to fetch) |
+| `comfyui-workbench:characters` | panel + tools | Character library: 20 AI-girl reference sheets (turnaround / expressions / outfits / props / full sheet) from lmy414/ai-chan-sheets, **CC BY-NC-SA 4.0 — non-commercial reference only**; also exposes `comfyui_character` (search with `query`, or `id` + `view` to fetch) |
 | `comfyui-workbench:generate` | tools | `comfyui_workflow`, `comfyui_compose`, `comfyui_run`, `comfyui_run_batch`, `comfyui_rerun`, `comfyui_runs`, `comfyui_node_search` |
 | `comfyui-workbench:edit` | tools | `comfyui_workflow_edit` |
 | `comfyui-workbench:sync-wait` | tools (capability switch) | Decides whether the three generation tools expose a `wait` argument; when off they always run async and the panel's "wait for the result" switch disappears. Registers no tools or routes — **it can only be turned off via `disabledComponents`** (see below) |
@@ -40,7 +41,7 @@ dsh plugin --profile desktop add github:YuChenLiao/dsh-comfyui-workbench
 dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 ```
 
-Restart DSH afterwards. Eleven entries get inserted into `cordis.patch.yml` (the root `core` plus ten components); their config is shared through a YAML anchor so you write it once:
+Restart DSH afterwards. Twelve entries get inserted into `cordis.patch.yml` (the root `core` plus eleven components); their config is shared through a YAML anchor so you write it once:
 
 ```yaml
 - insert:
@@ -65,7 +66,7 @@ Restart DSH afterwards. Eleven entries get inserted into `cordis.patch.yml` (the
 | `workflowsDir` | Workflow repository, default `~/.dsh-comfyui-workbench/workflows` |
 | `autoStart` | Whether to launch ComfyUI when a local installation is detected. **Submitting a run, listing workflows and inspecting a workflow all trigger it** (waits until `/system_stats` responds, capped by `readyTimeoutMs`), so there is no need to start it by hand. Only processes we started are ever stopped |
 | `idleShutdownMs` | How long an **idle** instance we started is kept. **Defaults to `0` (never reclaimed)** — `/queue` only shows the prompt queue, not model downloads, so reclaiming tends to interrupt you mid-download; set `300000` if you want the memory back. When enabled it asks `/queue` first and **anything running or queued postpones it**; external instances are never stopped |
-| `disabledComponents` | Components to turn off, e.g. `['panel.gallery']`. An empty array means all are on. Available: `panel.gallery` / `panel.workflow` / `panel.tags` / `panel.poses` / `panel.costumes` / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru` / `tool.sync-wait` (the last one hides the `wait` argument, so generation always runs async) |
+| `disabledComponents` | Components to turn off, e.g. `['panel.gallery']`. An empty array means all are on. Available: `panel.gallery` / `panel.workflow` / `panel.tags` / `panel.characters` / `panel.poses` / `panel.costumes` / `panel.terminal` / `tool.generate` / `tool.workflow-edit` / `tool.danbooru` / `tool.sync-wait` (the last one hides the `wait` argument, so generation always runs async) |
 | `timeoutMs` | Per-request HTTP timeout. **Not** the wait ceiling — that is `runWaitMaxMs` |
 | `pollIntervalMs` | Status polling interval while a run is in flight |
 | `runWait` | Whether tool runs wait by default: `async` (default — hands control back to the conversation, the plugin pushes a message when the image lands) or `sync` (waits for artifacts on disk and indexes them). Toggle it in the Workflow Admin panel; takes effect on the next submission. An explicit `wait` argument still wins. Note **config beats environment variables**: once this key is written in the patch, `COMFYUI_RUN_WAIT` has no effect |
@@ -270,7 +271,7 @@ src/shared/                        shared logic: host / comfy / workflow / run /
 src/http/                          HTTP prefix and dispatch (router)
 src/client/                        UI shell: tabs, api, i18n, icons
 src/index.ts                       package-root entry (browser bundle + shared runtime init)
-src/entries/                       ten component entries (core is src/index.ts)
+src/entries/                       eleven component entries (core is src/index.ts)
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 
@@ -357,6 +358,19 @@ portrait library are not). The plugin aggregates and indexes them and nothing mo
 The licence differs from the pose library: upstream allows using these images **as creative
 reference** (including in edited and commercial works) but forbids redistributing the image data
 itself, at original size or processed. See [data/costumes/NOTICE.md](data/costumes/NOTICE.md).
+
+### Character library: lmy414's ai-chan-sheets
+
+| | |
+|---|---|
+| 20 AI-girl reference sheets (turnaround / expressions / outfits / props / full sheet — 100 slices) | **lmy414** ([lmy414/ai-chan-sheets](https://github.com/lmy414/ai-chan-sheets)); per-character authors are listed in the upstream `制作清单.json` (mostly ZipZipPipe / 胖次狐 from #01 on) |
+| Image index and previews | Generated at build time from that repo's README gallery table and git tree — no image bytes are kept in this repository |
+
+The licence is **CC BY-NC-SA 4.0**: usable as generation reference, but **no commercial use and no
+redistribution of the image data** (mirrors and bulk prefetching included). So this plugin ships only
+metadata; images are proxied once on demand and cached locally, never prefetched, never mirrored.
+Entries 12–14 are marked `unknown` upstream; that is preserved verbatim rather than guessed.
+See [data/characters/NOTICE.md](data/characters/NOTICE.md).
 
 ### Design reference
 

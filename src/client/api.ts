@@ -573,6 +573,90 @@ export async function fetchCostumeStats(source?: CostumeSource): Promise<Costume
   }
 }
 
+/** 角色库的一条（列表用）。 */
+export interface CharacterHit {
+  id: string
+  name: string
+  subtitle: string
+  brand: string
+  alt: string
+  preview: string
+  slots: string[]
+}
+
+export interface CharacterStatsView {
+  characterCount: number
+  brands: Record<string, number>
+  slotCount: number
+  license: string
+  attribution: string
+  source: string
+  origin: string
+  commit: string
+}
+
+/** 查角色（面板用）。 */
+export async function fetchCharacters(
+  options: { query?: string; brand?: string; offset?: number; limit?: number },
+): Promise<{ items: CharacterHit[]; total: number }> {
+  const params = new URLSearchParams()
+  if (options.query !== undefined && options.query !== '') params.set('q', options.query)
+  if (options.brand !== undefined && options.brand !== '') params.set('brand', options.brand)
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const res = await fetch(`${API}/characters?${params.toString()}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; items?: unknown; total?: unknown; message?: unknown })
+    : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取角色失败：HTTP ${res.status}`)
+  }
+  return {
+    items: Array.isArray(bag.items) ? (bag.items as CharacterHit[]) : [],
+    total: typeof bag.total === 'number' ? bag.total : 0,
+  }
+}
+
+/** 取角色库统计（品牌分布、许可、来源）。 */
+export async function fetchCharacterStats(): Promise<CharacterStatsView> {
+  const res = await fetch(`${API}/characters/stats`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取角色统计失败：HTTP ${res.status}`)
+  }
+  return {
+    characterCount: typeof bag.characterCount === 'number' ? bag.characterCount : 0,
+    brands: (bag.brands !== null && typeof bag.brands === 'object' ? bag.brands : {}) as Record<string, number>,
+    slotCount: typeof bag.slotCount === 'number' ? bag.slotCount : 0,
+    license: typeof bag.license === 'string' ? bag.license : '',
+    attribution: typeof bag.attribution === 'string' ? bag.attribution : '',
+    source: typeof bag.source === 'string' ? bag.source : '',
+    origin: typeof bag.origin === 'string' ? bag.origin : '',
+    commit: typeof bag.commit === 'string' ? bag.commit : '',
+  }
+}
+
+/** 角色图的字节地址（服务端代理，浏览器不直连 GitHub）。 */
+export function characterImageUrl(id: string, slot: string): string {
+  return `${API}/characters/image?id=${encodeURIComponent(id)}&slot=${encodeURIComponent(slot)}`
+}
+
+/** 把某个槽位落盘到 uploads，返回绝对路径。 */
+export async function fetchCharacterFile(id: string, slot: string): Promise<{ file: string; mediaType: string }> {
+  const res = await fetch(`${API}/characters/fetch?id=${encodeURIComponent(id)}&slot=${encodeURIComponent(slot)}`, { method: 'POST' })
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `取图失败：HTTP ${res.status}`)
+  }
+  return {
+    file: typeof bag.file === 'string' ? bag.file : '',
+    mediaType: typeof bag.mediaType === 'string' ? bag.mediaType : '',
+  }
+}
+
 /** 服装图的字节地址（服务端代理，浏览器不直连第三方图床）。 */
 /**
  * 一张服装图的地址。

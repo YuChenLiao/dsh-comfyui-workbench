@@ -73,14 +73,15 @@ const baseConfig = d => ({
   autoDetect: false,
 })
 
-test('默认全开：两组路由与十二个工具都在', async () => {
+test('默认全开：两组路由与十三个工具都在', async () => {
   const d = dirs()
   const app = await boot(baseConfig(d))
   try {
     assert.equal((await app.get('/comfyui-workbench/api/items')).status, 200)
     assert.equal((await app.get('/comfyui-workbench/api/workflows')).status, 200)
-    // 八个 comfyui_*（含 compose / node_search / run_batch / workflow）+ 一个 pose + 一个 costume + 三个 danbooru_*
-    assert.equal(app.tools.length, 12)
+    // 八个 comfyui_*（含 compose / node_search / run_batch / workflow）
+    // + pose / costume / character 三个素材库 + 两个 danbooru_*
+    assert.equal(app.tools.length, 13)
   } finally {
     await app.close()
   }
@@ -171,8 +172,9 @@ test('使用说明注册成 skill：名字、描述、正文都在', async () =>
     const content = skill.content
     const panels = (await import('../lib/index.js')).componentStateOf
     for (const [needle, label] of [
-      [/六个面板/, '面板数（与 Workbench 的 TABS 对齐）'],
-      [/十二个工具/, '工具数'],
+      [/七个面板/, '面板数（与 Workbench 的 TABS 对齐）'],
+      [/十三个工具/, '工具数'],
+      [/20 个 AI 娘设定板/, '角色库条目数'],
       [/99372/, '标签条数'],
       [/288 组/, '姿势组数'],
       [/1407 套/, '衣装套数'],

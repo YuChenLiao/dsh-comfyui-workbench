@@ -18,6 +18,7 @@ import { apply as applyTerminal } from './entries/terminal.js'
 import { apply as applyTags } from './entries/tags.js'
 import { apply as applyPoses } from './entries/poses.js'
 import { apply as applyCostumes } from './entries/costumes.js'
+import { apply as applyCharacters } from './entries/characters.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
 import { mountWorkbenchSkill } from './shared/host/skill.js'
@@ -112,6 +113,7 @@ export function applyAll(ctx: HostContext, config: unknown): Runtime {
   applyTags(ctx, config)
   applyPoses(ctx, config)
   applyCostumes(ctx, config)
+  applyCharacters(ctx, config)
   applyGenerate(ctx, config)
   applyEdit(ctx, config)
   // sync-wait 不注册任何东西，但得在这里也走一遍：否则它的 apply 写坏了
@@ -230,6 +232,11 @@ export { createCostumesIndex, bundledCostumePath } from './components/panel-cost
 export type { CostumeItem, CostumeCatalog, CostumesIndex, CostumeStats } from './components/panel-costumes/server/catalog.js'
 export { createCostumeRoutes } from './components/panel-costumes/server/routes.js'
 export { costumeTool } from './components/panel-costumes/server/tools.js'
+export { CHARACTER_ORIGIN, CHARACTER_PATH } from './entries/characters.js'
+export { createCharactersIndex, bundledCharacterCatalogPath } from './components/panel-characters/server/catalog.js'
+export type { CharacterRecord, CharacterCatalog, CharactersIndex, CharacterStats } from './components/panel-characters/server/catalog.js'
+export { createCharacterRoutes } from './components/panel-characters/server/routes.js'
+export { characterTool } from './components/panel-characters/server/tools.js'
 export { poseTool } from './components/panel-poses/server/tools.js'
 export type { SyncJob, SyncJobState } from './components/panel-tags/server/sync-job.js'
 export { acquire, release, componentStateOf, mergedRoutes } from './runtime.js'

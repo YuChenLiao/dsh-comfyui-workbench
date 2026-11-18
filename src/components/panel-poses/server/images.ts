@@ -62,7 +62,7 @@ export interface PoseImageStats {
 export interface PoseImages {
   fetch: (relativePath: string) => Promise<PoseImage>
   /** 取回并落盘到一个指定目录，返回绝对路径。给"当工作流输入图"用。 */
-  materialize: (relativePath: string, dir: string) => Promise<{ file: string; mediaType: string }>
+  materialize: (relativePath: string, dir: string, targetName?: string) => Promise<{ file: string; mediaType: string }>
   stats: () => PoseImageStats
 }
 
@@ -90,6 +90,16 @@ export interface PoseImagesOptions {
    * 于是上限与统计双双失效 —— 1407 套的缓存会无上限增长，`/costumes/cache` 恒报 0。
    */
   cacheSubdirs?: string[]
+  /**
+   * 缓存目录是否按子目录分层存（角色库会落成 `<角色>/<槽位>.jpg`）。
+   *
+   * 姿势/服装都是拍平的一级文件，所以默认 false；角色库打开它，
+   * 否则 `pruneDisk` 与 `stats` 的 `readdir` 只会拿到目录、`isFile()` 为 false ——
+   * 磁盘上限与缓存统计双双失效。
+   */
+  recursiveCache?: boolean
+  /** 单张图字节上限。默认 8 MB；角色设定图的整板切片可能更大。 */
+  maxBytes?: number
 }
 
 function mediaTypeOf(buffer: Buffer): string | undefined {
@@ -118,6 +128,8 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
   const diskLimitBytes = options.diskLimitBytes ?? DISK_LIMIT_BYTES
   const pathPattern = options.pathPattern ?? SAFE_PATH
   const cacheSubdirs = options.cacheSubdirs ?? ['thumbs', 'img']
+  const recursiveCache = options.recursiveCache === true
+  const maxBytes = options.maxBytes ?? MAX_BYTES
 
   if (!/^https:\/\//.test(origin)) throw new Error(`图床地址必须是 https：${origin}`)
 
@@ -147,7 +159,7 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
       const file = diskPathOf(relativePath)
       const buffer = fs.readFileSync(file)
       const mediaType = mediaTypeOf(buffer)
-      if (mediaType === undefined || buffer.length < MIN_BYTES || buffer.length > MAX_BYTES) return undefined
+      if (mediaType === undefined || buffer.length < MIN_BYTES || buffer.length > maxBytes) return undefined
       // 读到了就把 mtime 顶上去，让"最久未用"的判定真的按使用算
       const stamp = new Date()
       try {
@@ -170,18 +182,23 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
    * 服装在 `thumbs/costume/`、`img/costume/` 两级。写死一级的话，服装这边 `readdir`
    * 拿到的是目录、`isFile()` 为 false —— 既不计数也不清理，上限形同虚设。
    */
-  const pruneDisk = (): void => {
+  /** 递归收集缓存目录下的所有文件（`recursiveCache` 时），否则只扫一级。 */
+  const walkCacheFiles = (): Array<{ file: string; size: number; at: number }> => {
     const files: Array<{ file: string; size: number; at: number }> = []
-    for (const sub of cacheSubdirs) {
-      const dir = path.join(cacheDir, sub)
-      let names: string[] = []
+    const visit = (dir: string, depth: number): void => {
+      if (depth > 6) return
+      let entries: fs.Dirent[] = []
       try {
-        names = fs.readdirSync(dir)
+        entries = fs.readdirSync(dir, { withFileTypes: true })
       } catch {
-        continue
+        return
       }
-      for (const name of names) {
-        const file = path.join(dir, name)
+      for (const entry of entries) {
+        const file = path.join(dir, entry.name)
+        if (entry.isDirectory() && recursiveCache) {
+          visit(file, depth + 1)
+          continue
+        }
         try {
           const stat = fs.statSync(file)
           if (stat.isFile()) files.push({ file, size: stat.size, at: stat.atimeMs })
@@ -190,6 +207,12 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
         }
       }
     }
+    for (const sub of cacheSubdirs) visit(path.join(cacheDir, sub), 0)
+    return files
+  }
+
+  const pruneDisk = (): void => {
+    const files = walkCacheFiles()
     const total = files.reduce((sum, item) => sum + item.size, 0)
     if (total <= diskLimitBytes) return
     files.sort((a, b) => a.at - b.at)
@@ -234,7 +257,10 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
       // **redirect: 'error'**：默认的 follow 会让"origin 固定为 https 图床"只在第一跳成立。
       // 上游一个 302 就能把它变成任意 http(s) 出口（实测能打到 127.0.0.1），
       // 还会顺带 https → http 降级。代理的每条边界都得自己钉住。
-      response = await fetchImpl(`${origin}/${relativePath}`, {
+      // 路径逐段编码：上游目录名全中文（`设定图/01_智谱GLM娘_阔耳狐娘/…`），
+      // 直接拼进去可能因空格、`@`、`·`、括号而 400。斜杠要保留，所以逐段来。
+      const encoded = relativePath.split('/').map(segment => encodeURIComponent(segment)).join('/')
+      response = await fetchImpl(`${origin}/${encoded}`, {
         signal: AbortSignal.timeout(20_000),
         redirect: 'error',
       })
@@ -249,7 +275,7 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
 
     // 先看声明长度：能提前拒绝就别把 9 MB 读进内存再说"太大了"
     const declared = Number(response.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > MAX_BYTES) {
+    if (Number.isFinite(declared) && declared > maxBytes) {
       noteFailure()
       throw new Error(`图片大小异常（声明 ${declared} 字节）`)
     }
@@ -267,7 +293,7 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
         if (done === true) break
         if (value !== undefined) {
           total += value.byteLength
-          if (total > MAX_BYTES) {
+          if (total > maxBytes) {
             await reader.cancel()
             throw new Error('图片大小异常')
           }
@@ -325,9 +351,17 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
 
   return {
     fetch: fetchImage,
-    materialize: async (relativePath, dir) => {
+    /**
+     * 落盘到指定目录。
+     *
+     * `targetName` 用来解决同名覆盖：角色库的每张三视图都叫
+     * `横版完整设定图_01_三视图_查看用.jpg`，只用 basename 会让 19 个角色互相覆盖。
+     * 传了就用它当文件名（通常是 `<角色id>_<槽位>.<ext>`）。
+     */
+    materialize: async (relativePath, dir, targetName) => {
       const image = await fetchImage(relativePath)
-      const file = path.join(dir, path.basename(relativePath))
+      const name = targetName !== undefined && targetName !== '' ? targetName : path.basename(relativePath)
+      const file = path.join(dir, name)
       fs.mkdirSync(dir, { recursive: true })
       // 与缓存写入同样先写临时文件再 rename：面板可能正在读同一个路径
       const temp = `${file}.${process.pid}.tmp`
@@ -336,32 +370,11 @@ export function createImageCache(options: PoseImagesOptions): PoseImages {
       return { file, mediaType: image.mediaType }
     },
     stats: () => {
-      let diskFiles = 0
-      let diskBytes = 0
-      for (const sub of cacheSubdirs) {
-        const dir = path.join(cacheDir, sub)
-        let names: string[] = []
-        try {
-          names = fs.readdirSync(dir)
-        } catch {
-          continue
-        }
-        for (const name of names) {
-          try {
-            const stat = fs.statSync(path.join(dir, name))
-            if (stat.isFile()) {
-              diskFiles += 1
-              diskBytes += stat.size
-            }
-          } catch {
-            // 忽略
-          }
-        }
-      }
+      const files = walkCacheFiles()
       return {
         memoryEntries: memory.size,
-        diskFiles,
-        diskBytes,
+        diskFiles: files.length,
+        diskBytes: files.reduce((sum, item) => sum + item.size, 0),
         cooldownRemainingMs: Math.max(0, cooldownUntil - now()),
       }
     },
