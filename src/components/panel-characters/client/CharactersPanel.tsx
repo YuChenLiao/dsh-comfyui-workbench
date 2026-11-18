@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { fetchCharacterStats, fetchCharacters, fetchCharacterFile, characterImageUrl } from '../../../client/api.js'
+import { addImageToConversation } from '../../../client/conversation.js'
 import type { CharacterHit } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
 import { Icon } from '../../../client/icons.js'
@@ -17,10 +18,10 @@ const SLOT_ORDER = ['turnaround', 'expression', 'outfit', 'props', 'sheet'] as c
 export interface CharactersPanelProps {
   t: Translate
   visible: boolean
-  goToConversation?: () => void
+  goToConversation: () => void
 }
 
-export function CharactersPanel({ t, visible }: CharactersPanelProps): React.ReactElement {
+export function CharactersPanel({ t, visible, goToConversation }: CharactersPanelProps): React.ReactElement {
   const [items, setItems] = useState<CharacterHit[]>([])
   const [total, setTotal] = useState(0)
   const [brands, setBrands] = useState<Record<string, number>>({})
@@ -93,6 +94,23 @@ export function CharactersPanel({ t, visible }: CharactersPanelProps): React.Rea
     }
   }
 
+  /** 塞进对话输入框：走代理地址取字节（面板没有本地路径），与衣装库同一套做法。 */
+  const addSlotToChat = async (id: string, slot: string): Promise<void> => {
+    setBusy(`${id}:${slot}:chat`)
+    setError('')
+    try {
+      const res = await fetch(characterImageUrl(id, slot))
+      if (!res.ok) throw new Error(`${t('charactersImageFail')}：HTTP ${res.status}`)
+      const blob = await res.blob()
+      const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/png' ? 'png' : 'jpg'
+      await addImageToConversation(blob, `${id}_${slot}.${ext}`, { goToConversation })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy('')
+    }
+  }
+
   if (!visible) return <div className="cch-root" />
 
   const open = items.find(item => item.id === openId)
@@ -139,41 +157,53 @@ export function CharactersPanel({ t, visible }: CharactersPanelProps): React.Rea
             </button>
           ))}
         </div>
+
+        {/* 详情放进筛选区容器内部：两者一起 sticky，展开后往下翻列表时不会跑掉，
+            也不会和筛选区互相遮挡（同一个 sticky 块内部只是正常流）。 */}
+        {open === undefined ? null : (
+          <div className="cch-detail">
+            <div className="cch-detail-head">
+              <span className="cch-detail-name">{open.name}</span>
+              <span className="cch-detail-sub">{open.subtitle}</span>
+              <button type="button" className="cch-btn" onClick={() => { setOpenId('') }}>{t('charactersClose')}</button>
+            </div>
+            <div className="cch-slots">
+              {SLOT_ORDER.filter(slot => open.slots.includes(slot)).map(slot => (
+                <div key={slot} className="cch-slot">
+                  <div className="cch-slot-shot">
+                    <img src={characterImageUrl(open.id, slot)} alt={`${open.name} ${slot}`} loading="lazy" />
+                  </div>
+                  <div className="cch-slot-bar">
+                    <span className="cch-slot-label">{slotLabel(t, slot)}</span>
+                    <span className="cch-slot-acts">
+                      {/* 落盘 = 拿到本机绝对路径给工作流；入对话 = 直接贴进输入框当参考图。
+                          两者都要：前者喂工作流，后者让人看着图说话。 */}
+                      <button
+                        type="button"
+                        className="cch-btn"
+                        disabled={busy === `${open.id}:${slot}`}
+                        onClick={() => { void saveSlot(open.id, slot) }}
+                      >{t('charactersSave')}</button>
+                      <button
+                        type="button"
+                        className="cch-btn"
+                        disabled={busy === `${open.id}:${slot}:chat`}
+                        onClick={() => { void addSlotToChat(open.id, slot) }}
+                      >{t('charactersToChat')}</button>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="cch-attr">{stats === null ? '' : `${stats.license} · ${stats.attribution}`}</div>
+          </div>
+        )}
       </div>
 
       {error !== '' && <div className="cch-note bad">{error}</div>}
       {notice !== '' && <div className="cch-note">{notice}</div>}
       {loading && items.length === 0 && <div className="cch-empty">{t('charactersLoading')}</div>}
       {!loading && items.length === 0 && error === '' && <div className="cch-empty">{t('charactersEmpty')}</div>}
-
-      {open === undefined ? null : (
-        <div className="cch-detail">
-          <div className="cch-detail-head">
-            <span className="cch-detail-name">{open.name}</span>
-            <span className="cch-detail-sub">{open.subtitle}</span>
-            <button type="button" className="cch-btn" onClick={() => { setOpenId('') }}>{t('charactersClose')}</button>
-          </div>
-          <div className="cch-slots">
-            {SLOT_ORDER.filter(slot => open.slots.includes(slot)).map(slot => (
-              <div key={slot} className="cch-slot">
-                <div className="cch-slot-shot">
-                  <img src={characterImageUrl(open.id, slot)} alt={`${open.name} ${slot}`} loading="lazy" />
-                </div>
-                <div className="cch-slot-bar">
-                  <span className="cch-slot-label">{slotLabel(t, slot)}</span>
-                  <button
-                    type="button"
-                    className="cch-btn"
-                    disabled={busy === `${open.id}:${slot}`}
-                    onClick={() => { void saveSlot(open.id, slot) }}
-                  >{t('charactersSave')}</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="cch-attr">{stats === null ? '' : `${stats.license} · ${stats.attribution}`}</div>
-        </div>
-      )}
 
       <div className="cch-grid">
         {items.map(item => (
