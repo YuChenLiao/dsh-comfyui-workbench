@@ -414,6 +414,100 @@ export async function freeMemory(): Promise<void> {
   if (body?.ok !== true) throw new Error(body?.message ?? `释放失败：HTTP ${res.status}`)
 }
 
+/** 控制条要的状态：显存 + 活跃任务 + 服务。三样一起拿，少一次往返。 */
+export interface ServiceStats {
+  service: unknown
+  gpu: Array<{ name: string; vramTotal: number; vramFree: number; vramUsedPct: number }>
+  active: Array<{ promptId?: string; state?: string; workflowId?: string; progress?: { value: number; max: number } }>
+}
+
+/** 取显存与活跃任务。服务离线时 gpu 为空、service 仍然有状态。 */
+export async function fetchServiceStats(): Promise<ServiceStats> {
+  const data = await apiJson('/service/stats')
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+  const gpu = Array.isArray(bag.gpu)
+    ? bag.gpu.flatMap(item => {
+      if (item === null || typeof item !== 'object') return []
+      const row = item as Record<string, unknown>
+      const total = Number(row.vramTotal)
+      if (Number.isFinite(total) === false) return []
+      return [{
+        name: String(row.name ?? 'GPU'),
+        vramTotal: total,
+        vramFree: Number(row.vramFree) || 0,
+        vramUsedPct: Number(row.vramUsedPct) || 0,
+      }]
+    })
+    : []
+  const active = Array.isArray(bag.active)
+    ? bag.active.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object')
+      .map(item => ({
+        ...(typeof item.promptId === 'string' ? { promptId: item.promptId } : {}),
+        ...(typeof item.state === 'string' ? { state: item.state } : {}),
+        ...(typeof item.workflowId === 'string' ? { workflowId: item.workflowId } : {}),
+      }))
+    : []
+  return { service: bag.service ?? null, gpu, active }
+}
+
+/** 中断当前任务。 */
+export async function interruptRun(): Promise<void> {
+  const res = await fetch(`${API}/interrupt`, { method: 'POST' })
+  const body = await res.json().catch(() => null)
+  if (body?.ok !== true) throw new Error(body?.message ?? `中断失败：HTTP ${res.status}`)
+}
+
+/** 停掉本插件拉起的 ComfyUI 进程（外部实例不会被停）。 */
+export async function stopService(): Promise<{ stopped: boolean; message?: string }> {
+  const res = await fetch(`${API}/service/stop`, { method: 'POST' })
+  const body = await res.json().catch(() => null)
+  if (body?.ok !== true) throw new Error(body?.message ?? `停止失败：HTTP ${res.status}`)
+  return {
+    stopped: body.stopped === true,
+    ...(typeof body.message === 'string' ? { message: body.message } : {}),
+  }
+}
+
+/** 模板体检：与 `comfyui_workflow { audit: true }` 同一份结论。 */
+export interface WorkflowAudit {
+  ok: boolean
+  error?: string
+  healthy?: number
+  total?: number
+  dead: Array<{ workflowId: string; missingNodes: string[] }>
+  degraded: Array<{ workflowId: string; missingModels: string[]; modelHint?: string }>
+  verdict?: string
+}
+
+export async function fetchWorkflowAudit(): Promise<WorkflowAudit> {
+  // 裸 fetch 而不是 `apiJson`：体检的"正常失败分支"（服务离线 / 空库 /
+  // object_info 为空）是 HTTP 200 + `ok:false`，而 `apiJson` 会把 `ok !== true`
+  // 直接抛成"请求失败：HTTP 200" —— 真正的原因与提示就全丢了。
+  const res = await fetch(`${API}/workflows/audit`)
+  if (res.ok === false) throw new Error(`体检失败：HTTP ${res.status}`)
+  const data: unknown = await res.json().catch(() => null)
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+  const rows = <T,>(value: unknown): T[] => (Array.isArray(value) ? value.filter(item => item !== null && typeof item === 'object') as T[] : [])
+  return {
+    ok: bag.ok === true,
+    ...(typeof bag.error === 'string' ? { error: bag.error } : {}),
+    ...(typeof bag.healthy === 'number' ? { healthy: bag.healthy } : {}),
+    ...(typeof bag.total === 'number' ? { total: bag.total } : {}),
+    ...(typeof bag.verdict === 'string' ? { verdict: bag.verdict } : {}),
+    dead: rows<{ workflowId: string; missingNodes: string[] }>(bag.dead),
+    degraded: rows<{ workflowId: string; missingModels: string[]; modelHint?: string }>(bag.degraded),
+  }
+}
+
+/** 删模板（连 `.schema.json` / `.meta.json` 一起）。 */
+export async function removeWorkflow(id: string): Promise<void> {
+  const res = await fetch(`${API}/workflows/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const body = await res.json().catch(() => null)
+  if (res.ok === false || body?.ok !== true) {
+    throw new Error(body?.message ?? `删除失败：HTTP ${res.status}`)
+  }
+}
+
 /** 文件字节地址。`thumb` 为真时走缩略图。 */
 export function fileUrl(path: string, thumb?: boolean): string {
   return `${API}/file?path=${encodeURIComponent(path)}${thumb === true ? '&thumb=1' : ''}`

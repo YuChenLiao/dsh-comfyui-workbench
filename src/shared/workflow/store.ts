@@ -237,8 +237,24 @@ export function importWorkflowFile(dir: string, sourcePath: string): { id: strin
   return { id, surface }
 }
 
+/**
+ * 工作流 id 是否安全。
+ *
+ * id 会被 `path.join(dir, '<id>.json')` 拼进文件路径，所以它必须是**单段**：
+ * 不含分隔符、不是 `.` / `..`、不以 `.` 开头（避开隐藏文件与 `.bak`）。
+ *
+ * 校验必须在 `decodeURIComponent` **之后**：先判原始片段再解码的话，
+ * `%2f` 能绕过那个判断（实测 `DELETE /workflows/..%2fvictim` 会删到工作流目录外）。
+ */
+export function isSafeWorkflowId(id: string): boolean {
+  if (id === '' || id === '.' || id === '..' || id.startsWith('.')) return false
+  return /[/\\\u0000-\u001f]/.test(id) === false
+}
+
 /** 删除一份工作流及其附属文件。 */
 export function removeWorkflow(dir: string, id: string): boolean {
+  // 唯一的删除入口：非法 id 一律不碰文件系统（上层也校验，这里是第二道）
+  if (isSafeWorkflowId(id) === false) return false
   const files = pathsOf(dir, id)
   let removed = false
   for (const file of [files.workflow, files.schema, files.meta]) {

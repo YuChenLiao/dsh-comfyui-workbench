@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { fetchConfig, fetchWorkflowList, importWorkflow, importWorkflowPng, setProgressStream, setRunWait, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
+import { fetchConfig, fetchServiceStats, fetchWorkflowAudit, fetchWorkflowList, freeMemory, importWorkflow, importWorkflowPng, interruptRun, removeWorkflow, setProgressStream, setRunWait, stopService, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
+import type { ServiceStats, WorkflowAudit } from '../../../client/api.js'
 import type { TogglesView } from '../../../client/api.js'
 import type { WorkflowListItem } from '../../../client/types.js'
 import type { Translate } from '../../../client/i18n.js'
@@ -37,6 +38,37 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
   const [importName, setImportName] = useState('')
   const [importText, setImportText] = useState('')
   const [importing, setImporting] = useState(false)
+  /** 控制条：显存与活跃任务。`null` = 首帧还没取到。 */
+  const [strip, setStrip] = useState<ServiceStats | null>(null)
+  const [stripBusy, setStripBusy] = useState<'' | 'interrupt' | 'free' | 'stop' | 'audit'>('')
+  /** 体检结果：`null` = 还没点过。点过之后卡片上会标出缺节点/缺模型。 */
+  const [audit, setAudit] = useState<WorkflowAudit | null>(null)
+
+  useEffect(() => {
+    if (!visible) return undefined
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    /**
+     * 控制条轮询：**上一次回来之后才排下一次**。
+     *
+     * 用 `setInterval` 的话，一次慢请求（服务在冷启动、`/service/stats` 卡几秒）
+     * 会让请求叠起来：每个 tick 都发一个新请求，而按钮一整个时段都是 disabled。
+     * 服务端已经 skipEnsure（不触发拉起），这里再保证不叠。
+     */
+    const pull = (): void => {
+      void fetchServiceStats()
+        .then(value => { if (alive) setStrip(value) })
+        .catch(() => { if (alive) setStrip(previous => previous) })
+        .finally(() => {
+          if (alive) timer = setTimeout(pull, 5_000)
+        })
+    }
+    pull()
+    return () => {
+      alive = false
+      if (timer !== null) clearTimeout(timer)
+    }
+  }, [visible])
 
   const load = (): void => {
     setLoading(true)
@@ -171,6 +203,67 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
   }
 
   /**
+   * 动作之后立刻取一次状态：不然要等最多 5 秒才看到变化
+   * （刚点完"停止服务"，控制条还显示在跑；刚中断完，活跃数没变）。
+   */
+  const refreshStrip = (): void => {
+    void fetchServiceStats().then(value => setStrip(value)).catch(() => { /* 拿不到就维持旧值 */ })
+  }
+
+  /** 控制条的动作。三个都不该打断列表，所以错误只落到 `error` 行。 */
+  const stripAction = async (kind: 'interrupt' | 'free' | 'stop'): Promise<void> => {
+    setStripBusy(kind)
+    try {
+      if (kind === 'interrupt') {
+        await interruptRun()
+        setNotice(t('interrupted'))
+      } else if (kind === 'free') {
+        await freeMemory()
+        setNotice(t('freed'))
+      } else {
+        const result = await stopService()
+        setNotice(result.stopped ? t('stopped') : (result.message ?? t('stoppedNothing')))
+      }
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setStripBusy('')
+      refreshStrip()
+    }
+  }
+
+  /** 体检：把缺节点/缺模型的模板在卡片上标出来。 */
+  const runAudit = async (): Promise<void> => {
+    setStripBusy('audit')
+    try {
+      const result = await fetchWorkflowAudit()
+      setAudit(result)
+      setNotice(result.ok ? (result.verdict ?? '') : (result.error ?? t('auditFailed')))
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setStripBusy('')
+    }
+  }
+
+  /** 删模板：删的是模板本身（连 schema / 备注），所以必须先确认。 */  const removeTemplate = async (id: string): Promise<void> => {
+    if (!window.confirm(t('deleteWorkflowConfirm').replace('{id}', id))) return
+    setSaving(previous => ({ ...previous, [id]: true }))
+    try {
+      await removeWorkflow(id)
+      setNotice(t('workflowDeleted').replace('{id}', id))
+      setError('')
+      load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setSaving(previous => ({ ...previous, [id]: false }))
+    }
+  }
+
+  /**
    * 导入一张 ComfyUI 保存的 PNG。
    *
    * 图里的 `prompt`（API 格式）或 `workflow`（UI 格式）块就是完整模板 ——
@@ -250,6 +343,37 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
           </button>
         </div>
       </header>
+
+      {/* 控制条：显存 + 活跃任务 + 四个动作。它回答的是"现在到底能不能跑"，
+          所以放在最上面 —— 卡住时用户第一眼要看到的是这里。 */}
+      <article className="cwa-row cwa-strip">
+        <div className="cwa-strip-facts">
+          {strip === null
+            ? <span>{t('gpuUnknown')}</span>
+            : strip.gpu.length === 0
+              ? <span>{t('gpuUnknown')}</span>
+              : strip.gpu.map((gpu, index) => (
+                <span key={`${gpu.name}-${index}`}>{gpu.name} · {t('vramUsed').replace('{pct}', String(gpu.vramUsedPct))}</span>
+              ))}
+          {strip !== null && strip.active.length > 0
+            ? <span className="cwa-badge">{t('activeRuns').replace('{n}', String(strip.active.length))}</span>
+            : null}
+        </div>
+        <div className="cwa-actions">
+          <button type="button" className="cwf-ghost" disabled={stripBusy !== ''} onClick={() => { void stripAction('interrupt') }}>
+            {t('interrupt')}
+          </button>
+          <button type="button" className="cwf-ghost" disabled={stripBusy !== ''} onClick={() => { void stripAction('free') }}>
+            {t('freeMemory')}
+          </button>
+          <button type="button" className="cwf-ghost" disabled={stripBusy !== ''} onClick={() => { void stripAction('stop') }}>
+            {t('stopService')}
+          </button>
+          <button type="button" className="cwf-ghost" disabled={stripBusy !== ''} onClick={() => { void runAudit() }}>
+            {t('auditTemplates')}
+          </button>
+        </div>
+      </article>
 
       {error !== '' ? <div className="cwa-error">{error}</div> : null}
       {notice !== '' ? <div className="cwa-notice">{notice}</div> : null}
@@ -395,6 +519,17 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
                   {item.missingModels !== undefined && item.missingModels.length > 0 ? (
                     <div className="cwa-warn">{t('missingModels').replace('{names}', item.missingModels.join('、'))}</div>
                   ) : null}
+                  {/* 体检结果：缺节点必然跑不起来（红），缺模型能提交但会跑偏 */}
+                  {audit !== null && audit.dead.some(row => row.workflowId === item.workflowId) ? (
+                    <div className="cwa-warn">
+                      {t('auditDead').replace('{names}', (audit.dead.find(row => row.workflowId === item.workflowId)?.missingNodes ?? []).join('、'))}
+                    </div>
+                  ) : null}
+                  {audit !== null && audit.degraded.some(row => row.workflowId === item.workflowId) ? (
+                    <div className="cwa-warn">
+                      {t('auditDegraded').replace('{names}', (audit.degraded.find(row => row.workflowId === item.workflowId)?.missingModels ?? []).join('、'))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -410,6 +545,17 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
                 }}
                 rows={2}
               />
+              <div className="cwa-actions">
+                <button
+                  type="button"
+                  className="cwf-ghost cfa-danger"
+                  disabled={saving[item.workflowId] === true}
+                  onClick={() => { void removeTemplate(item.workflowId) }}
+                >
+                  <Icon name="trash" size={14} />
+                  {t('deleteWorkflow')}
+                </button>
+              </div>
             </article>
           ))}
         </div>

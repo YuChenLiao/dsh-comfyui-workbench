@@ -92,9 +92,21 @@ export class ComfyClient {
     }
   }
 
-  /** 存活探测：轻量、不缓存。 */
-  async systemStats(): Promise<unknown> {
-    const res = await this.request('/system_stats', { method: 'GET' }, 10_000)
+  /**
+   * 存活探测：轻量、不缓存。
+   *
+   * **给 `skipEnsure` 是因为它会被面板每 5 秒轮询一次**：走 `ensure` 的话，
+   * 服务没起时会顺手把它拉起来（"停止托管服务"五秒后又被撤销），
+   * 而拉起失败没有失败记忆，每轮都重试 —— 面板开着就等于一个拉起循环。
+   * 读接口的既有约定是"不触发拉起"（`/workflows` 列表也是这么做的）。
+   */
+  async systemStats(options: { timeoutMs?: number; skipEnsure?: boolean } = {}): Promise<unknown> {
+    const res = await this.request(
+      '/system_stats',
+      { method: 'GET' },
+      options.timeoutMs ?? 10_000,
+      options.skipEnsure === true,
+    )
     if (res.status === 401 || res.status === 403) throw authFailed(this.baseUrl, res.status)
     if (!res.ok) throw comfyUnreachable(this.baseUrl, new Error(`/system_stats 返回 ${res.status}`))
     return await res.json()
@@ -282,12 +294,20 @@ export class ComfyClient {
     }
   }
 
-  /** 取消执行（超时收尾必发，否则队列被一条已放弃的任务堵住）。 */
-  async interrupt(): Promise<void> {
+  /**
+   * 取消执行（超时收尾必发，否则队列被一条已放弃的任务堵住）。
+   *
+   * 返回是否真的发出去了：原来的 `catch {}` 让所有失败都看起像成功，
+   * 面板上"已中断"永远显示，服务离线和真中断分辨不出来。
+   * 收尾路径不看返回值（取消失败不该掩盖"超时"这个原始结论），面板按钮看。
+   */
+  async interrupt(): Promise<boolean> {
     try {
-      await this.request('/interrupt', { method: 'POST' }, 10_000)
+      const res = await this.request('/interrupt', { method: 'POST' }, 10_000)
+      return res.ok
     } catch {
       // 取消失败不该掩盖"超时"这个原始结论
+      return false
     }
   }
 }

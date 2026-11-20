@@ -155,6 +155,59 @@ UI 格式的 JSON 体、`object_info` 拉取失败降级成 400（不是 500）�
 转换不出节点时 400 且不留半成品、**API 格式不去拉 `object_info`**、畸形 UI 结构回 400
 且内部异常不外泄、超限回 413、`zTXt` / `iTXt` / 过短早退的解析器边界。
 
+### 服务状态条与模板管理
+
+后端的 `/system_stats`、`/free`、`/service/stop`、`client.interrupt()`、`removeWorkflow()`
+与体检逻辑其实早就有，缺的是**面板上看不见、也不可控**：卡住的任务只能等，显存满了
+只能重启，模板坏了只能一个个点开看。
+
+- `shared/comfy/audit.ts`：把模板体检从 `tool-generate/tools/workflow-audit.ts` 下沉。
+  面板（`panel-workflow`）不能 import `tool-generate`，而两份实现必然漂 ——
+  用户会看到 `comfyui_workflow { audit: true }` 与面板给出互相矛盾的结论。
+  工具侧那份改成纯转发，导出名与调用方都不变；依赖收窄成 `{ workflowsDir, client }`。
+- `GET /service/stats`：显存利用率 + 最近 5 条活跃任务 + 服务状态。`/system_stats`
+  的返回带一堆 `torch_vram_*`，面板只显示利用率，所以在服务端裁成三个数。
+  **服务离线时不整块失败**：gpu 为空、service 仍然报状态，面板据此显示"显存未知"。
+- `POST /interrupt` 进 `router.ts` 的 `POST_ONLY`（只有 POST 语义，漏登记就是真机恒 405）。
+- `DELETE /workflows/:id`：走已有的 `removeWorkflow`，连 `.schema.json` / `.meta.json`
+  一起删；不存在时 404（原来 DELETE 直接 405）。面板上有二次确认 ——
+  删的是模板，不是产物。
+- 工作流面板顶部控制条：显存百分比、活跃任务数、四个按钮（中断 / 释放显存 /
+  停止托管服务 / 体检模板）。轮询是"上一次回来再排下一次"的递归 `setTimeout` ——
+  `setInterval` 会在服务慢时把请求叠起来，而按钮整段时间都是 disabled。
+- 面板卡片新增「删模板」按钮（带确认）。
+
+**审查修掉的几处**（都会在真实使用里咬人）：
+
+- `/service/stats` 与体检的 `object_info` 显式 `skipEnsure`。这条会被每 5 秒轮询，
+  走 `ensure` 的话服务没起时会被顺手拉起 ——「停止托管服务」五秒后又被撤销，
+  并且拉起失败没有失败记忆、每轮重试。
+- `active` 只算 `running` / `queued`。`runs.list` 按序号取最近几条、**不按状态过滤**，
+  直接取前 5 条会把"最近跑完的 5 条"说成"5 个在跑"。
+- 体检失败现在能在面板上看见原因。它走的是 HTTP 200 + `ok:false`（服务离线 / 空库 /
+  节点清单为空都是正常分支），而客户端原来用 `apiJson` 把这个响应当成错误抛掉，
+  用户永远只看到"请求失败：HTTP 200"。
+- `DELETE /workflows/:id` 的 id 校验挪到 `decodeURIComponent` **之后**，
+  且 `removeWorkflow` 内部再拦一次。原来先判原始片段再解码，`..%2fvictim`
+  解码成 `../victim` 交给 `path.join` —— 实测能删掉工作流目录外的任意 `.json`。
+- `client.interrupt()` 返回它到底发出去没有。原来内部 `catch {}` 吞掉一切，
+  面板上"已中断"永远是假消息（服务离线、没有任务、回 500 都一个样）。
+- 删除后用主文件是否还在复核：删不掉（被占用 / 没有权限）回 500 说明原因，
+  而不是被当成"工作流不存在"。
+- `summarizeGpu` 在缺 `vram_free` 时跳过该设备 —— 原来按 0 算，显示成"已用 100%"，
+  看起来像显存爆了。
+- 测试卫生：`tests/api.test.mjs` 里那条写接口用例补了 `autoStart: false`。
+  它此前只把 `baseUrl` 指到不可达端口，而默认 `autoStart` 会在连不上时去拉起本机安装的
+  ComfyUI —— 实测这条用例跑满 180 秒冷启动超时、在安装目录里留下写入。修完全量测试
+  从 3 分钟回到 14 秒，也不再动用户的进程。
+
+`tests/api.test.mjs` 补一条走真实分派的用例：中断、显存统计、体检、删模板四条，
+`baseUrl` 指到不可达端口并关掉 `autoStart` —— 否则一台正开着 ComfyUI 的机器跑
+`npm test` 会真的被打断任务，而默认 `autoStart` 还会在连不上时尝试拉起进程把测试挂住。
+
+> 终端面板的控制条这一批没接：它与工作流面板完全重复，而组件之间不能互相 import
+> （抽成共享组件需要放进 `client/`，那个位置只允许装配层引用组件）。留作后续。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

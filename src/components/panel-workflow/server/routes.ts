@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import type { ServerResponse } from 'node:http'
 
 import type { Settings } from '../../../shared/host/config.js'
@@ -5,7 +7,9 @@ import type { Toggles } from '../../../shared/host/toggles.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
 import type { ComfyClient, ComfySupervisor } from '../../../shared/comfy/index.js'
 import { availableModels } from '../../../shared/comfy/index.js'
+import { auditWorkflows } from '../../../shared/comfy/audit.js'
 import { sendJson } from '../../../shared/http/respond.js'
+import { removeWorkflow } from '../../../shared/workflow/index.js'
 import { createRerunHandler, createRunHandler } from './run-api.js'
 import type { ArtifactIndexSink } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
@@ -14,6 +18,36 @@ import { handleWorkflowDetail, handleWorkflowImport, handleWorkflowList, handleW
 
 /** 路由处理器签名（与相册那份一致，但各自持有，避免组件间互相 import）。 */
 type Route = (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => void | Promise<void>
+
+/**
+ * `/system_stats` 里与"显存还够不够"有关的那部分。
+ *
+ * ComfyUI 的返回带一堆 `torch_vram_total` 之类的字段，面板只显示利用率，
+ * 所以在这里裁成三个数 —— 把整包透传只会让前端再解析一遍。
+ */
+function summarizeGpu(raw: unknown): Array<{ name: string; vramTotal: number; vramFree: number; vramUsedPct: number }> {
+  const devices = raw !== null && typeof raw === 'object' ? (raw as { devices?: unknown }).devices : undefined
+  if (Array.isArray(devices) === false) return []
+  const out: Array<{ name: string; vramTotal: number; vramFree: number; vramUsedPct: number }> = []
+  for (const device of devices) {
+    if (device === null || typeof device !== 'object') continue
+    const bag = device as Record<string, unknown>
+    const total = Number(bag.vram_total)
+    const free = Number(bag.vram_free)
+    if (Number.isFinite(total) === false || total <= 0) continue
+    // 缺 `vram_free` 时不能当成 0 —— 那会显示"已用 100%"，看起来像显存爆了。
+    // 这种设备直接不产出（前端会显示"显存未知"）。
+    if (Number.isFinite(free) === false) continue
+    const safeFree = Math.max(0, Math.min(free, total))
+    out.push({
+      name: String(bag.name ?? 'GPU'),
+      vramTotal: total,
+      vramFree: safeFree,
+      vramUsedPct: Math.round(((total - safeFree) / total) * 100),
+    })
+  }
+  return out
+}
 
 /** 工作流组件对外提供的路由。 */
 export interface WorkflowRouteDeps {
@@ -52,6 +86,13 @@ export interface WorkflowRouteDeps {
       error?: { code: string; message: string }
       artifacts?: Array<{ path: string; bytes: number; width?: number; height?: number }>
     } | undefined
+    /**
+     * 列最近的运行。控制条只取前几条。
+     *
+     * 返回类型放宽成 `unknown[]`：这里只负责把注册表原样透给面板，
+     * 字段形状由 `RunRegistry` 与 `comfyui_runs` 那份契约决定（不在本组件重抄一遍）。
+     */
+    list: (filter?: { state?: string; batchId?: string; limit?: number }) => unknown[]
   }
   /** 后台 sweep 与进度订阅的日志（不给的话降级与连续失败都留不下痕）。 */
   logger?: LoggerLike | undefined
@@ -194,6 +235,62 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
       },
       '/service': handleServiceStatus.bind(null, supervisor),
       '/service/stop': handleServiceStop.bind(null, supervisor),
+      // 面板顶部控制条要的两样：显存（够不够）与活跃任务（卡住了没有）。
+      // 只读；服务没起来时仍然回活跃任务，面板据此显示"离线"而不是整块消失。
+      //
+      // **skipEnsure 是必须的**：这条会被面板每 5 秒轮询一次，走 `ensure` 的话
+      // 服务没起时会顺手拉起它（"停止托管服务"五秒后又被撤销），拉起失败还没有
+      // 失败记忆，每轮重试 —— 面板开着就等于一个拉起循环。
+      '/service/stats': async (_url: URL, res: ServerResponse) => {
+        let raw: unknown = null
+        try {
+          raw = await client.systemStats({ timeoutMs: 2_000, skipEnsure: true })
+        } catch {
+          raw = null
+        }
+        // `list` 不按状态过滤，直接取前 5 条会把"最近跑完的 5 条"说成"5 个在跑"。
+        // 这里自己筛：只有 running / queued 才算活跃。
+        const recent = runs.list({ limit: 20 }) as Array<{ state?: unknown }>
+        const active = recent.filter(row => row.state === 'running' || row.state === 'queued').slice(0, 5)
+        sendJson(res, 200, {
+          ok: true,
+          service: supervisor.status(),
+          gpu: summarizeGpu(raw),
+          active,
+        })
+      },
+      // 中断当前任务。ComfyUI 那边是 `/interrupt`（取消正在跑的那次执行）。
+      // `client.interrupt()` 返回它到底发出去没有 —— 失败必须让面板看见，
+      // 否则"已中断"永远是假消息。
+      '/interrupt': async (_url: URL, res: ServerResponse) => {
+        try {
+          const sent = await client.interrupt()
+          sendJson(res, 200, sent
+            ? { ok: true }
+            : { ok: false, message: '中断请求没发出去：ComfyUI 连不上或被拒绝。' })
+        } catch (error) {
+          sendJson(res, 200, { ok: false, message: error instanceof Error ? error.message : String(error) })
+        }
+      },
+      // 模板体检：与 `comfyui_workflow { audit: true }` 共用 shared/comfy/audit.ts。
+      // 面板要的是同一份结论 —— 两份实现必然漂，用户会看到互相矛盾的结果。
+      //
+      // objectInfo 显式给 skipEnsure：体检是面板上的一个按钮，服务没起时应当
+      // 立刻回"无法体检"，而不是把请求挂到冷启动结束（最多 readyTimeout）。
+      '/workflows/audit': async (_url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '体检只接受 GET。' })
+          return
+        }
+        try {
+          sendJson(res, 200, await auditWorkflows({
+            workflowsDir: workflowDir,
+            client: { objectInfo: () => client.objectInfo(false, { timeoutMs: 5_000, skipEnsure: true }) },
+          }))
+        } catch (error) {
+          sendJson(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) })
+        }
+      },
     },
     list: async (url, res) => {
       // 拿不到 object_info（ComfyUI 离线）就不标缺失，避免把"离线"说成"缺模型"；
@@ -224,7 +321,28 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         await handleWorkflowUpdate(workflowDir, id, res, req)
         return
       }
-      sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这个接口只接受 GET / POST。' })
+      // 删模板：连 `.schema.json` / `.meta.json` 一起走（`removeWorkflow` 的实现）。
+      // 面板上有二次确认 —— 删掉的是模板本身，不是产物。
+      if (req.method === 'DELETE') {
+        const removed = removeWorkflow(workflowDir, id)
+        // 复核主文件是否真的没了。`removeWorkflow` 的布尔看不出"删掉了几个"，
+        // 而把权限失败（被占用 / 只读）当成"不存在"会让用户以为模板已经删了。
+        if (fs.existsSync(path.join(workflowDir, `${id}.json`))) {
+          sendJson(res, 500, {
+            ok: false,
+            error: 'delete-failed',
+            message: `删不掉 ${id}.json：可能被占用或没有权限。`,
+          })
+          return
+        }
+        if (removed === false) {
+          sendJson(res, 404, { ok: false, error: 'no-workflow', message: `没有这个工作流：${id}` })
+          return
+        }
+        sendJson(res, 200, { ok: true, workflowId: id })
+        return
+      }
+      sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这个接口只接受 GET / POST / DELETE。' })
     },
   }
 }

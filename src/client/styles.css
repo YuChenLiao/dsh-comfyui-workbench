@@ -147,3 +147,5 @@
 .cwa-note::placeholder{color:var(--w-muted)}
 .cwa-actions{display:flex;align-items:center;gap:8px;justify-content:flex-end}
 .cwa-actions label.cwf-ghost{display:inline-flex;align-items:center;gap:5px;cursor:pointer;margin-right:auto}
+.cwa-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cwa-strip-facts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.8em;color:var(--w-muted)}

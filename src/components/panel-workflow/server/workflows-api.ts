@@ -1,5 +1,5 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
-import { importWorkflowValue, listEntries, readEntry, WorkflowExistsError, WorkflowFormatError, writeMeta } from '../../../shared/workflow/index.js'
+import { importWorkflowValue, isSafeWorkflowId, listEntries, readEntry, WorkflowExistsError, WorkflowFormatError, writeMeta } from '../../../shared/workflow/index.js'
 import { detectFormat } from '../../../shared/workflow/detect.js'
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { readPngTextChunksFromBuffer } from '../../../shared/media/png-text.js'
@@ -102,12 +102,16 @@ export function workflowIdFromPath(sub: string): string | undefined {
   const prefix = '/workflows/'
   if (!sub.startsWith(prefix)) return undefined
   const rest = sub.slice(prefix.length)
-  if (rest === '' || rest.includes('/')) return undefined
+  if (rest === '') return undefined
+  let id: string
   try {
-    return decodeURIComponent(rest)
+    id = decodeURIComponent(rest)
   } catch {
     return undefined
   }
+  // **必须在解码之后校验**：先判 `rest.includes('/')` 时 `%2f` 能绕过它，
+  // 于是 `..%2fvictim` 解码成 `../victim` 交给 `path.join` —— 实测能删到目录外。
+  return isSafeWorkflowId(id) ? id : undefined
 }
 
 /**

@@ -25,7 +25,7 @@ export const PREFIX = '/comfyui-workbench/api'
 const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop', '/upload'])
 
 /** 这些只接受 POST（GET 也没有语义）。 */
-const POST_ONLY = new Set(['/run', '/rerun', '/free'])
+const POST_ONLY = new Set(['/run', '/rerun', '/free', '/interrupt'])
 
 const READ_ONLY = new Set(['GET', 'HEAD'])
 

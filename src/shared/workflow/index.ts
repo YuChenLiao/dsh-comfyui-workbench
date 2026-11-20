@@ -19,6 +19,7 @@ export {
   pathsOf,
   readEntry,
   removeWorkflow,
+  isSafeWorkflowId,
   sanitizeId,
   WorkflowExistsError,
   WorkflowFormatError,

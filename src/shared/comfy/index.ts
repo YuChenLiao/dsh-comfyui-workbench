@@ -25,6 +25,10 @@ export { isQueueBusy, parseQueue } from './queue.js'
 export type { QueueSnapshot } from './queue.js'
 export { ensureComfyImage, materializeImages } from './upload.js'
 export { availableModels, missingModels, suggestModels } from './models.js'
+// 模板体检：工具（`comfyui_workflow { audit: true }`）与面板（`/workflows/audit`）共用。
+// 放进 barrel，避免下一个人靠 deep import 去找它。
+export { auditWorkflows } from './audit.js'
+export type { AuditDeps } from './audit.js'
 export type { UploadedImage } from './upload.js'
 export type { ServiceState, ServiceStatus, SupervisorOptions } from './supervisor.js'
 export type { FileRef, HistoryEntry, ObjectInfo, ObjectInfoNode } from './types.js'

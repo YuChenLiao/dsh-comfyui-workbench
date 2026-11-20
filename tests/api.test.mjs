@@ -149,8 +149,9 @@ test('POST /workflows/{id} 改设置：不存在的工作流 404', async () => {
     // 这条路径现在是"改工作流设置"（启用/备注），不再是只读
     const res = await fetch(`${app.origin}/comfyui-workbench/api/workflows/text2img-basic`, { method: 'POST' })
     assert.equal(res.status, 404, '工作流不存在就该 404')
+    // DELETE 现在支持了（删模板），不存在时同样是 404 —— 不再是 405
     const del = await fetch(`${app.origin}/comfyui-workbench/api/workflows/text2img-basic`, { method: 'DELETE' })
-    assert.equal(del.status, 405, 'DELETE 仍不受支持')
+    assert.equal(del.status, 404, '删不存在的模板回 404，而不是 405')
   } finally {
     await app.close()
   }
@@ -878,6 +879,10 @@ test('写接口真入口：/delete、/delete-many、/assets/rebuild、/free、/s
   // 而 ensureReady 会 probe 真实地址，探通就直接 `POST /free {unload_models:true, free_memory:true}`。
   // 用默认的 127.0.0.1:8188 时，一台**正开着 ComfyUI** 的机器跑 npm test 会真的卸载模型
   // （出图中也会）—— 这条用例只想验分派层，不该有这个副作用。
+  //
+  // **还关掉了 autoStart/autoDetect**：默认开着时，连不上（127.0.0.1:1 必然连不上）会触发
+  // supervisor 自己去拉起本机安装的 ComfyUI —— 实测这条用例因此跑满 180 秒冷启动超时，
+  // 并在安装目录里留下写入痕迹。测试不该动用户的服务。
   const app = await boot({
     roots: [dirs.out],
     outputDir: dirs.out,
@@ -885,6 +890,8 @@ test('写接口真入口：/delete、/delete-many、/assets/rebuild、/free、/s
     uploadsDir: dirs.uploads,
     indexFile: dirs.index,
     baseUrl: 'http://127.0.0.1:1',
+    autoStart: false,
+    autoDetect: false,
   })
   const base = `${app.origin}/comfyui-workbench/api`
   try {
@@ -977,6 +984,80 @@ test('GET /items?q=：按底模、工作流名与提示词都能命中', async (
 
     // 命中不到时仍然是 0，而不是"什么都能匹配"
     assert.equal((await search('绝不可能存在的词')).total, 0)
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 控制条与模板管理的真入口：api/interrupt、api/service/stats、api/workflows/audit、
+ * 以及 `DELETE /workflows/:id`。
+ *
+ * 同样是指针问题：这些路径要么只接受 POST（进 `POST_ONLY`），要么藏在 `/workflows/`
+ * 这个 `selfManaged` 前缀下 —— 直接调 handler 会绕过方法校验层，测试绿而真机 405。
+ */
+test('控制条接口：中断、显存统计、体检与删模板都走真实分派', async () => {
+  const dirs = tmpDirs()
+  importWorkflowFile(dirs.workflows, SAMPLE)
+  const app = await boot({
+    roots: [dirs.out],
+    outputDir: dirs.out,
+    workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads,
+    indexFile: dirs.index,
+    // 不可达端口 + 关掉自动拉起：这三条会真的打 ComfyUI（中断 / 系统统计 / 节点清单），
+    // 一台正开着 ComfyUI 的机器跑测试时不该被我们打断或读走状态；
+    // 而默认 autoStart 会在连不上时尝试自己拉起一个进程，测试会挂在那儿。
+    baseUrl: 'http://127.0.0.1:1',
+    autoStart: false,
+    autoDetect: false,
+  })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    // 1) 中断：分派层放行，服务不可达时是结构化失败（不是 405、也不是 500）
+    const interrupt = await fetch(`${base}/interrupt`, { method: 'POST' })
+    assert.equal(interrupt.status, 200, '405 就说明 POST_ONLY 漏了 /interrupt')
+    // 不可达时必须 ok:false：`client.interrupt()` 原来把异常吞了，面板永远显示"已中断"，
+    // 服务离线和真中断分辨不出来
+    assert.equal((await interrupt.json()).ok, false, '服务不可达时不能回 ok:true')
+
+    // 2) 显存与活跃任务：服务离线时 gpu 为空、service 仍要报状态
+    const stats = await fetch(`${base}/service/stats`)
+    assert.equal(stats.status, 200, '405 就说明 /service/stats 没注册成 GET')
+    const statsBody = await stats.json()
+    assert.equal(statsBody.ok, true)
+    assert.deepEqual(statsBody.gpu, [], '不可达时没有 GPU 数据，但不能因此整块失败')
+    assert.ok(Array.isArray(statsBody.active))
+    assert.ok(statsBody.service !== null && typeof statsBody.service === 'object', '服务状态要能报出来')
+
+    // 3) 体检：拿不到节点清单时明确说"无法体检"，不假装全部健康
+    const audit = await fetch(`${base}/workflows/audit`)
+    assert.equal(audit.status, 200)
+    const auditBody = await audit.json()
+    assert.equal(auditBody.ok, false, '拿不到 object_info 时不能报 ok:true')
+    assert.match(String(auditBody.error), /节点清单/)
+
+    // 4) 删模板：把刚导入的那份删掉，文件要真的消失
+    const workflowFile = path.join(dirs.workflows, 'text2img-basic.json')
+    assert.equal(fs.existsSync(workflowFile), true)
+    const del = await fetch(`${base}/workflows/text2img-basic`, { method: 'DELETE' })
+    assert.equal(del.status, 200, `DELETE 要放行，实际 ${del.status}`)
+    assert.equal((await del.json()).ok, true)
+    assert.equal(fs.existsSync(workflowFile), false, '模板文件要真的被删掉')
+
+    // 再删一次：404，而不是静默成功
+    const again = await fetch(`${base}/workflows/text2img-basic`, { method: 'DELETE' })
+    assert.equal(again.status, 404)
+
+    // 5) 路径穿越：`%2f` 解码后是 `/`，必须在**解码之后**拦下。
+    //    先判原始片段再解码的话，`..%2fvictim` 会变成 `../victim` 交给 path.join ——
+    //    实测能把工作流目录外的任意 `.json` 删掉。
+    const victim = path.join(dirs.base, 'victim.json')
+    fs.writeFileSync(victim, '{}')
+    const evil = await fetch(`${base}/workflows/..%2fvictim.json`, { method: 'DELETE' })
+    assert.equal(evil.status, 404, '非法 id 一律拒绝')
+    assert.equal(fs.existsSync(victim), true, '工作流目录外的文件不能被动到')
+    fs.rmSync(victim, { force: true })
   } finally {
     await app.close()
   }
