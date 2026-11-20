@@ -38,6 +38,8 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
   const [dragging, setDragging] = useState(false)
   // 与卡片同一套降级：解不了的容器给一句人话 + 路径，而不是一个永远不播的控件条
   const [mediaBroken, setMediaBroken] = useState(false)
+  /** 老列表项没有 `kind`，按图片处理。 */
+  const isImage = (item.kind ?? 'image') === 'image'
   const stageRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
@@ -191,15 +193,18 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
           </button>
         ) : null}
         {typeof index === 'number' && count > 0 ? <span className="cfa-lb-count">{`${index + 1} / ${count}`}</span> : null}
-        <div className="cfa-lb-zoom" onClick={event => event.stopPropagation()}>
-          <button type="button" className="cfa-lb-zbtn" title={t('zoomOut')} aria-label={t('zoomOut')} onClick={() => setZoom(previous => clampZoom(previous / 1.2))}>
-            <Icon name="minus" size={14} />
-          </button>
-          <button type="button" className="cfa-lb-zvalue" title={t('zoomReset')} onClick={resetZoom}>{`${Math.round(zoom * 100)}%`}</button>
-          <button type="button" className="cfa-lb-zbtn" title={t('zoomIn')} aria-label={t('zoomIn')} onClick={() => setZoom(previous => clampZoom(previous * 1.2))}>
-            <Icon name="plus" size={14} />
-          </button>
-        </div>
+        {/* 缩放只对图片有意义：视频/音频不套 transform，控件留着只会让百分比空转 */}
+        {isImage ? (
+          <div className="cfa-lb-zoom" onClick={event => event.stopPropagation()}>
+            <button type="button" className="cfa-lb-zbtn" title={t('zoomOut')} aria-label={t('zoomOut')} onClick={() => setZoom(previous => clampZoom(previous / 1.2))}>
+              <Icon name="minus" size={14} />
+            </button>
+            <button type="button" className="cfa-lb-zvalue" title={t('zoomReset')} onClick={resetZoom}>{`${Math.round(zoom * 100)}%`}</button>
+            <button type="button" className="cfa-lb-zbtn" title={t('zoomIn')} aria-label={t('zoomIn')} onClick={() => setZoom(previous => clampZoom(previous * 1.2))}>
+              <Icon name="plus" size={14} />
+            </button>
+          </div>
+        ) : null}
       </div>
       <aside className="cfa-lb-side" onClick={event => event.stopPropagation()}>
         <div className="cfa-lb-head">
@@ -207,17 +212,19 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
           <button type="button" className="cfa-btn" title={t('close')} aria-label={t('close')} onClick={onClose}><Icon name="close" size={15} /></button>
         </div>
         <div className="cfa-lb-actions">
-          <button type="button" className="cfa-btn" onClick={act('copyImage')}><Icon name="copy" size={14} />{t('copyImage')}</button>
+          {/* 图片语义的动作按 kind 收掉：复制图片走 `createImageBitmap`、涂蒙版要像素、
+              反推提示词要有画面、吃图工作流的槽位只收图片 —— 对 mp4 点了只会报错。 */}
+          {isImage ? <button type="button" className="cfa-btn" onClick={act('copyImage')}><Icon name="copy" size={14} />{t('copyImage')}</button> : null}
           <button type="button" className="cfa-btn" onClick={act('copyPrompt')}><Icon name="text" size={14} />{t('copyPrompt')}</button>
-          <button type="button" className="cfa-btn" onClick={act('mask')} title={t('maskHint')}><Icon name="image" size={14} />{t('maskEditor')}</button>
-          <button type="button" className="cfa-btn" onClick={act('sendToWorkflow')} title={t('sendHint')}><Icon name="workflow" size={14} />{t('sendToWorkflow')}</button>
+          {isImage ? <button type="button" className="cfa-btn" onClick={act('mask')} title={t('maskHint')}><Icon name="image" size={14} />{t('maskEditor')}</button> : null}
+          {isImage ? <button type="button" className="cfa-btn" onClick={act('sendToWorkflow')} title={t('sendHint')}><Icon name="workflow" size={14} />{t('sendToWorkflow')}</button> : null}
           <button type="button" className="cfa-btn" onClick={act('exportWorkflow')}><Icon name="download" size={14} />{t('exportWorkflow')}</button>
           {/* 只有 PNG 里才可能有工作流文本块：jpg/webp 上点一下会白下载整张再吃 400 */}
           {/\.png$/i.test(item.name)
             ? <button type="button" className="cfa-btn" onClick={act('saveAsWorkflow')} title={t('saveAsWorkflowHint')}><Icon name="workflow" size={14} />{t('saveAsWorkflow')}</button>
             : null}
-          <button type="button" className="cfa-btn" onClick={act('addToChat')}><Icon name="chat" size={14} />{t('addToChat')}</button>
-          <button type="button" className="cfa-btn" onClick={act('describe')}><Icon name="text" size={14} />{t('describe')}</button>
+          {isImage ? <button type="button" className="cfa-btn" onClick={act('addToChat')}><Icon name="chat" size={14} />{t('addToChat')}</button> : null}
+          {isImage ? <button type="button" className="cfa-btn" onClick={act('describe')}><Icon name="text" size={14} />{t('describe')}</button> : null}
           <button type="button" className="cfa-btn cfa-danger" onClick={act('remove')}><Icon name="trash" size={14} />{t('remove')}</button>
         </div>
         <dl className="cfa-kv">{rows}</dl>

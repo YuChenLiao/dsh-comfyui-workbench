@@ -29,6 +29,8 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
     onAction(kind, item)
   }
   const dupCount = typeof item.duplicateCount === 'number' ? item.duplicateCount : 0
+  /** 老列表项没有 `kind`，按图片处理（那时相册里也只有图片）。 */
+  const isImage = (item.kind ?? 'image') === 'image'
   // 浏览器解不了的容器（.mkv / .avi）会触发 onError：没有降级的话，用户看到的是
   // 一块黑卡 —— 正是这次要消灭的"看不见"，只是换了个形态。
   const [mediaBroken, setMediaBroken] = useState(false)
@@ -69,10 +71,12 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
         : null}
       {selecting ? null : (
         <div className="cfa-actions">
-          <button type="button" className="cfa-btn" title={t('copyImage')} aria-label={t('copyImage')} onClick={act('copyImage')}><Icon name="copy" size={15} /></button>
+          {/* 复制图片 / 送进对话都是**图片语义**：`createImageBitmap` 与图片附件都不接受 mp4。
+              对视频/音频留一个点了会报错的按钮，比不给按钮更糟。 */}
+          {isImage ? <button type="button" className="cfa-btn" title={t('copyImage')} aria-label={t('copyImage')} onClick={act('copyImage')}><Icon name="copy" size={15} /></button> : null}
           <button type="button" className="cfa-btn" title={t('copyPrompt')} aria-label={t('copyPrompt')} onClick={act('copyPrompt')}><Icon name="text" size={15} /></button>
           <button type="button" className="cfa-btn" title={t('exportWorkflow')} aria-label={t('exportWorkflow')} onClick={act('exportWorkflow')}><Icon name="download" size={15} /></button>
-          <button type="button" className="cfa-btn" title={t('addToChat')} aria-label={t('addToChat')} onClick={act('addToChat')}><Icon name="chat" size={15} /></button>
+          {isImage ? <button type="button" className="cfa-btn" title={t('addToChat')} aria-label={t('addToChat')} onClick={act('addToChat')}><Icon name="chat" size={15} /></button> : null}
           {/* 拿这张图的参数再跑一遍（换图 + 换新 seed，其余参数从 sidecar 带过去） */}
           <button type="button" className="cfa-btn" title={t('useAsInput')} aria-label={t('useAsInput')} onClick={act('useAsInput')}><Icon name="image" size={15} /></button>
           <button type="button" className="cfa-btn cfa-danger" title={t('remove')} aria-label={t('remove')} onClick={act('remove')}><Icon name="trash" size={15} /></button>

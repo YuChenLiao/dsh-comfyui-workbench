@@ -110,6 +110,13 @@ const videoHtml = renderToStaticMarkup(React.createElement(Card, {
 }))
 assert.match(videoHtml, /<video/, '视频卡片要用 <video>')
 assert.doesNotMatch(videoHtml, /<img/, '视频卡片不该再用 <img>')
+// 图片语义的动作对视频点了只会报错（createImageBitmap / 图片附件都不收 mp4）
+assert.doesNotMatch(videoHtml, /aria-label="copyImage"/, '视频卡片不该有「复制图片」')
+assert.doesNotMatch(videoHtml, /aria-label="addToChat"/, '视频卡片不该有「送进对话」')
+assert.match(videoHtml, /aria-label="copyPrompt"/, '有 sidecar 时复制提示词仍然可用')
+assert.match(videoHtml, /aria-label="remove"/, '删除永远可用')
+// 图片卡片不受影响
+assert.match(cardHtml, /aria-label="copyImage"/, '图片卡片仍要有「复制图片」')
 
 const audioHtml = renderToStaticMarkup(React.createElement(Card, {
   item: { ...item, name: 'voice.mp3', path: 'D:\\dsh\\voice.mp3', kind: 'audio' },
