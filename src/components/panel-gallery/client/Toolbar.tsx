@@ -20,6 +20,15 @@ export interface ToolbarProps {
   onRefresh: () => void
   /** 打开回收站。 */
   onTrash: () => void
+  /** 结构化筛选的当前值（空串 = 不限）。 */
+  facetWorkflow: string
+  facetCheckpoint: string
+  facetAspect: string
+  /** 已出现过的 workflow id（下拉选项）。 */
+  facetWorkflowOptions: string[]
+  onFacetWorkflow: (value: string) => void
+  onFacetCheckpoint: (value: string) => void
+  onFacetAspect: (value: '' | 'landscape' | 'portrait' | 'square') => void
   /** 是否隐藏 NSFW 内容。 */
   hideNsfw: boolean
   /** 当前已加载的可见条数。 */
@@ -91,6 +100,37 @@ export function Toolbar(props: ToolbarProps): React.ReactElement {
         <button type="button" className="cfa-btn" title={t('trashTitle')} aria-label={t('trashTitle')} onClick={props.onTrash}>
           <Icon name="trash" size={15} />
         </button>
+        {/* 结构化筛选：与搜索框互补 —— 搜索是"我记得点什么"，这里是"我只要这一类" */}
+        <select
+          className="cfa-select cfa-facet"
+          value={props.facetWorkflow}
+          title={t('facetWorkflow')}
+          aria-label={t('facetWorkflow')}
+          onChange={event => props.onFacetWorkflow(event.target.value)}
+        >
+          <option value="">{t('facetAllWorkflows')}</option>
+          {props.facetWorkflowOptions.map(id => (
+            <option key={id} value={id}>{id}</option>
+          ))}
+        </select>
+        <input
+          className="cfa-facet-input"
+          value={props.facetCheckpoint}
+          placeholder={t('facetCheckpoint')}
+          title={t('facetCheckpointHint')}
+          aria-label={t('facetCheckpoint')}
+          onChange={event => props.onFacetCheckpoint(event.target.value)}
+        />
+        {([['', 'facetAspectAll'], ['landscape', 'facetLandscape'], ['portrait', 'facetPortrait'], ['square', 'facetSquare']] as const).map(([value, label]) => (
+          <button
+            key={value === '' ? 'all' : value}
+            type="button"
+            className={`cfa-chip${props.facetAspect === value ? ' on' : ''}`}
+            onClick={() => props.onFacetAspect(value)}
+          >
+            {t(label)}
+          </button>
+        ))}
         {/* 省略号只是入口：真正常用的开关收在悬浮里，工具条不至于被一堆按钮撑满 */}
         <div className="cfa-extra">
           <button type="button" className="cfa-btn cfa-extra-trigger" title={t('moreActions')} aria-label={t('moreActions')}>

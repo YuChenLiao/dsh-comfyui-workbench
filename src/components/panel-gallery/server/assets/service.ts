@@ -28,6 +28,28 @@ export interface ItemQuery {
   dedupe: boolean
   offset: number
   limit: number
+  /** 按工作流 id 精确过滤（来源卡片的 sidecar）。 */
+  workflow?: string
+  /** 按底模过滤（子串：用户记得 `sd_xl`，不记得完整文件名）。 */
+  checkpoint?: string
+  /** 按方向过滤：landscape / portrait / square。 */
+  aspect?: '' | 'landscape' | 'portrait' | 'square'
+}
+
+/**
+ * 宽高比分类。
+ *
+ * 5% 容差：`1536×1536` 是方图，`1536×1500` 在视觉上同样是方图 —— 严格相等会把
+ * 后者判成横图，用户筛"方图"时就少了一张。
+ */
+export function aspectOf(width: number | undefined, height: number | undefined): '' | 'landscape' | 'portrait' | 'square' {
+  if (width === undefined || height === undefined || width <= 0 || height <= 0) return ''
+  const ratio = width / height
+  // 用区间比较而不是 `Math.abs(ratio - 1) <= 0.05`：后者在边界上是浮点不对称的 ——
+  // `1050×1000`（1.05）算出来是 1.050000000000000044，会被判成横图，
+  // 而转 90° 的 `1000×1050`（0.952381）却是方图。同一个形状不该因为方向翻档。
+  if (ratio >= 0.95 && ratio <= 1.05) return 'square'
+  return ratio > 1 ? 'landscape' : 'portrait'
 }
 
 /** 一页列表结果。 */
@@ -100,6 +122,16 @@ export function queryItems(
       // 只搜 name / prompt 时这两种意图都落空。
       const haystack = `${item.name} ${item.prompt ?? ''} ${item.negativePrompt ?? ''} ${item.checkpoint ?? ''} ${item.workflowId ?? ''}`.toLowerCase()
       if (!haystack.includes(query.q)) continue
+    }
+    // 结构化筛选：与 `q` 分开 —— `q` 是"我记得点什么"，这些是"我只要这一类"
+    if (query.workflow !== undefined && query.workflow !== '' && item.workflowId !== query.workflow) continue
+    if (query.checkpoint !== undefined && query.checkpoint !== ''
+      && (item.checkpoint ?? '').toLowerCase().includes(query.checkpoint.toLowerCase()) === false) continue
+    if (query.aspect !== undefined && query.aspect !== '') {
+      // **未知尺寸不参与方向筛选**：`includeBare` 打开时非生成图没有 width/height，
+      // 把它们一律排掉会让"包含非生成图"这个开关看起来坏了。
+      const shape = aspectOf(item.width, item.height)
+      if (shape !== '' && shape !== query.aspect) continue
     }
     items.push(item)
   }

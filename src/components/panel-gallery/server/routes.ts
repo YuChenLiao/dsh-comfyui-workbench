@@ -77,6 +77,15 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
       dedupe: url.searchParams.get('dedupe') !== '0',
       offset: Math.max(0, Number.parseInt(url.searchParams.get('offset') ?? '0', 10) || 0),
       limit: Math.min(500, Math.max(1, Number.parseInt(url.searchParams.get('limit') ?? '60', 10) || 60)),
+      // 结构化筛选（与 `q` 互补）：只要这一类，而不是模糊搜。
+      // `checkpoint` 折成小写：底模文件名大小写混排（`SDXL_*` / `Realistic_Vision_*`），
+      // 而占位提示让人打的是 `sdxl` —— 不折的话"照着提示打 → 空结果"。
+      workflow: (url.searchParams.get('workflow') ?? '').trim(),
+      checkpoint: (url.searchParams.get('checkpoint') ?? '').trim().toLowerCase(),
+      aspect: ((): '' | 'landscape' | 'portrait' | 'square' => {
+        const raw = (url.searchParams.get('aspect') ?? '').trim()
+        return raw === 'landscape' || raw === 'portrait' || raw === 'square' ? raw : ''
+      })(),
     }
 
     try {

@@ -480,6 +480,19 @@ export async function uploadImage(
   }
 }
 
+/** 读一张图的完整 sidecar（`vars` 里的参数只有这里有）。 */
+export async function fetchMeta(path: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const data = await apiJson('/meta', { path })
+    const meta = data.meta
+    return meta !== null && typeof meta === 'object' && Array.isArray(meta) === false
+      ? (meta as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** 回收站：列出可恢复的条目。 */
 export interface TrashEntry {
   dir: string

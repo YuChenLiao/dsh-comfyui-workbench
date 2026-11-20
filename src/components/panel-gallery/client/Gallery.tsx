@@ -15,6 +15,7 @@ import { BulkBar } from './BulkBar.js'
 import { MaskEditor } from './MaskEditor.js'
 import { SendToWorkflow } from './SendToWorkflow.js'
 import { TrashModal } from './TrashModal.js'
+import { CompareModal } from './CompareModal.js'
 import { Card } from './Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from './Confirm.js'
 import { Lightbox } from './Lightbox.js'
@@ -67,13 +68,22 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [sendTarget, setSendTarget] = useState<GalleryItem | null>(null)
   /** 回收站弹层。 */
   const [trashOpen, setTrashOpen] = useState(false)
+  /** 双图对比：恰好选中两张时打开。 */
+  const [comparePair, setComparePair] = useState<[GalleryItem, GalleryItem] | null>(null)
+  /** 结构化筛选（空串 = 不限）。 */
+  const [facetWorkflow, setFacetWorkflow] = useState('')
+  const [facetCheckpoint, setFacetCheckpoint] = useState('')
+  const [facetAspect, setFacetAspect] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
   /** 正在盯的运行（提交后轮询它的状态）。 */
   const [watching, setWatching] = useState<string | null>(null)
 
-  const gallery = useGalleryData({ visible, root, query, includeBare, mergeDuplicates })
+  const gallery = useGalleryData({
+    visible, root, query, includeBare, mergeDuplicates,
+    workflow: facetWorkflow, checkpoint: facetCheckpoint, aspect: facetAspect,
+  })
   const { items, itemsRef, total, truncated, loading, loadingMore, hasMore, notice, setNotice, reload } = gallery
 
   /**
@@ -502,6 +512,14 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         onToggleSelecting={() => (selecting ? exitSelect() : setSelecting(true))}
         onRefresh={() => gallery.reload(true)}
         onTrash={() => setTrashOpen(true)}
+        facetWorkflow={facetWorkflow}
+        facetCheckpoint={facetCheckpoint}
+        facetAspect={facetAspect}
+        // 下拉选项只从**已加载**的条目里收：多一次请求去拿全量列表不值得
+        facetWorkflowOptions={[...new Set(items.map(row => row.workflowId).filter((id): id is string => typeof id === 'string' && id !== ''))].sort()}
+        onFacetWorkflow={value => setFacetWorkflow(value)}
+        onFacetCheckpoint={value => setFacetCheckpoint(value)}
+        onFacetAspect={value => setFacetAspect(value)}
         onOpenSidebar={openInSidebar}
       />
       <div className="cfa-body" ref={gallery.scrollRef}>
@@ -541,6 +559,12 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
           busy={busy}
           onSelectAll={selectAllShown}
           onSelectNone={selectNone}
+          onCompare={() => {
+            const picked = selectedItems()
+            const first = picked[0]
+            const second = picked[1]
+            if (picked.length === 2 && first !== undefined && second !== undefined) setComparePair([first, second])
+          }}
           onExport={() => { void bulkExport() }}
           onRemove={() => setBulkConfirmOpen(true)}
           onExit={exitSelect}
@@ -587,6 +611,9 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
           onClose={() => setTrashOpen(false)}
           onChanged={() => gallery.reload(true)}
         />
+      ) : null}
+      {comparePair !== null ? (
+        <CompareModal a={comparePair[0]} b={comparePair[1]} t={t} onClose={() => setComparePair(null)} />
       ) : null}
       {pendingDelete !== null ? (
         <ConfirmRemove

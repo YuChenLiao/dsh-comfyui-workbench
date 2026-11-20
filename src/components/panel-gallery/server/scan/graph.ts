@@ -129,3 +129,29 @@ export function modelFromWorkflow(workflow: unknown): string | undefined {
   }
   return undefined
 }
+
+/**
+ * 从 sidecar 的 `vars` 里找底模。
+ *
+ * **插件自己产出的图必须走这条**：`shared/run/runner.ts` 写 sidecar 时只落
+ * `workflowId` / `workflowHash` / `vars`，没有顶层 `checkpoint`、也没有 `workflow`
+ * 对象（那是 ComfyUI 原生 PNG 的内嵌块才有的东西）。只读顶层的话，
+ * "按底模筛选"对自家产物永远是 0 条 —— 而自家产物正是相册里的绝大多数。
+ *
+ * @param vars - sidecar 的 `vars`（槽位名 → 值）。
+ */
+export function modelFromVars(vars: unknown): string | undefined {
+  if (vars === null || typeof vars !== 'object' || Array.isArray(vars)) return undefined
+  const bag = vars as Record<string, unknown>
+  // 先按约定键名找（与 `modelFromWorkflow` 同一组）
+  for (const key of ['ckpt_name', 'unet_name', 'model_name', 'checkpoint', 'base_model']) {
+    const value = bag[key]
+    if (typeof value === 'string' && value.trim() !== '') return value
+  }
+  // 再兜底：任何看起来像权重文件名的值。自定义工作流给槽位起的名字五花八门，
+  // 只认约定键名会漏掉一大半。
+  for (const value of Object.values(bag)) {
+    if (typeof value === 'string' && /\.(safetensors|ckpt|pth|gguf)$/i.test(value)) return value
+  }
+  return undefined
+}

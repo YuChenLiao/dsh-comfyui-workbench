@@ -38,8 +38,12 @@ export function useGalleryData(options: {
   query: string
   includeBare: boolean
   mergeDuplicates: boolean
+  /** 结构化筛选：工作流 id / 底模子串 / 方向。空串表示不限。 */
+  workflow?: string
+  checkpoint?: string
+  aspect?: string
 }): GalleryData {
-  const { visible, root, query, includeBare, mergeDuplicates } = options
+  const { visible, root, query, includeBare, mergeDuplicates, workflow = '', checkpoint = '', aspect = '' } = options
 
   const [items, setItems] = useState<GalleryItem[]>([])
   const [total, setTotal] = useState(0)
@@ -77,6 +81,10 @@ export function useGalleryData(options: {
       }
       if (root !== 'all') params.root = root
       if (query.trim() !== '') params.q = query.trim()
+      // 结构化筛选与 q 互补：q 是模糊搜，这三个是"只要这一类"
+      if (workflow !== '') params.workflow = workflow
+      if (checkpoint !== '') params.checkpoint = checkpoint
+      if (aspect !== '') params.aspect = aspect
 
       const data = await apiJson('/items', params)
       if (token !== requestRef.current) return
@@ -105,7 +113,7 @@ export function useGalleryData(options: {
         setLoadingMore(false)
       }
     }
-  }, [root, query, includeBare, mergeDuplicates])
+  }, [root, query, includeBare, mergeDuplicates, workflow, checkpoint, aspect])
 
   loadRef.current = load
 
@@ -142,7 +150,7 @@ export function useGalleryData(options: {
     const delay = query.trim() === '' ? 0 : 240
     const timer = setTimeout(() => { void load(true) }, delay)
     return () => clearTimeout(timer)
-  }, [visible, root, includeBare, query, load])
+  }, [visible, root, includeBare, query, workflow, checkpoint, aspect, load])
 
   useEffect(() => {
     if (notice === null) return undefined

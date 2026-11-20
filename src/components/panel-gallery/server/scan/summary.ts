@@ -1,4 +1,4 @@
-import { modelFromWorkflow } from './graph.js'
+import { modelFromVars, modelFromWorkflow } from './graph.js'
 import type { MetaRecord, SummaryFields } from './types.js'
 
 /** 提示词在列表里的截断上限：1200 字符覆盖实际提示词，也够灯箱展示。 */
@@ -52,7 +52,9 @@ export function metaSummary(meta: MetaRecord | undefined): SummaryFields {
     strength: num(meta.strength),
     samplerName: text(meta.samplerName),
     scheduler: text(meta.scheduler),
-    checkpoint: text(meta.checkpoint) ?? modelFromWorkflow(meta.workflow),
+    // 三个来源按可靠性排：顶层字段（ComfyUI 内嵌块）→ `vars`（**插件自己写的 sidecar**，
+    // 参数全在这里）→ 内嵌 `workflow` 图。漏掉中间那条的话，"按底模筛选"对自家产物恒为 0。
+    checkpoint: text(meta.checkpoint) ?? modelFromVars(meta.vars) ?? modelFromWorkflow(meta.workflow),
     createdAt: text(meta.createdAt),
     // 相册能按工作流名检索时，`q` 的命中断言才有意义（见 service.ts 的 haystack）
     workflowId: text(meta.workflowId),

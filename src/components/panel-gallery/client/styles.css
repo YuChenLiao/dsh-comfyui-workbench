@@ -163,3 +163,33 @@
 .csm-hint{flex:1;min-width:200px;font-size:.76em;color:var(--dsw-alias-label-secondary)}
 .csm-actions{display:flex;gap:8px}
 .csm-panel .cfa-btn{width:auto;padding:0 10px}
+
+/* 双图对比：并排 / 拉杆 + 右侧参数差异。层级与其余弹层一致（高于灯箱 2600）。 */
+.cpm-root{position:fixed;inset:0;z-index:2900;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.68);padding:16px}
+.cpm-panel{display:flex;flex-direction:column;gap:10px;width:min(1100px,96vw);max-height:92vh;padding:12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.45)}
+.cpm-head{display:flex;align-items:center;gap:10px}
+.cpm-title{flex:1;font-size:.95em;font-weight:500}
+.cpm-modes{display:flex;gap:6px}
+.cpm-body{display:flex;gap:12px;min-height:0;overflow:hidden}
+.cpm-stage{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;overflow:auto;border-radius:8px;background:rgba(0,0,0,.35)}
+.cpm-side{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}
+.cpm-figure{display:flex;flex-direction:column;gap:4px;margin:0;min-width:0}
+.cpm-figure img{width:100%;max-height:62vh;object-fit:contain;border-radius:6px;background:#000}
+.cpm-figure figcaption{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.74em;color:var(--dsw-alias-label-secondary)}
+.cpm-slider{position:relative;display:flex;align-items:center;justify-content:center;width:100%}
+.cpm-layer{display:block;max-width:100%;max-height:62vh;object-fit:contain;border-radius:6px}
+.cpm-clip{position:absolute;inset:0;margin:auto}
+.cpm-range{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);width:60%;accent-color:var(--dsw-alias-brand-primary)}
+.cpm-diff{width:min(340px,38vw);display:flex;flex-direction:column;gap:6px;min-height:0}
+.cpm-diff-head{font-size:.78em;color:var(--dsw-alias-label-secondary)}
+.cpm-list{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;overflow:auto}
+.cpm-row{display:flex;flex-direction:column;gap:2px;padding:5px 7px;border-radius:6px;background:var(--dsw-alias-bg-layer-2);border-left:2px solid var(--dsw-alias-brand-primary)}
+.cpm-row.same{border-left-color:transparent;opacity:.55}
+.cpm-key{font-size:.72em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dsw-alias-label-secondary)}
+.cpm-values{display:flex;flex-direction:column;gap:1px}
+.cpm-value{font-size:.78em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 结构化筛选：一个下拉 + 一个窄输入 + 四个胶囊 */
+.cfa-facet{max-width:130px}
+.cfa-facet-input{width:110px;height:26px;padding:0 7px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}
+.cfa-facet-input:focus{border-color:var(--dsw-alias-brand-primary);outline:none}

@@ -1228,3 +1228,83 @@ test('回收站回归：includeHidden 下不回流、同名恢复不互相覆盖
     await app.close()
   }
 })
+
+/**
+ * 相册的结构化筛选：/items 的 `workflow` / `checkpoint` / `aspect`。
+ *
+ * 与 `q` 互补：`q` 是"我记得点什么"，这些是"我只要这一类"。
+ * `aspect` 走 5% 容差 —— 1536×1500 在视觉上就是方图，严格相等会把它判成横图。
+ */
+test('GET /items：按工作流、底模、方向筛选', async () => {
+  const dirs = tmpDirs()
+  const write = (name, meta) => {
+    const file = path.join(dirs.out, name)
+    fs.writeFileSync(file, TINY_PNG)
+    fs.writeFileSync(`${file}.json`, JSON.stringify({
+      plugin: 'dsh-comfyui-workbench',
+      createdAt: new Date().toISOString(),
+      workflowId: meta.workflowId,
+      checkpoint: meta.checkpoint,
+      width: meta.width,
+      height: meta.height,
+      vars: { prompt: name },
+      comfy: { url: 'http://127.0.0.1:8188', promptId: `pid-${name}` },
+    }))
+  }
+  write('wide.png', { workflowId: 'text2img-basic', checkpoint: 'sd_xl_base_1.0.safetensors', width: 1920, height: 1080 })
+  write('tall.png', { workflowId: 'upscale-4x', checkpoint: 'flux-dev.safetensors', width: 1080, height: 1920 })
+  write('square.png', { workflowId: 'text2img-basic', checkpoint: 'sd_xl_base_1.0.safetensors', width: 1024, height: 1000 })
+
+  // 插件自己写的 sidecar 是**这种形态**：顶层没有 checkpoint、没有 workflow，
+  // 参数全在 vars 里（shared/run/runner.ts）。只测手写形态的话，
+  // "按底模筛选对自家产物恒为 0" 这个 bug 永远发现不了。
+  const runnerFile = path.join(dirs.out, 'runner.png')
+  fs.writeFileSync(runnerFile, TINY_PNG)
+  fs.writeFileSync(`${runnerFile}.json`, JSON.stringify({
+    plugin: 'dsh-comfyui-workbench',
+    createdAt: new Date().toISOString(),
+    workflowId: 'text2img-basic',
+    workflowHash: 'h'.repeat(16),
+    vars: { ckpt_name: 'SDXL_Turbo_1.0.safetensors', steps: 20, cfg: 7, sampler_name: 'euler', prompt: 'a cat' },
+    prompt: 'a cat',
+    seed: 42,
+    width: 1536,
+    height: 1024,
+    comfy: { url: 'http://127.0.0.1:8188', promptId: 'pid-runner' },
+  }))
+
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index, autoStart: false, autoDetect: false })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    const MINE = ['wide.png', 'tall.png', 'square.png', 'runner.png']
+    const names = async query => {
+      const body = await (await fetch(`${base}/items?all=1&limit=200${query}`)).json()
+      // rootsOf 会连进程 cwd 一起扫（仓库里有 docs/screenshots 的图），只取这三条
+      return body.items.map(row => row.name).filter(name => MINE.includes(name)).sort()
+    }
+
+    assert.deepEqual(await names(''), ['runner.png', 'square.png', 'tall.png', 'wide.png'], '不筛选时四条都在')
+    // total 是 UI 的计数来源，也得跟着过滤走
+    const totalOf = async query => (await (await fetch(`${base}/items?all=1&limit=50${query}`)).json()).total
+    assert.equal(await totalOf('&workflow=text2img-basic'), 3, 'runner / square / wide 都属于这个工作流')
+    // 工作流：精确 id（runner 那张也属于这个工作流）
+    assert.deepEqual(await names('&workflow=text2img-basic'), ['runner.png', 'square.png', 'wide.png'])
+    assert.deepEqual(await names('&workflow=upscale-4x'), ['tall.png'])
+    // 底模：子串（用户记得 sdxl，不记得完整文件名）
+    // 顶层 checkpoint（ComfyUI 内嵌块形态）
+    assert.deepEqual(await names('&checkpoint=sd_xl'), ['square.png', 'wide.png'])
+    // **大小写不敏感**：占位提示让人打的就是小写，而真实底模名常是大写（`SDXL_*`）
+    assert.deepEqual(await names('&checkpoint=SD_XL'), ['square.png', 'wide.png'])
+    // vars 形态（插件自己写的 sidecar）：这是相册里的绝大多数，必须也能筛到
+    assert.deepEqual(await names('&checkpoint=sdxl_turbo'), ['runner.png'], 'checkpoint 要能从 vars 里取')
+    assert.deepEqual(await names('&checkpoint=SDXL_TURBO'), ['runner.png'], 'vars 形态同样不区分大小写')
+    // 方向：1024×1000 的宽高比是 1.024，落在 5% 容差内 → 方图；runner 是 1536×1024 → 横
+    assert.deepEqual(await names('&aspect=landscape'), ['runner.png', 'wide.png'])
+    assert.deepEqual(await names('&aspect=portrait'), ['tall.png'])
+    assert.deepEqual(await names('&aspect=square'), ['square.png'])
+    // 非法 aspect 被忽略（不是 400、也不是筛成空）
+    assert.equal((await names('&aspect=diagonal')).length, 4)
+  } finally {
+    await app.close()
+  }
+})
