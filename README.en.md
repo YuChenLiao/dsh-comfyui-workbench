@@ -4,7 +4,7 @@
 
 A ComfyUI workbench for [DSH](https://github.com/deepseek-ai): **hand your local ComfyUI workflows to the model**, and manage which workflows the model is allowed to use.
 
-There are six user-facing panels — Assets, Workflows, Tags, Poses, Costumes, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
+There are seven user-facing panels — Assets, Workflows, Tags, Characters, Poses, Costumes, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
 
 > This plugin is the successor to [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album); asset browsing is inherited from it (shared code lineage). Running both gives you two entry points and two delete buttons — we recommend uninstalling the album plugin. `scripts/migrate-album.mjs` ships only in the repository: if you installed from a package you'll need to clone the repo and run it there.
 
@@ -15,8 +15,8 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | entry | kind | responsibility |
 | --- | --- | --- |
 | `comfyui-workbench:core` | server | Initializes the shared runtime (ComfyUI client / process supervision / asset index / output dir) and hosts the browser bundle. **Its `name` must be the package root** — the host only assembles `exports["./client"]` for root specifiers |
-| `comfyui-workbench:gallery` | panel | Assets: listing, filtering, thumbnails, deletion, bulk workflow ZIP export |
-| `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
+| `comfyui-workbench:gallery` | panel | Assets: listing, structured filters (workflow / checkpoint / aspect), thumbnails, video/audio playback, A/B compare, mask brush, send-to-workflow, soft-delete trash, bulk workflow ZIP export |
+| `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, node/model audit, deletion, UI/PNG import, service status strip (VRAM / queue / stop), plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
 | `comfyui-workbench:tags` | panel | Tag library: search four tag categories, filter by semantic category, copy a tag. Browsing is read-only; the "update tags" button refreshes the data from upstream |
 | `comfyui-workbench:poses` | panel + tools | Pose library: 288 poses / 1,439 angles of human reference sketches — search, filter by system and category, save a sketch into uploads as a workflow image input; also registers one `comfyui_pose` tool (give `query` to search, `id` to fetch) |
 | `comfyui-workbench:costumes` | panel + tools | Costume library: **the panel switches between the real-style and anime-style sets** (1,407 photo-style + 1,320 anime-style outfits, no people in frame); on the tool side pass `comfyui_costume { source: "anime" }` to pick the anime set — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers one `comfyui_costume` tool (give `query` to search, `id` to fetch) |
@@ -71,6 +71,7 @@ Restart DSH afterwards. Twelve entries get inserted into `cordis.patch.yml` (the
 | `pollIntervalMs` | Status polling interval while a run is in flight |
 | `runWait` | Whether tool runs wait by default: `async` (default — hands control back to the conversation, the plugin pushes a message when the image lands) or `sync` (waits for artifacts on disk and indexes them). Toggle it in the Workflow Admin panel; takes effect on the next submission. An explicit `wait` argument still wins. Note **config beats environment variables**: once this key is written in the patch, `COMFYUI_RUN_WAIT` has no effect |
 | `runWaitMaxMs` | Ceiling for the synchronous wait, default `1800000` (30 min), clamped to `[1s, 30min]`. **Not the same thing as `timeoutMs`** — that is the per-request HTTP timeout (default 2 min), and using it as the wait ceiling turns "sync" into "wait 2 minutes then return pending", while real generations regularly exceed 2 minutes |
+| `progressStream` | Read exact progress over `/ws` (default `false` in `settings.json`, `true` in `cordis.patch.yml`). Toggleable directly in the Workflow Admin panel without editing this file or restarting (`COMFYUI_PROGRESS_WS=1` also enables it). Only applies to panel runs (`/run`, `/rerun`), not tool runs |
 | `roots` | Extra directories to include in the asset library (the current workspace, `dsh-comfyui-image`'s `outputDir` and the output dir are already included) |
 | `assetRoots` | Extra **writable** roots. `assertWritable` takes the union of all authorized roots (`roots` / workspaces / cwd / output dir / uploads / `assetRoots`) and rejects writes that land outside it |
 
@@ -78,20 +79,21 @@ Restart DSH afterwards. Twelve entries get inserted into `cordis.patch.yml` (the
 
 | tool | what it does |
 | --- | --- |
-| `comfyui_workflow` | **Five read-only views of one object**: no args lists available workflows (id, title, purpose note, base model, input kinds, output shape, presets; disabled ones omitted with `hiddenCount`); with `workflowId` gives the IO surface plus node list and flags missing nodes / missing models with substitutes; add `nodeId` for one node's full config; `audit: true` checks the whole library; `models: true` inventories the models installed locally (checkpoint / lora / vae / controlnet / upscaler, with LoRA trigger notes). When `/object_info` is unreachable it does not flag missing models — that would report "offline" as "missing models" |
-| `comfyui_run` | **Depends on `runWait` (built-in async)**: by default it returns a `promptId` immediately, watches in the background and pushes the result into the conversation when the image is done. Supports `wait` for synchronous waiting (pass `true`, or a millisecond count — one parameter, two meanings) and `promptId` for re-checking. Disabled workflows are rejected outright. **Starts ComfyUI automatically** when it is not running (waits until `/system_stats` responds, capped by `readyTimeoutMs`, 3 minutes by default) and submissions queue behind that startup — no need to start ComfyUI by hand, and do not kill it while it is loading or downloading models |
+| `comfyui_workflow` | **Five read-only views of one object**: no args lists available workflows (id, title, purpose note, base model, input kinds, output shape, presets; disabled ones omitted with `hiddenCount`); with `workflowId` gives the IO surface plus node list and flags missing nodes / missing models with substitutes; add `nodeId` for one node's full config; `audit: true` checks the whole library; `models: true` (or a category name such as `'lora'`) inventories the models installed locally (checkpoint / lora / vae / controlnet / upscaler / other, reading `<plugin data dir>/loras.json` for LoRA trigger notes). When `/object_info` is unreachable it does not flag missing models — that would report "offline" as "missing models" |
+| `comfyui_run` | **Depends on `runWait` (built-in async)**: by default it returns a `promptId` immediately, watches in the background and pushes the result into the conversation when the image is done. Supports `wait` for synchronous waiting (pass `true`, or a millisecond count — one parameter, two meanings), `promptId` for re-checking, `preset` to apply a `<id>.meta.json` preset (explicit `vars` override), and `tags` (written to both the sidecar and the asset index in sync and async modes). Disabled workflows are rejected outright. **Starts ComfyUI automatically** when it is not running (waits until `/system_stats` responds, capped by `readyTimeoutMs`, 3 minutes by default) and submissions queue behind that startup — no need to start ComfyUI by hand, and do not kill it while it is loading or downloading models |
 | `comfyui_workflow_edit` | Edits title / description / tags and single-node parameters. Changes apply to the next run only by default; writing back to the template requires `persist` + `expectHash`. Parameters bound to a variable cannot be edited here (`param_bound`) — pass the variable through `comfyui_run`'s `vars` instead |
 | `comfyui_node_search` | Searches installed nodes by class name / display name / alias / category / input-output type / package, with four ranking tiers. Returns a one-line summary by default; `detail` adds inputs and outputs |
 | `comfyui_rerun` | Runs again with the parameters an existing artifact used (or makes variants). Parameters come from the sidecar next to the artifact, so there is no need to copy seed / prompt by hand |
 | `comfyui_runs` | Checks run state: running (`state: running`), queued (with `queuePosition`), recently finished or failed. Progress lands in the record only and **never enters the conversation**, so it will not interrupt the current turn. `progress` appears only with `progressStream` on, and **only for runs submitted from the panel via `/run` or `/rerun`** (not tool submissions) — a missing field is not an anomaly; with it on, the percentage resets per sampling node and can jump backwards |
-| `comfyui_run_batch` | Submits several runs at once (one workflow with different parameters, or different workflows). Reports per item — **one failure does not affect the others**; follows `runWait` (built-in async, i.e. all asynchronous) |
+| `comfyui_run_batch` | Submits several runs at once (one workflow with different parameters, different workflows, or a `grid` parameter matrix expanded Cartesian-style). Reports per item — **one failure does not affect the others**; follows `runWait` (built-in async, i.e. all asynchronous) |
 | `danbooru_lookup` | Turns names into Danbooru tags, **two paths in one tool**: give `query` for a single name (local library, falls back online when not found), give `queries` for a batch (up to 50, **local only, no network** — 50 online lookups would be slow and rate-limited; fill the gaps with `query`). `kind` narrows character / artist / copyright / general. `长发` → `long_hair`, `东方Project` → `touhou` |
 | `danbooru_sync` | Pulls character / artist tags (including Chinese names) into the local library. Thousands of requests — call it only when the user asks |
 | `comfyui_pose` | Two paths in one tool — give `query` to **search** the reference library (288 poses / 1,439 angles; by Chinese name, code or category; returns the `id` and angle count, no images; `onlySafe` narrows it to the 98 regular poses), give `id` to **fetch** that angle's sketch (or the pose's front view) into the local uploads directory — the returned path is ready as a workflow image input (ControlNet / img2img) |
-| `comfyui_costume` | Two paths in one tool, and **two style sets** (`source: "real"` default 1,407 photo-style, `source: "anime"` 1,320 anime-style) — give `query` to **search** the costume library ( by Chinese description, tag, English keyword or code; returns the `id` plus **`keywords`** that can go straight into a prompt), give `id` to **fetch** that outfit's image into the local uploads directory for use as a costume reference |
-| `comfyui_compose` | Assembles materials into **one call you can hand straight to `comfyui_run`**: picks a workflow, materializes the images into uploads, fills `vars` by slot semantics, builds the prompt. It never generates anything itself — `assumptions` spells out every inference, override them with `extraVars` |
+| `comfyui_costume` | Two paths in one tool, and **two style sets** (`source: "real"` default 1,407 photo-style, `source: "anime"` 1,320 anime-style) — give `query` to **search** the costume library (by Chinese description, tag, English keyword or code; returns the `id` plus **`keywords`** that can go straight into a prompt), give `id` to **fetch** that outfit's image into the local uploads directory for use as a costume reference |
+| `comfyui_character` | Two paths in one tool — give `query` to **search** the character library (20 AI-girl reference sheets by name / brand / description; returns `id`, subtitle, brand and available views), give `id` + `view` (`turnaround` / `expression` / `outfit` / `props` / `sheet`) to **fetch** into uploads as a reference image. CC BY-NC-SA 4.0, non-commercial reference only |
+| `comfyui_compose` | Assembles materials into **one call you can hand straight to `comfyui_run`**: supports character sheets (`characterId` / `characterView`), costumes, poses, inpainting base/mask (`baseImage` / `maskImage`), tags and free-form description — picks a workflow, materializes the images into uploads, fills `vars` by slot semantics, builds the prompt. It never generates anything itself — `assumptions` spells out every inference, override them with `extraVars` |
 
-A workflow's "available" flag lives in `<id>.meta.json` under `enabled` (default `true`); the panel and `comfyui_workflow_edit` write the same file.
+A workflow's "available" flag lives in `<id>.meta.json` under `enabled` (default `true`); the panel and `comfyui_workflow_edit` write the same file, and `presets` (saved parameter sets) live in the same `.meta.json`.
 
 ## Danbooru tag library
 
@@ -190,6 +192,15 @@ Rate limits and network errors during a sync are retried with backoff; rows that
 
 This component can be disabled on its own (host plugin page, or `disabledComponents: ['tool.danbooru']`) without affecting the generation path.
 
+## Assets and media browsing
+
+The asset gallery supports **images, videos and audio** outputs (videos and audio appear in the default generated view when accompanied by a sidecar; cards usually preview the first frame, the lightbox player supports `Range` seeking, unplayable containers such as `.mkv` / `.avi` show a fallback hint, and image-only actions are hidden for non-image items):
+
+- **Search and structured filters**: `/items?q=` matches base model name and workflow id in addition to filename and prompt; the toolbar adds workflow, checkpoint (case-insensitive substring) and aspect ratio (landscape / portrait / square with 5% tolerance) filters.
+- **Trash (soft delete)**: deletes move the media file, its `.json` sidecar and copies into `<root>/.trash/` by default, where they can be restored or emptied (`soft=0` still deletes permanently).
+- **A/B compare**: select two items in multi-select mode to open a side-by-side or slider comparison modal highlighting differing parameters only.
+- **Mask brush & send-to-workflow**: paint an inpaint mask in the lightbox and paste the base/mask paths into the conversation draft for `comfyui_compose`, or send an image straight into an image-input workflow template.
+
 ## Hiding NSFW
 
 The asset toolbar has an ellipsis to the right of the refresh button — hover it to reveal "Hide NSFW". Once enabled, assets judged NSFW disappear from the list and the button shows how many were hidden.
@@ -210,6 +221,17 @@ The third tab: search the four Danbooru tag categories (99,372 tags), grab a `ta
 - **Category chips show their real counts**: action / clothing / appearance / composition / object / theme / explicit / other, each chip labelled with how many tags it can filter to. Categories cover only **26.9%** of general tags (`ponytail` and `braid`, among the most common words, are not in Danbooru's wiki groups), so when a search comes up empty check the count first — that means "not covered by a category", and dropping the chip brings the tag back.
 - **Read-only browsing, with copy**: the copy button yields the bare tag, with no draft state. To build prompts up over time, use the `{{variable}}` workflow templates.
 - First paint takes about 550 ms (129 ms to read + 420 ms to build the index for all 99,372 tags); queries after that take **1–3 ms**. Disable it with `disabledComponents: ["panel.tags"]`.
+
+## Character library
+
+**20 AI-girl character reference sheets** (100 slices in total) for giving workflows a consistent character appearance: turnaround, expressions, outfit breakdown, props, and full sheet. Source: **lmy414**'s [ai-chan-sheets](https://github.com/lmy414/ai-chan-sheets) (per-character authors listed in upstream `制作清单.json`, mostly ZipZipPipe / 胖次狐 from #01 on).
+
+- **Five slots per character**: `turnaround` (default), `expression`, `outfit`, `props`, `sheet`. Since a turnaround already packs front/side/back views into one horizontal sheet, the panel uses 4:3 landscape cards and you rarely need to stitch views.
+- **Images do not ship with the plugin**: `data/characters/catalog.json` holds metadata and relative paths only; slices are proxied on demand and cached locally, never prefetched or mirrored.
+- **15 brands**: DeepSeek 4, OpenAI 2, Xiaomi 2, plus Zhipu GLM, Baidu, Alibaba, Moonshot, ByteDance, MiniMax, xAI, Google, Anthropic, Meituan, Mistral and Meta (1 each).
+- **Stricter licence**: CC BY-NC-SA 4.0 — usable as generation reference, **no commercial use and no redistribution of image data** (see [data/characters/NOTICE.md](data/characters/NOTICE.md)).
+- Disable with `disabledComponents: ["panel.characters"]`. Refresh data with `npm run characters:import` (`npm run characters:check` validates without writing).
+- **Upstream health check**: `npm run characters:verify` sends `HEAD` (falling back to a single `Range: bytes=0-0` probe when `Content-Length` is omitted) across all 120 paths without downloading or caching images (`--limit 10` to sample, `--json` for CI).
 
 ## Pose library
 
@@ -237,7 +259,7 @@ The fifth panel: **1,407 real-world outfits** (no people in frame), for finding 
 
 ## Terminal panel
 
-The sixth panel (after Assets, Workflows, Tags, Poses and Costumes) shows ComfyUI's **command-line output**. What the service is doing, where it is stuck, how far a model has loaded — that only exists in the terminal, not in the GUI.
+The seventh panel (after Assets, Workflows, Tags, Characters, Poses and Costumes) shows ComfyUI's **command-line output**. What the service is doing, where it is stuck, how far a model has loaded — that only exists in the terminal, not in the GUI.
 
 - **Externally started instances work too**: a process the plugin launched has its stdout/stderr piped in; an external instance (one Desktop started itself) has no accessible stdout, so the panel reads the `user/comfyui.log` it writes. Only one path is active at a time — ComfyUI's logger attaches both a Stream handler and a File handler, so reading both would duplicate every line.
 - When the service isn't running the panel offers a Start button, launching it directly instead of making you go generate an image first.
@@ -275,7 +297,7 @@ src/entries/                       eleven component entries (core is src/index.t
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 
-The first step of `npm test` (`node tests/arch.mjs`) enforces three boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client` and shell modules never import a specific component. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a `boot()` + real-fetch case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. Coverage is currently **9/14**; the remaining five (`/delete`, `/delete-many`, `/assets/rebuild`, `/service/stop`, `/free`) sit in the script's `KNOWN_UNTESTED` allow-list, which is only meant to shrink.
+The first step of `npm test` (`node tests/arch.mjs`) enforces three boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client` and shell modules never import a specific component. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a real-dispatch + `fetch` case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. `KNOWN_UNTESTED` is now empty: coverage is **19/19**.
 
 ## Development
 
@@ -290,7 +312,7 @@ node scripts/compat.mjs   # workflow compatibility scan: missing nodes / missing
 
 `node scripts/smoke-workflows.mjs` runs each workflow for real (parameters squeezed to 512 on the long edge, 1 step) to verify only that it submits, generates and retrieves.
 
-Importing a workflow: use the import button at the top right of the panel and paste the JSON you exported from ComfyUI with Export (API) — or pick the file directly. For batches, `node scripts/import.mjs <workflow.json>` (`--list` shows what's there). API format only — for UI-format files, use Export (API) inside ComfyUI.
+Importing a workflow: the import button at the top right of the panel accepts **API-format JSON**, **ComfyUI UI-format workflow JSON** (automatically converted, preferring `/object_info` when online), and **drag-and-dropped PNG images** with embedded `prompt` / `workflow` metadata. For batch CLI imports, `node scripts/import.mjs <workflow.json>` (`--list` shows what's there) also accepts both API and UI JSON formats.
 
 ## Compatibility
 
@@ -335,17 +357,25 @@ only as a wiki page, not as an API, so it is parsed from the article (`npm run d
 Group names and membership belong to Danbooru and its contributors; this plugin only merges the 91
 groups into the eight categories the UI shows, and indexes them.
 
-### Pose library: ギア's AI Pose Gallery
+### Character library
+
+**20 AI-girl character reference sheets** (100 slices in total) for giving workflows a consistent character appearance: turnaround, expressions, outfit breakdown, props, and full sheet. Source: **lmy414**'s [ai-chan-sheets](https://github.com/lmy414/ai-chan-sheets) (per-character authors listed in upstream `制作清单.json`, mostly ZipZipPipe / 胖次狐 from #01 on).
+
+- **Five slots per character**: `turnaround` (default), `expression`, `outfit`, `props`, `sheet`. Since a turnaround already packs front/side/back views into one horizontal sheet, the panel uses 4:3 landscape cards and you rarely need to stitch views.
+- **Images do not ship with the plugin**: `data/characters/catalog.json` holds metadata and relative paths only; slices are proxied on demand and cached locally, never prefetched or mirrored.
+- **15 brands**: DeepSeek 4, OpenAI 2, Xiaomi 2, plus Zhipu GLM, Baidu, Alibaba, Moonshot, ByteDance, MiniMax, xAI, Google, Anthropic, Meituan, Mistral and Meta (1 each).
+- **Stricter licence**: CC BY-NC-SA 4.0 — usable as generation reference, **no commercial use and no redistribution of image data** (see [data/characters/NOTICE.md](data/characters/NOTICE.md)).
+- Disable with `disabledComponents: ["panel.characters"]`. Refresh data with `npm run characters:import` (`npm run characters:check` validates without writing).
+- **Upstream health check**: `npm run characters:verify` sends `HEAD` (falling back to a single `Range: bytes=0-0` probe when `Content-Length` is omitted) across all 120 paths without downloading or caching images (`--limit 10` to sample, `--json` for CI).
+
+## Pose library: ギア's AI Pose Gallery
 
 | | |
 |---|---|
 | 288 pose groups (1,439 angles) and the original Japanese data | **ギア** ([@giaaibusi](https://x.com/giaaibusi)), [AI Pose Gallery](https://ai-pose-gallery.pages.dev/) |
 | Chinese names, action categories and the four-system split | **Anhao** ([anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)), mirror at <https://ai-pose-gallery.anhao.app> |
 
-The **mannequin costume set** and the **anime costume set** are both used here (depth maps and the
-portrait library are not). The plugin aggregates and indexes them and nothing more. The source material
-**may not be used commercially**, and this project's MIT license covers none of the sketches — see
-[data/poses/NOTICE.md](data/poses/NOTICE.md).
+The **mannequin figure set** is used here (only the white-model sketches; depth maps, the portrait library, and the anime costume set are not included). The plugin aggregates and indexes them and nothing more. The source material **may not be used commercially**, and this project's MIT license covers none of the sketches — see [data/poses/NOTICE.md](data/poses/NOTICE.md).
 
 ### Costume library: ギア's COSTUME-DB-01
 

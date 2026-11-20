@@ -4,7 +4,7 @@
 
 给 [DSH](https://github.com/deepseek-ai) 的 ComfyUI 工作台：**把本机的 ComfyUI 工作流交给模型调用**，并管理"哪些工作流对模型可用"。
 
-面向用户的界面是六块：资产库、工作流管理、标签库、姿势库、衣装库、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
+面向用户的界面是七块：资产库、工作流管理、标签库、角色库、姿势库、衣装库、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
@@ -15,8 +15,8 @@
 | entry | 形态 | 职责 |
 | --- | --- | --- |
 | `comfyui-workbench:core` | 服务端 | 初始化共享运行时（ComfyUI 客户端 / 进程托管 / 资产索引 / 产物目录）；承载浏览器端。**name 必须是包根**，宿主只给包根装配 `exports["./client"]` |
-| `comfyui-workbench:gallery` | 面板 | 资产库：列表、筛选、缩略图、删除、批量导出工作流 ZIP |
-| `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/rerun`、`/config`、服务托管接口 |
+| `comfyui-workbench:gallery` | 面板 | 资产库：列表、结构化筛选（工作流 / 底模 / 方向）、缩略图、音视频播放、双图对比、涂蒙版、送入吃图工作流、回收站软删除、批量导出工作流 ZIP |
+| `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注、节点/模型审计、删除、UI/PNG 导入、顶部服务状态条（VRAM/队列/停止服务），外加 `/run`、`/rerun`、`/config`、服务托管接口 |
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
 | `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：**面板可在写实 / 二次元两套之间切换**（1407 套实拍照风 + 1320 套二次元）；工具侧用 `comfyui_costume { source: "anime" }` 指定二次元版。两批都不含人物，搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
@@ -79,21 +79,21 @@ dsh plugin --profile desktop add link:D:/dsh/dsh-comfyui-workbench
 
 | 工具 | 作用 |
 | --- | --- |
-| `comfyui_workflow` | 工作流的**五档只读视角**：不给参数列可用工作流（id、标题、用途、底模、输入种类、输出形状、可套的预设；被停用的不列出，`hiddenCount` 告知藏了几条）；给 `workflowId` 看 IO 面与节点清单（顺带报缺节点、缺模型与替代建议）；再加 `nodeId` 看单节点完整配置；给 `audit: true` 体检全库；给 `models: true` 盘点本机模型（checkpoint / lora / vae / controlnet / upscaler，带 LoRA 触发词备注）。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
-| `comfyui_run` | **默认按配置 `runWait`（内置 async）**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait` 同步等（`true` 或直接给毫秒数，一参两用）、`promptId` 续查。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
+| `comfyui_workflow` | 工作流的**五档只读视角**：不给参数列可用工作流（id、标题、用途、底模、输入种类、输出形状、可套的预设；被停用的不列出，`hiddenCount` 告知藏了几条）；给 `workflowId` 看 IO 面与节点清单（顺带报缺节点、缺模型与替代建议）；再加 `nodeId` 看单节点完整配置；给 `audit: true` 体检全库；给 `models: true`（或指定类别名如 `'lora'`）盘点本机模型（checkpoint / lora / vae / controlnet / upscaler / other），并读取 `<插件数据目录>/loras.json` 带出 LoRA 触发词备注。拿不到 `/object_info` 时不标缺模型，避免把"离线"说成"缺模型" |
+| `comfyui_run` | **默认按配置 `runWait`（内置 async）**：提交后立即返回 `promptId`，后台盯着并在出图后主动通知对话。支持 `wait` 同步等（`true` 或直接给毫秒数，一参两用）、`promptId` 续查、`preset` 套用 `<id>.meta.json` 预设（显式 `vars` 覆盖同名键）、`tags` 标产物标签（同步与异步路径都会写进 sidecar 与资产索引）。停用的工作流直接拒绝。**服务没在跑会自动拉起**（等到 `/system_stats` 通为止，默认上限 `readyTimeoutMs` 3 分钟），提交排在拉起之后 —— 不需要先手动启动 ComfyUI，也不该在它加载 / 下载模型时 kill 进程 |
 | `comfyui_workflow_edit` | 改标题 / 说明 / 标签，以及单节点参数。默认只影响下一次运行，写回模板需 `persist` + `expectHash`。被变量绑定的参数不能在这里改（会报 `param_bound`），变量请经 `comfyui_run` 的 `vars` 传 |
 | `comfyui_node_search` | 按类名 / 显示名 / 别名 / 分类 / 输入输出类型 / 包名搜索本机节点，四档排序。默认只回一行摘要，`detail` 才给输入输出 |
 | `comfyui_rerun` | 用某个产物当时的参数再跑一次（或做几张变体）。参数从产物旁的 sidecar 读，不必手抄 seed / prompt |
 | `comfyui_runs` | 查任务状态：正在跑（`state: running`）、排队中（带 `queuePosition`）、最近完成或失败的。进度只落记录、**不进对话**，所以不打断当前回合。`progress` 字段只在开启 `progressStream` 时出现，而且**只对面板 `/run`、`/rerun` 提交的运行有**（工具提交的没有）——缺这个字段不代表异常；开启后百分比按采样节点重置，会回跳 |
-| `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数，或不同工作流各跑一次）。逐条报结果，**一条失败不影响其它条**；默认按配置 `runWait`（内置 async，即全部异步） |
+| `comfyui_run_batch` | 一次提交多个任务（同一工作流跑多组参数、不同工作流各跑一次，或传 `grid` 按维度笛卡尔展开参数网格）。逐条报结果，**一条失败不影响其它条**；默认按配置 `runWait`（内置 async，即全部异步） |
 | `danbooru_lookup` | 把名字转成 Danbooru tag，**两条路径**：给 `query` 查单个（走本地库，没命中自动联网兜底）；给 `queries` 查一批（上限 50，**只查本地不联网** —— 一次查几十个还逐个联网会慢且容易限流，缺哪个再用 `query` 补）。`kind` 可限定角色 / 画师 / 作品 / 通用四类。查「长发」→`long_hair`、「东方Project」→`touhou` |
 | `danbooru_sync` | 把角色 / 画师标签（含中文名）抓到本地库。几千次请求，只在用户明确要求时调用 |
 | `comfyui_pose` | 姿势库的**两条路径**：给 `query` 搜索（288 组 / 1439 角度，按中文名、编号、分类；返回 `id` 与角度数，不含图片；默认全给，`onlySafe` 才收窄到常规 98 组）；给 `id` 取图（某个角度或正面的线稿落进 uploads，可直接当 ControlNet / 图生图的输入图） |
 | `comfyui_costume` | 衣装库的**两条路径**：给 `query` 搜索（1407 套，按中文描述、标签、英文关键词或编号；返回 `id` 与 **`keywords`**，后者可直接拼进提示词）；给 `id` 取图（落进 uploads，当服装参考图） |
 | `comfyui_character` | 角色库的**两条路径**：给 `query` 搜索（20 个 AI 娘设定板，按角色名 / 品牌 / 描述里的词；返回 `id`、副标题、品牌与可用视图）；给 `id` + `view` 取图（`turnaround` 三视图 / `expression` / `outfit` / `props` / `sheet`，落进 uploads 当参考图）。许可 CC BY-NC-SA 4.0，仅非商业参考 |
-| `comfyui_compose` | 把素材整理成**一次可直接交给 `comfyui_run` 的调用**：选工作流、把图落进 uploads、按槽位语义填 vars、拼好提示词。它自己不出图；`assumptions` 写清每条推断，不对就用 `extraVars` 覆盖 |
+| `comfyui_compose` | 把素材整理成**一次可直接交给 `comfyui_run` 的调用**：支持角色设定板（`characterId` / `characterView`）、衣装、姿势、局部重绘底图与蒙版（`baseImage` / `maskImage`）、标签与自由描述 —— 选工作流、把图落进 uploads、按槽位语义填 vars、拼好提示词。它自己不出图；`assumptions` 写清每条推断，不对就用 `extraVars` 覆盖 |
 
-工作流的"可用"由 `<id>.meta.json` 的 `enabled` 决定（缺省 `true`），面板与 `comfyui_workflow_edit` 写同一份文件。
+工作流的"可用"由 `<id>.meta.json` 的 `enabled` 决定（缺省 `true`），面板与 `comfyui_workflow_edit` 写同一份文件；常用参数组合（`presets`）也配在同一份 `.meta.json` 里。
 
 ## Danbooru 标签库
 
@@ -195,6 +195,15 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 本组件可以单独关掉（宿主插件页，或配置 `disabledComponents: ['tool.danbooru']`），不影响生图链路。
 
+## 资产库与媒体浏览
+
+资产库支持**图片、视频与音频**产物（视频与音频需带 sidecar 才会出现在默认成图视图；卡片通常显示首帧，灯箱播放器支持 Range 拖动进度条；`.mkv` / `.avi` 等浏览器解不了的容器会给出降级提示，非图片条目不显示复制图片 / 涂蒙版等图片专属按钮）：
+
+- **检索与结构化筛选**：`/items?q=` 除文件名与提示词外也会匹配底模名与工作流 id；工具栏支持按工作流、底模（大小写不敏感子串）与方向（横 / 竖 / 方，5% 容差）筛选。
+- **回收站（软删除）**：默认把媒体文件连同同名 `.json` sidecar 与副本移入 `<root>/.trash/`，可在「回收站」弹层里恢复或彻底清空（显式传 `soft=0` 才物理删除）。
+- **双图对比**：多选模式勾两张图即可打开对比弹层，支持并排与拉杆两种模式，侧栏只高亮有差异的运行参数。
+- **涂蒙版与吃图闭环**：灯箱里可涂绘重绘区域导出遮罩 PNG，连同原图绝对路径填进对话草稿交由 `comfyui_compose` 局部重绘；也可直接点「送入吃图工作流」一键跑放大、去背景等模板。
+
 ## 隐藏 NSFW
 
 资产库工具条上，刷新按钮右侧有个省略号 —— 悬浮展开「隐藏 NSFW」。点了之后列表里判定为 NSFW 的资产会被藏起来，按钮旁显示藏了多少张。
@@ -254,7 +263,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 ## 终端面板
 
-第六个面板（在资产库、工作流管理、标签库、姿势库、衣装库之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
+第七个面板（在资产库、工作流管理、标签库、角色库、姿势库、衣装库之后），展示 ComfyUI 的**命令行输出**。想看服务在干什么、卡在哪一步、模型加载到几成 —— 这些只在终端里，GUI 上看不到。
 
 - **外部启动的实例也能看**：插件拉起的进程直接接 stdout / stderr；外部实例（Desktop 自己起的那些）拿不到 stdout，改读它写的 `user/comfyui.log`。两条路只走一条 —— ComfyUI 的 logger 同时挂 Stream 与 File 两个 handler，两边都读是每行两份。
 - 服务没在跑时，面板上有「启动」按钮，直接拉起，不用先回对话生成一张图。
@@ -293,7 +302,7 @@ src/entries/                      十一个组件 entry 的入口（core 即 src
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 
-`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条 `boot()` + 真实 fetch 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。目前覆盖 **11/16**；剩下 5 条（`/delete`、`/delete-many`、`/assets/rebuild`、`/service/stop`、`/free`）挂在脚本的 `KNOWN_UNTESTED` 白名单里，那份清单只该缩短。
+`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条走真实分派层与 `fetch` 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。`KNOWN_UNTESTED` 已清零，目前 **19/19** 全覆盖。
 
 ## 开发
 
@@ -308,7 +317,7 @@ node scripts/compat.mjs   # 工作流兼容性扫描：缺节点 / 缺模型 / �
 
 `node scripts/smoke-workflows.mjs` 逐个真跑工作流（参数压到 512 长边、1 步），只验证"能提交、能出图、能取回"。
 
-导入工作流：面板右上角的导入按钮，粘贴 ComfyUI 用 Export (API) 导出的 JSON 即可（也可以直接选文件）。批量导入用 `node scripts/import.mjs <workflow.json>`（`--list` 看已有）。只接受 API 格式 —— UI 格式请在 ComfyUI 里用 Export (API)。
+导入工作流：面板右上角的导入按钮同时支持 **API 格式 JSON**、**ComfyUI UI 格式工程 JSON**（自动转换，面板在线时优先结合 `/object_info` 映射控件）与**拖入带工作流元数据的 PNG 原图**（从内嵌 `prompt` / `workflow` 块还原）。批量导入用 `node scripts/import.mjs <workflow.json>`（`--list` 看已有），同样支持 API 与 UI 格式 JSON。
 
 ## 兼容
 
