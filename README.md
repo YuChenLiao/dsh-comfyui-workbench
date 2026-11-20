@@ -8,6 +8,13 @@
 
 > 本插件是 [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album) 的继任者，资产浏览能力从相册继承（源码同源）。两者同时启用会出现两套入口与两套删除按钮，建议卸载相册。`scripts/migrate-album.mjs` 只在仓库里有 —— 装了包的人要迁移得先 clone 仓库，在仓库目录里跑。
 
+## 目录
+
+- **快速上手**：[十一个组件](#十一个组件) · [安装](#安装) · [配置](#配置) · [模型工具](#模型工具)
+- **功能与面板**：[Danbooru 标签库](#danbooru-标签库) · [资产库与媒体浏览](#资产库与媒体浏览) · [隐藏 NSFW](#隐藏-nsfw) · [标签库面板](#标签库面板) · [角色库](#角色库) · [姿势库](#姿势库) · [衣装库](#衣装库) · [终端面板](#终端面板) · [产物与通知](#产物与通知)
+- **架构与开发**：[架构与设计](#架构与设计) · [目录结构](#目录结构) · [开发](#开发) · [兼容](#兼容) · [文档](#文档)
+- **其它**：[数据来源与致谢](#数据来源与致谢) · [Star 趋势](#star-趋势) · [License](#license)
+
 ## 十一个组件
 
 装载在 profile 的 `cordis.patch.yml` 里，每一条都是独立的 loader entry —— 在宿主「设置 → 插件」里能看到、能单独开关。
@@ -520,6 +527,16 @@ Danbooru 及其贡献者所有；本插件只做了归并（把 91 组映射到�
 
 服务端代理取图这套做法的起点是澜资的 gen-ai-pose-image 插件（"元数据随包、图按需取"）；
 本插件在此基础上补了磁盘缓存上限、单飞、失败冷却与字节头校验。代码是重写的，没有复用其源码。
+
+## Star 趋势
+
+<a href="https://www.star-history.com/#YuChenLiao/dsh-comfyui-workbench&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=YuChenLiao/dsh-comfyui-workbench&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=YuChenLiao/dsh-comfyui-workbench&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=YuChenLiao/dsh-comfyui-workbench&type=Date" />
+  </picture>
+</a>
 
 ## License
 

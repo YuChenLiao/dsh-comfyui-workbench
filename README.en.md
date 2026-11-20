@@ -8,6 +8,13 @@ There are seven user-facing panels — Assets, Workflows, Tags, Characters, Pose
 
 > This plugin is the successor to [`dsh-comfyui-album`](https://github.com/YuChenLiao/dsh-comfyui-album); asset browsing is inherited from it (shared code lineage). Running both gives you two entry points and two delete buttons — we recommend uninstalling the album plugin. `scripts/migrate-album.mjs` ships only in the repository: if you installed from a package you'll need to clone the repo and run it there.
 
+## Contents
+
+- **Getting started**: [Eleven components](#eleven-components) · [Install](#install) · [Configuration](#configuration) · [Model tools](#model-tools)
+- **Features & panels**: [Danbooru tag library](#danbooru-tag-library) · [Assets and media browsing](#assets-and-media-browsing) · [Hiding NSFW](#hiding-nsfw) · [Tag library panel](#tag-library-panel) · [Character library](#character-library) · [Pose library](#pose-library) · [Costume library](#costume-library) · [Terminal panel](#terminal-panel) · [Artifacts and notifications](#artifacts-and-notifications)
+- **Architecture & dev**: [Architecture & design](#architecture--design) · [Layout](#layout) · [Development](#development) · [Compatibility](#compatibility) · [Docs](#docs)
+- **More**: [Data sources and credits](#data-sources-and-credits) · [Star History](#star-history) · [License](#license)
+
 ## Eleven components
 
 Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — visible in the host's Settings → Plugins, and individually toggleable.
@@ -484,18 +491,7 @@ only as a wiki page, not as an API, so it is parsed from the article (`npm run d
 Group names and membership belong to Danbooru and its contributors; this plugin only merges the 91
 groups into the eight categories the UI shows, and indexes them.
 
-### Character library
-
-**20 AI-girl character reference sheets** (100 slices in total) for giving workflows a consistent character appearance: turnaround, expressions, outfit breakdown, props, and full sheet. Source: **lmy414**'s [ai-chan-sheets](https://github.com/lmy414/ai-chan-sheets) (per-character authors listed in upstream `制作清单.json`, mostly ZipZipPipe / 胖次狐 from #01 on).
-
-- **Five slots per character**: `turnaround` (default), `expression`, `outfit`, `props`, `sheet`. Since a turnaround already packs front/side/back views into one horizontal sheet, the panel uses 4:3 landscape cards and you rarely need to stitch views.
-- **Images do not ship with the plugin**: `data/characters/catalog.json` holds metadata and relative paths only; slices are proxied on demand and cached locally, never prefetched or mirrored.
-- **15 brands**: DeepSeek 4, OpenAI 2, Xiaomi 2, plus Zhipu GLM, Baidu, Alibaba, Moonshot, ByteDance, MiniMax, xAI, Google, Anthropic, Meituan, Mistral and Meta (1 each).
-- **Stricter licence**: CC BY-NC-SA 4.0 — usable as generation reference, **no commercial use and no redistribution of image data** (see [data/characters/NOTICE.md](data/characters/NOTICE.md)).
-- Disable with `disabledComponents: ["panel.characters"]`. Refresh data with `npm run characters:import` (`npm run characters:check` validates without writing).
-- **Upstream health check**: `npm run characters:verify` sends `HEAD` (falling back to a single `Range: bytes=0-0` probe when `Content-Length` is omitted) across all 120 paths without downloading or caching images (`--limit 10` to sample, `--json` for CI).
-
-## Pose library: ギア's AI Pose Gallery
+### Pose library: ギア's AI Pose Gallery
 
 | | |
 |---|---|
@@ -534,6 +530,16 @@ See [data/characters/NOTICE.md](data/characters/NOTICE.md).
 The server-side image proxy approach started from 澜资's gen-ai-pose-image plugin ("metadata ships,
 images on demand"); this plugin added a disk cache cap, request coalescing, failure cooldown and
 magic-byte validation on top. The code is a rewrite and reuses none of its source.
+
+## Star History
+
+<a href="https://www.star-history.com/#YuChenLiao/dsh-comfyui-workbench&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=YuChenLiao/dsh-comfyui-workbench&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=YuChenLiao/dsh-comfyui-workbench&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=YuChenLiao/dsh-comfyui-workbench&type=Date" />
+  </picture>
+</a>
 
 ## License
 
