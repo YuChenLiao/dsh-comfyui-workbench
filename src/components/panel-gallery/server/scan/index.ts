@@ -4,7 +4,8 @@
  * 只依赖 `node:*`，不依赖宿主、不依赖 HTTP、不依赖 UI —— 整个插件里最底层的一层，
  * 上层可以 import 它，它不 import 任何人。
  */
-export { IMAGE_EXTS, MIME_BY_EXT, SIDECAR_MAX_BYTES, SKIP_DIRS } from './constants.js'
+export { AUDIO_EXTS, IMAGE_EXTS, MEDIA_EXTS, MIME_BY_EXT, SIDECAR_MAX_BYTES, SKIP_DIRS, VIDEO_EXTS, mediaKindOf } from './constants.js'
+export type { MediaKind } from './constants.js'
 export { collectImages } from './collect.js'
 export { extractFromGraph, modelFromWorkflow } from './graph.js'
 export { hasEmbeddedPromptHint, readEmbeddedMeta } from './embedded.js'

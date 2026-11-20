@@ -140,18 +140,28 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
         onPointerCancel={endDrag}
         onPointerLeave={endDrag}
       >
-        <img
-          key={item.path}
-          className={`cfa-lb-img${dragging ? ' dragging' : ''}`}
-          src={fileUrl(item.path)}
-          alt={item.name}
-          draggable={false}
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
-            transition: dragging ? 'none' : 'transform .1s ease',
-          }}
-        />
+        {item.kind === 'video' ? (
+          // 视频不做缩放/平移：自带的控件和捏合手势会打架
+          <video key={item.path} className="cfa-lb-img" src={fileUrl(item.path)} controls autoPlay loop playsInline />
+        ) : item.kind === 'audio' ? (
+          <div className="cfa-lb-audio">
+            <div className="cfa-lb-audio-name">{item.name}</div>
+            <audio src={fileUrl(item.path)} controls autoPlay />
+          </div>
+        ) : (
+          <img
+            key={item.path}
+            className={`cfa-lb-img${dragging ? ' dragging' : ''}`}
+            src={fileUrl(item.path)}
+            alt={item.name}
+            draggable={false}
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
+              transition: dragging ? 'none' : 'transform .1s ease',
+            }}
+          />
+        )}
         {count > 1 ? (
           <button type="button" className="cfa-lb-nav prev" title={t('prevImage')} aria-label={t('prevImage')} onClick={event => { event.stopPropagation(); onPrev() }}>
             <Icon name="chevronLeft" size={18} />

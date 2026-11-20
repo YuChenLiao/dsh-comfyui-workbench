@@ -7,6 +7,8 @@ export interface GalleryItem {
   size?: number
   mtime?: number
   hasMeta?: boolean
+  /** 媒体类别：卡片与灯箱据此渲染 img / video / audio（老的列表项没有这个字段，按图片处理）。 */
+  kind?: 'image' | 'video' | 'audio'
   prompt?: string
   negativePrompt?: string
   seed?: number

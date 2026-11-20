@@ -34,14 +34,27 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
       onClick={() => (selecting ? onToggle(item) : onOpen(item))}
       title={item.prompt !== undefined && item.prompt !== '' ? item.prompt : item.name}
     >
-      <img
-        className="cfa-thumb"
-        src={fileUrl(item.path, true)}
-        alt={item.name}
-        loading="lazy"
-        decoding="async"
-        draggable={false}
-      />
+      {/* 视频/音频不走缩略图：把 mp4 塞进 <img> 只会得到破图图标，而它本来能直接播 */}
+      {item.kind === 'video' ? (
+        <video
+          className="cfa-thumb"
+          src={fileUrl(item.path)}
+          muted
+          preload="metadata"
+          playsInline
+        />
+      ) : item.kind === 'audio' ? (
+        <div className="cfa-thumb cfa-thumb-audio" title={item.name} aria-label={item.name}>♪</div>
+      ) : (
+        <img
+          className="cfa-thumb"
+          src={fileUrl(item.path, true)}
+          alt={item.name}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+        />
+      )}
       {selecting ? <span className={`cfa-pick${selected ? ' on' : ''}`} aria-hidden="true">{selected ? '✓' : ''}</span> : null}
       {!selecting && dupCount > 1
         ? <span className="cfa-dup" title={t('duplicateBadge').replace('{n}', String(dupCount))}>{`×${dupCount}`}</span>

@@ -1308,3 +1308,43 @@ test('GET /items：按工作流、底模、方向筛选', async () => {
     await app.close()
   }
 })
+
+/**
+ * 视频 / 音频也是资产：扫描、MIME、缩略图回退、删除都要认。
+ *
+ * 工作流会顺带产出视频（AnimateDiff、SVD 这类），把它们排除在资产库之外
+ * 意味着"生成了却看不见"—— 而用户往往正是想找那段动图。
+ */
+test('视频与音频：进图库、MIME 正确、缩略图回退原文件、可删除', async () => {
+  const dirs = tmpDirs()
+  const clip = path.join(dirs.out, 'clip.mp4')
+  const voice = path.join(dirs.out, 'voice.mp3')
+  fs.writeFileSync(clip, Buffer.from('fake-mp4-bytes'))
+  fs.writeFileSync(voice, Buffer.from('fake-mp3-bytes'))
+
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index, autoStart: false, autoDetect: false })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    const listed = await (await fetch(`${base}/items?all=1&limit=100`)).json()
+    const byName = name => listed.items.find(row => row.name === name)
+    assert.equal(byName('clip.mp4')?.kind, 'video', `视频要标成 video，实际 ${JSON.stringify(byName('clip.mp4'))}`)
+    assert.equal(byName('voice.mp3')?.kind, 'audio')
+
+    // MIME：浏览器靠它决定能不能播；给成 octet-stream 的话 <video> 会直接空着
+    const videoRes = await fetch(`${base}/file?path=${encodeURIComponent(clip)}`)
+    assert.equal(videoRes.status, 200)
+    assert.equal(videoRes.headers.get('content-type'), 'video/mp4')
+
+    // 缩略图请求要回退原文件（视频没有缩略图，不能回 404 也不能回 image/webp）
+    const thumbRes = await fetch(`${base}/file?path=${encodeURIComponent(clip)}&thumb=1`)
+    assert.equal(thumbRes.status, 200)
+    assert.equal(thumbRes.headers.get('content-type'), 'video/mp4', '视频的 thumb 请求要回退原文件')
+
+    // 删除：视频也能删（白名单按扩展名判，别把 mp4 当成"不是图片"）
+    const del = await fetch(`${base}/delete?path=${encodeURIComponent(clip)}&soft=0`, { method: 'POST' })
+    assert.equal(del.status, 200, JSON.stringify(await del.json()))
+    assert.equal(fs.existsSync(clip), false)
+  } finally {
+    await app.close()
+  }
+})

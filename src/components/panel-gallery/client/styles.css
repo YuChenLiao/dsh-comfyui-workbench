@@ -193,3 +193,10 @@
 .cfa-facet{max-width:130px}
 .cfa-facet-input{width:110px;height:26px;padding:0 7px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}
 .cfa-facet-input:focus{border-color:var(--dsw-alias-brand-primary);outline:none}
+
+/* 视频/音频：没有缩略图，卡片用播放器首帧（音频用占位块） */
+video.cfa-thumb{object-fit:cover;background:#000}
+.cfa-thumb-audio{display:grid;place-items:center;font-size:26px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2)}
+.cfa-lb-audio{display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;min-width:min(520px,86vw);padding:24px}
+.cfa-lb-audio-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;font-size:.9em;color:var(--dsw-alias-label-secondary)}
+.cfa-lb-audio audio{width:100%}

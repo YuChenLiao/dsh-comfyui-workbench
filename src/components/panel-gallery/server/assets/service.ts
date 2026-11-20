@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { IMAGE_EXTS, toListItem } from '../scan/index.js'
+import { MEDIA_EXTS, mediaKindOf, toListItem } from '../scan/index.js'
 import type { ImageRecord, ListItem } from '../scan/index.js'
 import { foldPathCase } from '../../../../shared/host/paths.js'
 
@@ -176,8 +176,8 @@ export function deleteOne(
   if (!isAuthorized(target, roots)) {
     return { target, removed: [], error: '这个路径不在资产库的白名单里。', code: 'forbidden' }
   }
-  if (!IMAGE_EXTS.has(path.extname(target).toLowerCase())) {
-    return { target, removed: [], error: '只能删除图片，路径看起来不是图片。', code: 'not-an-image' }
+  if (!MEDIA_EXTS.has(path.extname(target).toLowerCase())) {
+    return { target, removed: [], error: '只能删除资产库里的媒体文件（图片 / 视频 / 音频）。', code: 'not-an-image' }
   }
 
   let stat: fs.Stats

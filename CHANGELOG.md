@@ -380,6 +380,26 @@ vae / controlnet / upscaler），也可以只给类别名看一类。**复用已
 `tests/model-catalog.test.mjs`（5 条）钉住：分类、触发词两种写法与两种写坏方式、
 工具分支在线/离线两种表现、枚举字段不进清单、`models` 给错值必须报错。
 
+### 相册支持视频与音频产物
+
+出图工作流会顺带产出视频（AnimateDiff、SVD 这类）与音频，之前它们被整体排除在资产库之外 ——
+"生成了却看不见"，而用户往往正是想找那段动图。
+
+- `MEDIA_EXTS`（图片 + 视频 + 音频）成为扫描与删除校验的唯一判据；`mediaKindOf(ext)` 归一成
+  `image` / `video` / `audio`，列表项带 `kind`。
+- 卡片：视频用 `<video muted preload="metadata">`（浏览器会显示首帧，等价于缩略图），
+  音频用占位块；灯箱里视频/音频换成自带控件（视频不做缩放平移 —— 会和捏合手势打架）。
+- **缩略图对非图片直接返回 undefined**：`ensureThumb` 里是先试再 catch 的，视频会为每个请求
+  白试一次解码。现在先按扩展名判，非图片根本进不去。
+- `MIME_BY_EXT` 补全视频/音频：`/file` 的 Content-Type 决定浏览器认不认，给成
+  `application/octet-stream` 的话 `<video>` 直接空着。
+- 删除的报错文案从"只能删除图片"改成"只能删除资产库里的媒体文件"。
+
+`tests/api.test.mjs` 补一条真入口用例：mp4/mp3 进列表且 `kind` 正确、`/file` 的 MIME、
+`thumb=1` 回退原文件（不是 404、也不是 image/webp）、视频可删除。
+
+**`customRefsDir` 没有做**，理由见下一条：现有 `assetRoots` 已经覆盖"把私有参考图库挂进来"。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

@@ -57,6 +57,8 @@ export interface SummaryFields {
    */
   promptId?: string
   workflow?: boolean
+  /** 媒体类别：卡片与灯箱据此渲染 img / video / audio。 */
+  kind?: 'image' | 'video' | 'audio'
   [key: string]: unknown
 }
 

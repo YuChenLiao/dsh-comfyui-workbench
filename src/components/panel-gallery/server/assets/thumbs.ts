@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { foldPathCase } from '../../../../shared/host/paths.js'
+import { mediaKindOf } from '../../../../shared/media/constants.js'
 
 import { homeDir } from './paths.js'
 
@@ -95,6 +96,9 @@ export function thumbPathFor(target: string, stat: fs.Stats): string {
  * @returns 缩略图路径；无法生成时 undefined（调用方回退原图）。
  */
 export async function ensureThumb(target: string, stat: fs.Stats): Promise<string | undefined> {
+  // 视频/音频没有缩略图：sharp 会为每个请求白试一次解码再失败。卡片对它们
+  // 用 <video>/<audio> 直接渲染，不走这条路。
+  if (mediaKindOf(path.extname(target)) !== 'image') return undefined
   const sharp = await loadSharp()
   if (sharp === null) return undefined
   const dir = thumbDir()

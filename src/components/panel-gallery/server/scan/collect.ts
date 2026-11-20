@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { IMAGE_EXTS, SKIP_DIRS } from './constants.js'
+import { MEDIA_EXTS, SKIP_DIRS } from './constants.js'
 import { hasEmbeddedPromptHint } from './embedded.js'
 import type { ImageRecord, ScanOptions, ScanResult } from './types.js'
 
@@ -39,7 +39,8 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
         continue
       }
       if (!entry.isFile()) continue
-      if (!IMAGE_EXTS.has(path.extname(name).toLowerCase())) continue
+      // 视频/音频也算资产：工作流会顺带产出它们，排掉就是"生成了却看不见"
+      if (!MEDIA_EXTS.has(path.extname(name).toLowerCase())) continue
 
       let stat: fs.Stats
       try {
