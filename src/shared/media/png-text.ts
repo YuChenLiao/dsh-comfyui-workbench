@@ -17,6 +17,59 @@ export interface PngTextResult {
 }
 
 /**
+ * 从内存里的 PNG 字节解析文本块。
+ *
+ * 上传流（还没落盘）走这条；文件路径那条读完头部字节也走它 —— 否则两份解析逻辑
+ * 迟早漂（一份改了 zTXt 解码、另一份没改）。
+ *
+ * 不做 64KB 截断：调用方自己决定喂多少字节（文件路径那条按 `PNG_META_READ_BYTES` 截）。
+ *
+ * @param buffer - PNG 字节（只读开头到 IDAT 之前有意义）。
+ */
+export function readPngTextChunksFromBuffer(buffer: Buffer): PngTextResult | undefined {
+  const read = buffer.length
+  if (read < 24) return undefined
+  if (buffer[0] !== 0x89 || buffer.toString('ascii', 1, 4) !== 'PNG') return undefined
+
+  // IHDR 是第一个块：宽高在偏移 16 / 20，这是图片的真实像素尺寸。
+  const width = buffer.readUInt32BE(16)
+  const height = buffer.readUInt32BE(20)
+
+  const chunks: PngTextChunk[] = []
+  let offset = 8
+  while (offset + 12 <= read) {
+    const chunkLength = buffer.readUInt32BE(offset)
+    const type = buffer.toString('ascii', offset + 4, offset + 8)
+    if (type === 'IDAT' || type === 'IEND') break
+    if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
+      const data = buffer.subarray(offset + 8, Math.min(offset + 8 + chunkLength, read))
+      const zero = data.indexOf(0)
+      if (zero > 0) {
+        const keyword = data.toString('latin1', 0, zero)
+        let value: string | undefined
+        try {
+          if (type === 'tEXt') {
+            value = data.toString('latin1', zero + 1)
+          } else if (type === 'zTXt') {
+            value = zlib.inflateSync(data.subarray(zero + 2)).toString('utf8')
+          } else {
+            const rest = data.subarray(zero + 3)
+            const languageEnd = rest.indexOf(0)
+            const translatedEnd = rest.indexOf(0, languageEnd + 1)
+            value = rest.subarray(translatedEnd + 1).toString('utf8')
+          }
+        } catch {
+          value = undefined
+        }
+        if (value !== undefined) chunks.push({ keyword, value })
+      }
+    }
+    offset += 12 + chunkLength
+  }
+  return { chunks, width, height }
+}
+
+/**
  * 读 PNG 的文本块（tEXt / zTXt / iTXt）。
  *
  * 元数据都在 IDAT 之前，遇到 IDAT 直接停 —— 后面的字节是像素数据，读了也白读。
@@ -32,45 +85,7 @@ export function readPngTextChunks(imagePath: string, size: number): PngTextResul
     fd = fs.openSync(imagePath, 'r')
     const buffer = Buffer.alloc(length)
     const read = fs.readSync(fd, buffer, 0, length, 0)
-    if (read < 24) return undefined
-    if (buffer[0] !== 0x89 || buffer.toString('ascii', 1, 4) !== 'PNG') return undefined
-
-    // IHDR 是第一个块：宽高在偏移 16 / 20，这是图片的真实像素尺寸。
-    const width = buffer.readUInt32BE(16)
-    const height = buffer.readUInt32BE(20)
-
-    const chunks: PngTextChunk[] = []
-    let offset = 8
-    while (offset + 12 <= read) {
-      const chunkLength = buffer.readUInt32BE(offset)
-      const type = buffer.toString('ascii', offset + 4, offset + 8)
-      if (type === 'IDAT' || type === 'IEND') break
-      if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
-        const data = buffer.subarray(offset + 8, Math.min(offset + 8 + chunkLength, read))
-        const zero = data.indexOf(0)
-        if (zero > 0) {
-          const keyword = data.toString('latin1', 0, zero)
-          let value: string | undefined
-          try {
-            if (type === 'tEXt') {
-              value = data.toString('latin1', zero + 1)
-            } else if (type === 'zTXt') {
-              value = zlib.inflateSync(data.subarray(zero + 2)).toString('utf8')
-            } else {
-              const rest = data.subarray(zero + 3)
-              const languageEnd = rest.indexOf(0)
-              const translatedEnd = rest.indexOf(0, languageEnd + 1)
-              value = rest.subarray(translatedEnd + 1).toString('utf8')
-            }
-          } catch {
-            value = undefined
-          }
-          if (value !== undefined) chunks.push({ keyword, value })
-        }
-      }
-      offset += 12 + chunkLength
-    }
-    return { chunks, width, height }
+    return readPngTextChunksFromBuffer(buffer.subarray(0, read))
   } catch {
     return undefined
   } finally {

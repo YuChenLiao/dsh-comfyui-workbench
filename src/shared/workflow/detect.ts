@@ -5,7 +5,8 @@ export type WorkflowFormat = 'api' | 'ui' | 'invalid'
  * 判定一份 JSON 是 API 格式还是 UI 格式。
  *
  * 只有 API 格式能直接 `POST /prompt`：UI 格式（`nodes` + `links` + `widgets_values`）
- * 是 ComfyUI 界面自己的工程文件，要提交必须先做图转换。v0.1 不做转换 ——
+ * 是 ComfyUI 界面自己的工程文件，要提交必须先做图转换（`from-ui.ts` 的
+ * `convertUiToApi`，需要 `/object_info`）；能不能转换、转换得准不准由调用方决定 ——
  * 与其猜错，不如让用户重新导出。
  *
  * @param value - 解析后的 JSON。

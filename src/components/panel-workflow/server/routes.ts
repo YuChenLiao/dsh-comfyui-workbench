@@ -103,7 +103,15 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
           sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '导入只接受 POST。' })
           return
         }
-        await handleWorkflowImport(workflowDir, res, req)
+        await handleWorkflowImport({
+          dir: workflowDir,
+          // UI 格式（界面工程文件）做图转换要用 `/object_info`。3 秒上限、不触发拉起 ——
+          // 导入是交互动作，不该为此等 ComfyUI 冷启动；拿不到就退回"请用 Export (API)"。
+          objectInfo: async () => {
+            const info = await client.objectInfo(false, { timeoutMs: 3_000, skipEnsure: true })
+            return info as Record<string, unknown>
+          },
+        }, res, req)
       },
       // 同一路径两种方法：GET 列出工作流，POST 批量导出（导出由相册组件提供）。
       '/workflows': async (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {

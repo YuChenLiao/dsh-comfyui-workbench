@@ -4,7 +4,7 @@ import { Icon } from '../../../client/icons.js'
 import { API } from '../../../client/api.js'
 import { runAction } from '../../../client/actions.js'
 import { readPref, writePref } from '../../../shared/host/prefs.js'
-import { download, fetchRunStatus } from '../../../client/api.js'
+import { download, fetchBlob, fetchRunStatus, importWorkflowPng } from '../../../client/api.js'
 import { useGalleryData } from './hooks/useGalleryData.js'
 import type { Translate } from '../../../client/i18n.js'
 import { isNsfw } from '../../../shared/gallery/nsfw.js'
@@ -219,6 +219,31 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       if (busy === key) return
       setBusy(key)
       void rerunAsInput(item).finally(() => setBusy(''))
+      return
+    }
+    // 存为模板：ComfyUI 保存的 PNG 里带着工作流（prompt / workflow 文本块），
+    // 直接把字节交给导入接口，"从一张成品图恢复模板"就完成了。
+    // 不是 PNG、或图里没有块时后端会明确拒绝 —— 这里不猜。
+    if (kind === 'saveAsWorkflow') {
+      const key = `saveAsWorkflow:${item.path}`
+      if (busy === key) return
+      setBusy(key)
+      void (async () => {
+        try {
+          const blob = await fetchBlob(item.path)
+          const name = item.name.replace(/\.[^.]+$/, '')
+          const result = await importWorkflowPng(blob, name)
+          const notes = result.conversionNotes ?? []
+          setNotice({
+            kind: 'ok',
+            text: `${t('saveAsWorkflowDone').replace('{id}', result.workflowId)}${notes.length === 0 ? '' : ` (${notes.join(' ')})`}`,
+          })
+        } catch (error) {
+          setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+        } finally {
+          setBusy('')
+        }
+      })()
       return
     }
     const key = `${kind}:${item.path}`

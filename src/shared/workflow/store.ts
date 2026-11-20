@@ -3,6 +3,8 @@ import path from 'node:path'
 
 import { ensureDir } from '../host/paths.js'
 import { detectFormat, formatHint } from './detect.js'
+import { convertUiToApi } from './from-ui.js'
+import type { UiWorkflow } from './from-ui.js'
 import { buildSurface } from './surface.js'
 import type { ApiWorkflow, WorkflowIOSurface, WorkflowMeta, WorkflowSchema } from './types.js'
 
@@ -143,8 +145,11 @@ export class WorkflowExistsError extends Error {
  * 面板的「上传 / 粘贴导入」走这条：它拿到的是内存里的对象，没有文件路径。
  * `importWorkflowFile` 与它共用这段逻辑 —— 否则 CLI 与 HTTP 会各写一份校验。
  *
- * 只接受 API 格式：UI 格式要提交必须先做图转换，v0.1 不做 —— 与其猜错，不如
- * 让用户在 ComfyUI 里重新导出。
+ * **接受两种格式**：
+ * - API 格式 → 直接落盘
+ * - UI 格式（ComfyUI 界面工程文件）→ 需要 `options.objectInfo` 才能做图转换；
+ *   拿不到就抛 {@link WorkflowFormatError}（提示去 ComfyUI 里 Export (API)），
+ *   转换失败同样抛它 —— 绝不写半成品。
  *
  * **同名时的两种行为**：
  * - `overwrite !== true`（面板默认）→ 抛 {@link WorkflowExistsError}，让调用方先确认。
@@ -155,16 +160,44 @@ export class WorkflowExistsError extends Error {
  * @param dir - 工作流目录。
  * @param raw - 解析后的 JSON（未校验）。
  * @param nameHint - 用来生成 id 的字符串（文件名或用户给的名字）。
- * @param options - `overwrite` 为真才允许覆盖同名。
+ * @param options - `overwrite` 为真才允许覆盖同名；`objectInfo` 只在 UI 格式转换时需要。
+ * @returns id、输入面、是否覆盖了同名模板，以及 UI 转换产生的说明（非 UI 格式为空数组）。
  */
 export function importWorkflowValue(
   dir: string,
   raw: unknown,
   nameHint: string,
-  options: { overwrite?: boolean } = {},
-): { id: string; surface: WorkflowIOSurface; replaced: boolean } {
+  options: { overwrite?: boolean; objectInfo?: Record<string, unknown> } = {},
+): { id: string; surface: WorkflowIOSurface; replaced: boolean; conversionNotes: string[] } {
+  let value: unknown = raw
+  let conversionNotes: string[] = []
+
   const format = detectFormat(raw)
-  if (format !== 'api') throw new WorkflowFormatError(formatHint(format))
+  if (format === 'ui') {
+    // UI 格式（界面工程文件）只有拿到 `/object_info` 才能可靠地做图转换：
+    // 节点定义里有 input 顺序与 widget 类型，缺了就必然拼错。
+    // 调用方拿不到（ComfyUI 没起）时仍然回到那句"去 Export (API)"，不猜。
+    if (options.objectInfo === undefined) throw new WorkflowFormatError(formatHint(format))
+    let conversion: ReturnType<typeof convertUiToApi>
+    try {
+      conversion = convertUiToApi(raw as UiWorkflow, options.objectInfo)
+    } catch (error) {
+      // 转换器内部对畸形结构已经尽量跳过并记 note；真抛出来的都是没预料到的形状 ——
+      // 那也仍然是"这份 JSON 不对"，不是服务端故障（500 会把内部栈回给浏览器）。
+      throw new WorkflowFormatError(
+        `UI 格式转换失败：${error instanceof Error ? error.message : String(error)}。`
+          + '请在 ComfyUI 里用「Export (API)」导出后再导入。',
+      )
+    }
+    value = conversion.workflow
+    conversionNotes = conversion.notes
+    // 转换是尽力而为：转完再验一次格式，失败就不写盘（宁可报错，不塞半成品）
+    if (detectFormat(value) !== 'api') {
+      throw new WorkflowFormatError('UI 格式转换后仍不是合法的 API 工作流，可能是节点定义缺失。请在 ComfyUI 里用「Export (API)」导出后再导入。')
+    }
+  } else if (format !== 'api') {
+    throw new WorkflowFormatError(formatHint(format))
+  }
 
   const id = sanitizeId(nameHint)
   const target = pathsOf(dir, id).workflow
@@ -179,10 +212,10 @@ export function importWorkflowValue(
     }
   }
 
-  writeWorkflow(dir, id, raw as ApiWorkflow)
+  writeWorkflow(dir, id, value as ApiWorkflow)
   const entry = readEntry(dir, id)
   if (entry === undefined) throw new WorkflowFormatError('导入后读不回这份工作流，请检查文件权限。')
-  return { id, surface: entry.surface, replaced }
+  return { id, surface: entry.surface, replaced, conversionNotes }
 }
 
 /**

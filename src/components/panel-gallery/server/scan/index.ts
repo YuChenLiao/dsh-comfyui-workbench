@@ -12,6 +12,8 @@ export { clearMetaCache, forgetMeta, readFullSidecar, readMeta, readSidecar, sid
 export { metaSummary } from './summary.js'
 export { toListItem } from './list-item.js'
 export { mimeOf } from './mime.js'
-export { readPngTextChunks } from './png-text.js'
+// PNG 文本块解析只有一份，在 shared/media 里（工作流导入也要用同一份）；
+// 这里转发是为了让相册侧保持 `scan/index.js` 这个入口不变。
+export { readPngTextChunks } from '../../../../shared/media/png-text.js'
 export type { ExtractedGraph } from './graph.js'
 export type { ImageRecord, ListItem, MetaRecord, ScanOptions, ScanResult, SummaryFields } from './types.js'

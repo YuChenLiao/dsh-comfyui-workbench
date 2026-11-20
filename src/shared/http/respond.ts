@@ -41,6 +41,26 @@ export async function readJsonBody(req: IncomingMessage): Promise<Record<string,
 }
 
 /**
+ * 读原始请求体（非 JSON：PNG 上传这类）。
+ *
+ * 上限给得比 `readJsonBody` 宽 —— ComfyUI 生成的 PNG 常见几百 KB 到几 MB。
+ *
+ * @param req - 请求。
+ * @param limit - 字节上限。
+ */
+export async function readRawBody(req: IncomingMessage, limit = 8 * 1024 * 1024): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
+    size += buffer.length
+    if (size > limit) throw new Error(`请求体超过 ${Math.round(limit / 1024)}KB`)
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks)
+}
+
+/**
  * 从请求体里取一批路径，并做类型与数量校验。
  *
  * @param body - 请求体。

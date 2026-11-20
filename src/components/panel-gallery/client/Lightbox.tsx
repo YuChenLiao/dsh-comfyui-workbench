@@ -182,6 +182,10 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
           <button type="button" className="cfa-btn" onClick={act('copyImage')}><Icon name="copy" size={14} />{t('copyImage')}</button>
           <button type="button" className="cfa-btn" onClick={act('copyPrompt')}><Icon name="text" size={14} />{t('copyPrompt')}</button>
           <button type="button" className="cfa-btn" onClick={act('exportWorkflow')}><Icon name="download" size={14} />{t('exportWorkflow')}</button>
+          {/* 只有 PNG 里才可能有工作流文本块：jpg/webp 上点一下会白下载整张再吃 400 */}
+          {/\.png$/i.test(item.name)
+            ? <button type="button" className="cfa-btn" onClick={act('saveAsWorkflow')} title={t('saveAsWorkflowHint')}><Icon name="workflow" size={14} />{t('saveAsWorkflow')}</button>
+            : null}
           <button type="button" className="cfa-btn" onClick={act('addToChat')}><Icon name="chat" size={14} />{t('addToChat')}</button>
           <button type="button" className="cfa-btn" onClick={act('describe')}><Icon name="text" size={14} />{t('describe')}</button>
           <button type="button" className="cfa-btn cfa-danger" onClick={act('remove')}><Icon name="trash" size={14} />{t('remove')}</button>

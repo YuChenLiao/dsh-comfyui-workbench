@@ -1,7 +1,12 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
 import { importWorkflowValue, listEntries, readEntry, WorkflowExistsError, WorkflowFormatError, writeMeta } from '../../../shared/workflow/index.js'
+import { detectFormat } from '../../../shared/workflow/detect.js'
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
-import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
+import { readPngTextChunksFromBuffer } from '../../../shared/media/png-text.js'
+import { readJsonBody, readRawBody, sendJson } from '../../../shared/http/respond.js'
+
+/** PNG 导入的体积上限：4K 上采样出的无损 PNG 能到 40MB，8MB 会挡掉真实图。 */
+const PNG_BODY_LIMIT = 64 * 1024 * 1024
 
 /**
  * 列表项（**面板侧**）。
@@ -153,25 +158,206 @@ export async function handleWorkflowUpdate(
 }
 
 /**
- * `POST /comfyui-workbench/api/workflows/import`：贴一份 JSON 导入工作流。
+ * 导入接口的依赖。
  *
  * **为什么要独立路径**：`POST /workflows` 是批量导出 ZIP，不能复用。而 `/workflows/import`
  * 必须注册进路由的 `exact` 表 —— 否则会被前缀路由当成 id=`import` 的工作流去读详情，
  * 返回 `no-workflow` 而不是导入结果。
- *
- * 请求体 `{ name?: string, workflow: object }`：`name` 只用来生成 id（缺省 `workflow`），
- * `workflow` 是**已解析**的对象——前端负责 `JSON.parse` 并给出语法错误。
- *
- * 只接受 API 格式（UI 格式需要图转换，与 CLI 一致：让用户回 ComfyUI 重新导出）。
- * 同名导入覆盖模板但保留 `.schema.json` / `.meta.json`，所以响应里带 `replaced`。
- *
- * @param dir - 工作流目录。
  */
-export async function handleWorkflowImport(
-  dir: string,
+export interface WorkflowImportDeps {
+  /** 工作流目录。 */
+  dir: string
+  /**
+   * 拿 `/object_info` —— UI 格式（界面工程文件）做图转换必须有它。
+   *
+   * 由路由层注入（组件内不认识 `ComfyClient`）。拿不到时返回 undefined，
+   * 导入就退回那句"请用 Export (API)"，不猜节点顺序。
+   */
+  objectInfo?: () => Promise<Record<string, unknown> | undefined>
+}
+
+/** 把导入失败翻成响应。三条分支与错误类型一一对应。 */
+function sendImportError(res: import('node:http').ServerResponse, error: unknown): void {
+  // 同名：让前端确认后再带 overwrite 重发。面板把导入做成一次点击，
+  // 不确认就覆盖等于静默丢数据。
+  if (error instanceof WorkflowExistsError) {
+    sendJson(res, 409, {
+      ok: false,
+      error: 'already-exists',
+      workflowId: error.id,
+      message: error.message,
+    })
+    return
+  }
+  // 格式不对：`formatHint` 的文案已经写明「去 ComfyUI 用 Export (API) 重新导出」
+  if (error instanceof WorkflowFormatError) {
+    sendJson(res, 400, { ok: false, error: 'bad-workflow', message: error.message })
+    return
+  }
+  // 其余是写盘失败（EACCES / ENOSPC / 目录不可写）—— 服务端问题，不是请求问题
+  sendJson(res, 500, {
+    ok: false,
+    error: 'import-failed',
+    message: error instanceof Error ? error.message : String(error),
+  })
+}
+
+/** 拿 object_info；失败就当拿不到（离线时 UI 格式本来就转换不了）。 */
+async function safeObjectInfo(deps: WorkflowImportDeps): Promise<Record<string, unknown> | undefined> {
+  if (deps.objectInfo === undefined) return undefined
+  try {
+    const info = await deps.objectInfo()
+    // getter 返回 null / 数组时也不能往下传：`convertUiToApi` 会把它当对象用
+    return info !== null && typeof info === 'object' && Array.isArray(info) === false ? info : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 从 ComfyUI 保存的 PNG 里导入工作流。
+ *
+ * ComfyUI 存图时会把工作流塞进 PNG 的文本块：`prompt` 是 **API 格式**（能直接提交），
+ * `workflow` 是 **UI 格式**（要转换）。优先用 `prompt` —— 它不需要 `/object_info`，
+ * 离线也能导。两者都没有（普通 PNG / 别的软件存的图）就明确拒绝。
+ */
+async function importFromPng(
+  deps: WorkflowImportDeps,
   res: import('node:http').ServerResponse,
   req: import('node:http').IncomingMessage,
 ): Promise<void> {
+  // 先按声明长度预判：4K 上采样的无损 PNG 能到 40MB，8MB 会把真实图挡在门外，
+  // 而"图太大"和"图坏了"对用户是两件事 —— 前者给 413 和具体上限。
+  const declared = Number(req.headers['content-length'] ?? '')
+  const limitMb = Math.round(PNG_BODY_LIMIT / 1024 / 1024)
+  if (Number.isFinite(declared) && declared > PNG_BODY_LIMIT) {
+    sendJson(res, 413, { ok: false, error: 'too-large', message: `图片超过 ${limitMb}MB，无法导入。` })
+    return
+  }
+
+  let buffer: Buffer
+  try {
+    buffer = await readRawBody(req, PNG_BODY_LIMIT)
+  } catch (error) {
+    // 没有 Content-Length 的流式上传只能靠读的时候兜底
+    sendJson(res, 413, {
+      ok: false,
+      error: 'too-large',
+      message: `图片超过 ${limitMb}MB，无法导入（${error instanceof Error ? error.message : String(error)}）。`,
+    })
+    return
+  }
+
+  const png = readPngTextChunksFromBuffer(buffer)
+  if (png === undefined) {
+    sendJson(res, 400, { ok: false, error: 'not-png', message: '这不是 PNG 图片。' })
+    return
+  }
+
+  const apiChunk = png.chunks.find(chunk => chunk.keyword === 'prompt')
+  const uiChunk = png.chunks.find(chunk => chunk.keyword === 'workflow')
+  if (apiChunk === undefined && uiChunk === undefined) {
+    sendJson(res, 400, {
+      ok: false,
+      error: 'no-workflow-in-png',
+      message: '这张 PNG 里没有工作流。只有 ComfyUI 保存的图才带 prompt / workflow 文本块（普通截图或别的软件存的图没有）。',
+    })
+    return
+  }
+
+  /**
+   * 候选块，按可靠性排序：`prompt`（执行过的 API 格式，离线可用）优先，
+   * `workflow`（完整工程，需转换）兜底。
+   *
+   * **坏块不该让整次导入失败**：`prompt` 解析不出来时 `workflow` 往往是好的，
+   * 直接放弃等于白白丢掉一份可用的工程文件。
+   */
+  const candidates: Array<{ source: 'png-api' | 'png-ui'; value: unknown }> = []
+  if (apiChunk !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(apiChunk.value)
+      if (detectFormat(parsed) === 'api') candidates.push({ source: 'png-api', value: parsed })
+    } catch {
+      // 这一块坏了，看下一块
+    }
+  }
+  if (uiChunk !== undefined) {
+    try {
+      candidates.push({ source: 'png-ui', value: JSON.parse(uiChunk.value) })
+    } catch {
+      // 同上
+    }
+  }
+  if (candidates.length === 0) {
+    sendJson(res, 400, {
+      ok: false,
+      error: 'bad-workflow',
+      message: 'PNG 里的工作流文本块不是合法的 API 工作流（也不是可解析的 JSON）。',
+    })
+    return
+  }
+
+  // 文件名可能是中文：HTTP 头只接受 latin1，所以前端用 encodeURIComponent 编过，
+  // 这里解回来。解不开就用原文（不许因为一个名字把整次导入拒掉）。
+  const headerName = req.headers['x-workflow-name']
+  let fileName = typeof headerName === 'string' ? headerName.trim() : ''
+  if (fileName !== '') {
+    try {
+      fileName = decodeURIComponent(fileName)
+    } catch {
+      // 保持原文
+    }
+  }
+  const nameHint = fileName !== '' ? fileName : `png-${Date.now().toString(36)}`
+
+  let lastError: unknown
+  for (const candidate of candidates) {
+    // UI 块才需要 object_info，而且只有轮到它时才去拉
+    const objectInfo = candidate.source === 'png-ui' ? await safeObjectInfo(deps) : undefined
+    try {
+      const result = importWorkflowValue(deps.dir, candidate.value, nameHint, { objectInfo })
+      sendJson(res, 200, {
+        ok: true,
+        workflowId: result.id,
+        replaced: result.replaced,
+        // 从哪条文本块来的：`png-api` 是执行过的图（不含静音/旁路节点），
+        // `png-ui` 是完整工程（会走转换，可能有 notes）
+        source: candidate.source,
+        ...(result.conversionNotes.length === 0 ? {} : { conversionNotes: result.conversionNotes }),
+        surface: result.surface,
+      })
+      return
+    } catch (error) {
+      // 同名要立刻说清：拿另一块硬试出别的结果是"默默换了份东西"
+      if (error instanceof WorkflowExistsError) {
+        sendImportError(res, error)
+        return
+      }
+      lastError = error
+    }
+  }
+  sendImportError(res, lastError)
+}
+
+/**
+ * `POST /workflows/import`：导入一份工作流。
+ *
+ * 三种输入：
+ * 1. JSON 体 `{ workflow, name, overwrite }` —— API 格式直接导入
+ * 2. 同上但 `workflow` 是 **UI 格式** —— 能拿到 `/object_info` 就自动转换
+ * 3. `Content-Type: image/png` —— 从 ComfyUI 保存的 PNG 里取工作流
+ */
+export async function handleWorkflowImport(
+  deps: WorkflowImportDeps,
+  res: import('node:http').ServerResponse,
+  req: import('node:http').IncomingMessage,
+): Promise<void> {
+  const contentType = String(req.headers['content-type'] ?? '')
+  if (contentType.includes('image/png')) {
+    await importFromPng(deps, res, req)
+    return
+  }
+
   let body: Record<string, unknown>
   try {
     body = await readJsonBody(req)
@@ -185,7 +371,7 @@ export async function handleWorkflowImport(
     sendJson(res, 400, {
       ok: false,
       error: 'bad-body',
-      message: '需要 workflow：把 API 格式工作流的 JSON 对象放在这个字段里。',
+      message: '需要 workflow：把工作流的 JSON 对象放在这个字段里（API 格式，或能转换的 UI 格式）。也可以直接上传 ComfyUI 保存的 PNG。',
     })
     return
   }
@@ -195,37 +381,24 @@ export async function handleWorkflowImport(
   const nameHint = typeof body.name === 'string' && body.name.trim() !== ''
     ? body.name.trim()
     : `workflow-${Date.now().toString(36)}`
+  // **只有 UI 格式才去拉 object_info。** API 格式是绝大多数导入，不该为一次
+  // 可能几十毫秒（冷缓存下可能吃满 3 秒）的探针买单 —— 而且 ComfyUI 没起时
+  // 每次导入都会白等一轮超时。
+  const objectInfo = detectFormat(workflow) === 'ui' ? await safeObjectInfo(deps) : undefined
   try {
-    const result = importWorkflowValue(dir, workflow, nameHint, { overwrite: body.overwrite === true })
+    const result = importWorkflowValue(deps.dir, workflow, nameHint, {
+      overwrite: body.overwrite === true,
+      ...(objectInfo === undefined ? {} : { objectInfo }),
+    })
     sendJson(res, 200, {
       ok: true,
       workflowId: result.id,
       // 覆盖过就说明模板被换了（备注与 schema 保留），调用方需要知道这点
       replaced: result.replaced,
+      ...(result.conversionNotes.length === 0 ? {} : { conversionNotes: result.conversionNotes }),
       surface: result.surface,
     })
   } catch (error) {
-    // 同名：让前端确认后再带 overwrite 重发。面板把导入做成一次点击，
-    // 不确认就覆盖等于静默丢数据。
-    if (error instanceof WorkflowExistsError) {
-      sendJson(res, 409, {
-        ok: false,
-        error: 'already-exists',
-        workflowId: error.id,
-        message: error.message,
-      })
-      return
-    }
-    // 格式不对：`formatHint` 的文案已经写明「去 ComfyUI 用 Export (API) 重新导出」
-    if (error instanceof WorkflowFormatError) {
-      sendJson(res, 400, { ok: false, error: 'bad-workflow', message: error.message })
-      return
-    }
-    // 其余是写盘失败（EACCES / ENOSPC / 目录不可写）—— 服务端问题，不是请求问题
-    sendJson(res, 500, {
-      ok: false,
-      error: 'import-failed',
-      message: error instanceof Error ? error.message : String(error),
-    })
+    sendImportError(res, error)
   }
 }

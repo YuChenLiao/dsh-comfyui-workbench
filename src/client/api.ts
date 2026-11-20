@@ -300,6 +300,44 @@ export async function importWorkflow(body: { name?: string; workflow: unknown; o
   return { workflowId: String(bag.workflowId ?? ''), replaced: bag.replaced === true }
 }
 
+/**
+ * 从 ComfyUI 保存的 PNG 导入工作流。
+ *
+ * ComfyUI 存图时会把工作流写进 PNG 文本块（`prompt` 是 API 格式、`workflow` 是 UI 格式），
+ * 所以一张图就能还原出模板 —— 不用回 ComfyUI 里再导一次。
+ *
+ * 文件名走 `x-workflow-name`：HTTP 头只接受 latin1，中文名先 `encodeURIComponent`。
+ */
+export async function importWorkflowPng(
+  file: Blob,
+  name?: string,
+): Promise<{ workflowId: string; replaced: boolean; source?: string; conversionNotes?: string[] }> {
+  const headers: Record<string, string> = { 'Content-Type': 'image/png' }
+  if (name !== undefined && name.trim() !== '') headers['x-workflow-name'] = encodeURIComponent(name.trim())
+  const res = await fetch(`${API}/workflows/import`, { method: 'POST', headers, body: file })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object'
+    ? (data as { ok?: unknown; message?: unknown; error?: unknown; workflowId?: unknown; replaced?: unknown; source?: unknown; conversionNotes?: unknown })
+    : null
+  if (bag?.error === 'already-exists') {
+    throw new WorkflowExistsError(String(bag.workflowId ?? ''), typeof bag.message === 'string' ? bag.message : '')
+  }
+  if (bag?.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `导入失败：HTTP ${res.status}`)
+  }
+  return {
+    workflowId: String(bag.workflowId ?? ''),
+    replaced: bag.replaced === true,
+    ...(typeof bag.source === 'string' ? { source: bag.source } : {}),
+    ...(Array.isArray(bag.conversionNotes) ? { conversionNotes: bag.conversionNotes.filter(item => typeof item === 'string') } : {}),
+  }
+}
+
 /** 取宿主配置。 */
 export async function fetchConfig(): Promise<HostConfig> {
   const data = await apiJson('/config')

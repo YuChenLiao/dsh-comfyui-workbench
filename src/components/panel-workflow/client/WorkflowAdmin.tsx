@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { fetchConfig, fetchWorkflowList, importWorkflow, setProgressStream, setRunWait, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
+import { fetchConfig, fetchWorkflowList, importWorkflow, importWorkflowPng, setProgressStream, setRunWait, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
 import type { TogglesView } from '../../../client/api.js'
 import type { WorkflowListItem } from '../../../client/types.js'
 import type { Translate } from '../../../client/i18n.js'
@@ -170,9 +170,48 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
     }
   }
 
-  /** 选文件只做一件事：把内容填进粘贴框，让用户还能先看一眼再提交。 */
+  /**
+   * 导入一张 ComfyUI 保存的 PNG。
+   *
+   * 图里的 `prompt`（API 格式）或 `workflow`（UI 格式）块就是完整模板 ——
+   * 这是"从成品图恢复工作流"最短的一条路，不用回 ComfyUI 里再导一次。
+   * 二进制没法贴进 textarea，所以直接提交。
+   */
+  const importPngFile = async (file: Blob, fallbackName?: string): Promise<void> => {
+    setImporting(true)
+    try {
+      const typed = importName.trim() !== '' ? importName.trim() : fallbackName
+      const result = await importWorkflowPng(file, typed)
+      const notes = result.conversionNotes ?? []
+      const base = (result.replaced ? t('importReplaced') : t('importDone')).replace('{id}', result.workflowId)
+      setNotice(notes.length === 0 ? base : `${base} (${notes.join(' ')})`)
+      setError('')
+      setImportOpen(false)
+      setImportText('')
+      setImportName('')
+      load()
+    } catch (reason) {
+      if (reason instanceof WorkflowExistsError) {
+        // 从图恢复模板时撞名，改名比覆盖更合理（覆盖会换掉正在用的模板）
+        setError(t('importNameTaken').replace('{id}', reason.workflowId))
+        return
+      }
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /**
+   * 选文件：JSON 填进粘贴框让人还能先看一眼；PNG 直接导入（二进制贴不进去）。
+   */
   const pickFile = (file: File | undefined): void => {
     if (file === undefined) return
+    const isPng = file.type === 'image/png' || /\.png$/i.test(file.name)
+    if (isPng) {
+      void importPngFile(file, file.name.replace(/\.png$/i, ''))
+      return
+    }
     void file.text().then(content => {
       setImportText(content)
       if (importName.trim() === '') setImportName(file.name.replace(/\.json$/i, ''))
@@ -216,7 +255,16 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
       {notice !== '' ? <div className="cwa-notice">{notice}</div> : null}
 
       {importOpen ? (
-        <article className="cwa-row">
+        <article
+          className="cwa-row"
+          // 拖放：ComfyUI 默认「保存」出来的是 UI 格式 JSON，或一张带工作流块的 PNG，
+          // 两者都直接拖到这里。
+          onDragOver={event => { event.preventDefault() }}
+          onDrop={event => {
+            event.preventDefault()
+            pickFile(event.dataTransfer.files?.[0])
+          }}
+        >
           <div className="cwa-row-head">
             <div className="cwa-meta">
               <div className="cwa-name">{t('importWorkflow')}</div>
@@ -243,7 +291,7 @@ export function WorkflowAdmin({ t, visible }: WorkflowAdminProps): React.ReactEl
             <label className="cwf-ghost" title={t('importPickFile')}>
               <input
                 type="file"
-                accept=".json,application/json"
+                accept=".json,.png,application/json,image/png"
                 className="cwf-sr-only"
                 disabled={importing}
                 onChange={event => { pickFile(event.target.files?.[0]); event.target.value = '' }}

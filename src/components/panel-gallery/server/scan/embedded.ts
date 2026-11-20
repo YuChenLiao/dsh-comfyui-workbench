@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { extractFromGraph } from './graph.js'
-import { readPngTextChunks } from './png-text.js'
+import { readPngTextChunks } from '../../../../shared/media/png-text.js'
 import type { MetaRecord } from './types.js'
 
 /**

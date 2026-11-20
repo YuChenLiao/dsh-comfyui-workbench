@@ -120,6 +120,41 @@
   `supervisor.ensureReady()`，探通真实地址就会 `POST /free {unload_models:true}` ——
   一台正开着 ComfyUI 的机器跑 `npm test` 会真的卸载模型，这条用例只想验分派层。
 
+### 工作流导入：UI 格式自动转换与 PNG 原图拖拽
+
+ComfyUI 默认「保存」出来的是 **UI 格式**（`nodes` + `links` + `widgets_values`），
+所以"在 ComfyUI 里导出 → 粘进面板"这条最自然的路径，八成在第一步就被拒。底层其实
+早就有 `convertUiToApi` 与 PNG 文本块解析，缺的只是把它们接进导入接口。
+
+- `POST /workflows/import` 接受三种输入：API 格式 JSON、UI 格式 JSON（自动转换）、
+  `Content-Type: image/png` 的图。UI 转换需要 `/object_info`（widget 顺序只能从节点定义读），
+  路由层注入一个 3 秒上限、不触发拉起的 getter；**拿不到时退回**「请在 ComfyUI 里用
+  Export (API) 重新导出」，而不是猜。
+  **只有 UI 格式才去拉** `/object_info`：API 格式是绝大多数导入，每次都为一次探针买单
+  意味着离线机器上每次导入白等一轮 3 秒超时。
+- PNG 导入优先取 `prompt` 块（API 格式，**离线也能导**），其次 `workflow` 块（UI 格式，
+  走转换）。两块都坏才算失败 —— 坏块降级而不是整次放弃：`prompt` 解析不出来时
+  `workflow` 往往还是好的。两个块都没有（普通截图、别的软件存的图）时明确拒绝并说清原因。
+- 体积上限 64MB（4K 上采样的无损 PNG 能到 40MB，原来的 8MB 会把真实图挡在门外），
+  按 `Content-Length` 预判，超限回 **413** 并写清上限 —— 「图太大」和「图坏了」对用户是两件事。
+- 畸形 UI 结构（`nodes` 里混进 `null`、`inputs` 里混进非对象）不再变成 500 + 内部栈文本：
+  转换器逐项跳过并记 note，`store.ts` 再把没预料到的异常统一转成 400。
+- `readPngTextChunksFromBuffer`：原来只有按文件路径读的那一份，上传流还没落盘没法用。
+  两份解析逻辑（tEXt / zTXt / iTXt）合成一处，文件路径那条读完头部字节也走它。
+  相册扫描目录下那份完整副本（`panel-gallery/server/scan/png-text.ts`）随之删掉，
+  改从 `shared/media` 引 —— 否则"合成一处"只是说法。
+- 面板：文件选择器放开 `.png`，导入区支持拖放；转换产生的 `notes`（跳过缺定义节点、
+  旁路直通、占位值回落等）会跟着成功提示一起显示 —— 那是"导进来了但可能跑不对"的唯一线索。
+- 相册灯箱新增「存为模板」：拿当前图的字节直接调导入接口，从一张成品图恢复模板。
+  **只对 `.png` 显示**（jpg/webp 上点一下只会白下载整张再吃 400）。
+- 文件名走 `x-workflow-name` 头，中文先 `encodeURIComponent`（HTTP 头只收 latin1）。
+
+`tests/workflow-import-ui.test.mjs`（12 条）钉住：UI 自动转换并落盘、没有 `object_info`
+时退回可读提示且不写盘、PNG 的 `prompt` 块离线可导、PNG 无工作流块时明说、
+UI 格式的 JSON 体、`object_info` 拉取失败降级成 400（不是 500）、PNG 只有 UI 块时走转换、
+转换不出节点时 400 且不留半成品、**API 格式不去拉 `object_info`**、畸形 UI 结构回 400
+且内部异常不外泄、超限回 413、`zTXt` / `iTXt` / 过短早退的解析器边界。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

@@ -12,8 +12,8 @@ interface UiNode {
   [key: string]: unknown
 }
 
-/** UI 格式工作流（ComfyUI 界面保存的那种）。 */
-interface UiWorkflow {
+/** UI 格式工作流（ComfyUI 界面保存的那种）。导出是为了让 store.ts 能标注入口类型。 */
+export interface UiWorkflow {
   nodes?: unknown
   links?: unknown
   [key: string]: unknown
@@ -132,6 +132,7 @@ function bypassSourceOf(node: UiNode, outputSlot: number): number | undefined {
   const wanted = typeof slot?.type === 'string' ? slot.type : ''
   if (wanted === '') return undefined
   for (const input of node.inputs ?? []) {
+    if (input === null || typeof input !== 'object') continue
     const type = typeof input.type === 'string' ? input.type : ''
     if (type !== wanted) continue
     if (typeof input.link === 'number') return input.link
@@ -178,7 +179,18 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
   const notes: string[] = []
   const nodes = Array.isArray(ui.nodes) ? (ui.nodes as UiNode[]) : []
   const links = linkMapOf(ui.links)
-  const byId = new Map(nodes.map(node => [String(node.id), node]))
+  // `nodes` 里混进 null / 数组是真实会发生的（手改过的、别的工具导出的 JSON）。
+  // 直接 `node.id` 会抛 TypeError，最后变成 500 + 内部栈文本 —— 那不该是
+  // "用户粘了一份坏 JSON"得到的回应。
+  const byId = new Map<string, UiNode>()
+  let malformed = 0
+  for (const node of nodes) {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+      malformed += 1
+      continue
+    }
+    byId.set(String((node as UiNode).id), node as UiNode)
+  }
 
   const workflow: ApiWorkflow = {}
   let skipped = 0
@@ -187,6 +199,8 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
   let bypassed = 0
 
   for (const node of nodes) {
+    // 结构不合法的条目上面已经数过，这里跳过（不能再 `node.type`）
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) continue
     const type = typeof node.type === 'string' ? node.type : ''
     if (type === '') continue
     if (UI_ONLY.has(type)) continue
@@ -212,6 +226,7 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
 
     // 1. 连线：节点上明确标了 link 的输入。
     for (const input of node.inputs ?? []) {
+      if (input === null || typeof input !== 'object') continue
       const name = typeof input.name === 'string' ? input.name : ''
       const linkId = input.link
       if (name === '' || typeof linkId !== 'number') continue
@@ -247,6 +262,7 @@ export function convertUiToApi(ui: UiWorkflow, objectInfo: Record<string, unknow
   }
 
   if (skipped > 0) notes.push(`${skipped} 个节点的定义缺失，转换结果可能无法直接运行。`)
+  if (malformed > 0) notes.push(`${malformed} 个节点条目的结构不合法（不是对象），已跳过。`)
   if (muted > 0) notes.push(`${muted} 个节点在 UI 里被静音（不执行），已跳过。`)
   if (bypassed > 0) notes.push(`${bypassed} 个节点在 UI 里被旁路，已按直通接续下游。`)
   if (placeholders > 0) notes.push(`${placeholders} 个下拉框的当前值是界面提示语（不是有效选项），已按节点默认处理。`)
