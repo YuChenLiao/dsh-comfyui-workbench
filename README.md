@@ -280,6 +280,132 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 - 图片**只给路径与原始像素尺寸**，不内联字节：宿主会按 `{type:'image', attachment}` 重建请求，裸 base64 会抛错并污染该会话的后续请求。
 - 出图完成后由插件主动通知对话（`Agent.followup`，来源 `plugin:dsh-comfyui-workbench`）；完成 / 失败 / 超时三条路径都只投递一次。
 
+## 架构与设计
+
+插件由 **1 个包根 `core` + 11 个可独立开关的子路径 entry** 组成。每个 entry 单独用 esbuild 打包，模块级状态不跨 bundle 共享，因此全部运行时状态、HTTP 路由表与素材注册表统一收敛到锚定在 `ctx.root` 上的共享 `Runtime`。
+
+### 装配与运行时拓扑
+
+```mermaid
+flowchart LR
+    subgraph Host["DSH 宿主"]
+        UI["浏览器 Shell\n(Workbench.tsx: 7 页签)"]
+        Loader["Cordis Loader\n(12 条 entry)"]
+        Agent["对话模型 / Agent"]
+    end
+
+    subgraph Core["core 入口 (src/index.ts)"]
+        Router["HTTP 分派器\n/comfyui-workbench/api\n(WRITABLE / POST_ONLY / selfManaged)"]
+        Config["/config 与 skill"]
+        RT["共享 Runtime\n(锚定在 ctx.root)"]
+    end
+
+    subgraph Entries["11 个组件 entry"]
+        P_Main["面板: gallery / workflow / terminal\n(挂载路由)"]
+        P_Mat["素材面板 + 工具:\ncharacters / poses / costumes / tags\n(注册 rt.materials 与路由)"]
+        T_Gen["工具: generate + edit\n(读 rt.materials 与 rt.runs)"]
+        T_Flag["开关: sync-wait\n(由 generate 读 disabledComponents)"]
+        T_Dan["工具: danbooru\n(独立，不碰 Runtime)"]
+    end
+
+    UI -- "fetch" --> Router
+    UI -. "隐藏已关页签" .-> Config
+    Loader --> Core
+    Loader --> Entries
+    Agent --> T_Gen & T_Dan & P_Mat
+
+    Router -- "查 mergedRoutes" --> RT
+    P_Main & P_Mat -- "acquire() 挂载" --> RT
+    T_Gen -- "acquire() 读写" --> RT
+    T_Flag -. "影响 wait 参数" .-> T_Gen
+```
+
+### 出图、索引与相册浏览的数据流
+
+```mermaid
+flowchart LR
+    subgraph In["触发入口"]
+        ToolRun["模型调 comfyui_run / batch / rerun"]
+        PanelRun["工作流面板 /run 或 /rerun"]
+        GalleryUI["相册面板浏览与操作"]
+    end
+
+    subgraph Engine["执行与收集 (shared/run + comfy)"]
+        Run["submitWorkflow -> ComfyUI\n(自动拉起 Supervisor + /prompt)"]
+        Watch["watchRun / sweepRun\n(后台盯守与断点重查)"]
+        Collect["collectArtifacts\n(落盘产物 + sidecar .json)"]
+        Record["recordArtifacts\n(去重写入 AssetIndex)"]
+    end
+
+    subgraph Store["外部服务与本地存储"]
+        Comfy["ComfyUI 实例\n(HTTP / WS / comfyui.log)"]
+        Disk["输出目录 + .trash/\n~/.dsh-comfyui-workbench/"]
+        Upstream["第三方图床 / Danbooru\n(服务端代理按需缓存)"]
+    end
+
+    ToolRun & PanelRun --> Run
+    Run <--> Comfy
+    Run --> Watch --> Collect
+    Collect -- "写图/音视频 + sidecar" --> Disk
+    Collect -- "onCollected" --> Record --> Disk
+    Watch -- "Agent.followup" --> ToolRun
+
+    GalleryUI -- "/items /file(Range) /trash /meta" --> Disk
+    P_Proxy["角色 / 姿势 / 衣装代理"] --> Upstream
+    P_Proxy -- "落盘到 cache & uploads" --> Disk
+```
+
+### 模块依赖边界（由 `tests/arch.mjs` 守门）
+
+```mermaid
+flowchart BT
+    subgraph Bottom["shared 最底层 (无内部上行依赖)"]
+        Host["shared/host\n(配置 / 路径 / prefs / skill / toggles)"]
+        HTTP["shared/http\n(respond / readRawBody)"]
+        Media["shared/media\n(MIME / 媒体类型 / PNG 文本块)"]
+    end
+
+    subgraph Mid["shared 中层"]
+        Authz["shared/authz\n(rootsOf / isAuthorized)"]
+        Workflow["shared/workflow\n(API/UI 转换 / IO 推断 / store)"]
+        Comfy["shared/comfy\n(client / supervisor / catalog / audit)"]
+        Tools["shared/tools\n(ToolSpec / 解析辅助)"]
+        Run["shared/run\n(submit / watch / sweep / sidecar / record)"]
+    end
+
+    subgraph Comp["组件层 (组件之间禁止互相 import)"]
+        Server["components/*/server & tools"]
+        ClientPanel["components/*/client"]
+    end
+
+    subgraph Shell["浏览器外壳 (src/client/)"]
+        ShellCore["api / i18n / icons / types / actions"]
+        Assembly["Workbench.tsx & client/index.tsx\n(唯一允许的 SHELL_ASSEMBLY)"]
+    end
+
+    Authz --> Host
+    Workflow --> Host
+    Comfy --> Host
+    Comfy --> Workflow
+    Tools --> Host
+    Tools --> Comfy
+    Tools --> Workflow
+    Run --> Host
+    Run --> Comfy
+    Run --> Workflow
+    Run --> Media
+
+    Server --> Mid
+    Server --> Bottom
+    ClientPanel --> ShellCore
+    Assembly --> ClientPanel
+    Assembly --> ShellCore
+```
+
+- **跨 bundle 幂等靠 `Runtime` 与磁盘 sidecar**：`RunRegistry` 挂在 `Runtime` 上供各 entry 共享；重复收集产物的最终幂等判据落在磁盘 sidecar 的 `comfy.promptId`，索引 `assets.jsonl` 也可从 sidecar 完整重建。
+- **组件解耦靠运行时注册表**：`comfyui_compose` 等编排工具不直接 import 姿势/衣装/角色面板源码，而是读取组件上线时挂进 `rt.materials` 的接口；HTTP 路由也通过 `rt.routes` 动态汇总。
+- **只由包根挂载浏览器端**：宿主只给包根说明符装配 `exports["./client"]`，因此 `core` 负责托管前端外壳与 `/config`、兜底 HTTP 前缀。
+
 ## 目录结构
 
 ```

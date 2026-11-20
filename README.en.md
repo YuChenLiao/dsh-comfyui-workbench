@@ -276,6 +276,132 @@ Disabling it affects only this panel (`panel.terminal`); everything else keeps w
 - Images are returned as **paths plus original pixel dimensions**, never inline bytes: the host rebuilds requests per `{type:'image', attachment}` block and a raw base64 block throws and poisons every later request in that session.
 - When a run finishes, the plugin pushes the result into the conversation (`Agent.followup`, source `plugin:dsh-comfyui-workbench`); the success, failure and timeout paths each deliver exactly once.
 
+## Architecture & design
+
+The plugin consists of **1 package-root `core` entry + 11 toggleable subpath entries**. Each entry is bundled independently by esbuild, so module-level globals are not shared across bundles; shared runtime state, HTTP routes and material registries all converge on a shared `Runtime` anchored to `ctx.root`.
+
+### Assembly & runtime topology
+
+```mermaid
+flowchart LR
+    subgraph Host["DSH Host"]
+        UI["Browser Shell\n(Workbench.tsx: 7 tabs)"]
+        Loader["Cordis Loader\n(12 entries)"]
+        Agent["Conversation Agent"]
+    end
+
+    subgraph Core["core entry (src/index.ts)"]
+        Router["HTTP Dispatcher\n/comfyui-workbench/api\n(WRITABLE / POST_ONLY / selfManaged)"]
+        Config["/config & skill"]
+        RT["Shared Runtime\n(anchored on ctx.root)"]
+    end
+
+    subgraph Entries["11 component entries"]
+        P_Main["Panels: gallery / workflow / terminal\n(mount routes)"]
+        P_Mat["Material panels + tools:\ncharacters / poses / costumes / tags\n(register rt.materials & routes)"]
+        T_Gen["Tools: generate + edit\n(read rt.materials & rt.runs)"]
+        T_Flag["Switch: sync-wait\n(read by generate via disabledComponents)"]
+        T_Dan["Tools: danbooru\n(standalone, no Runtime)"]
+    end
+
+    UI -- "fetch" --> Router
+    UI -. "hide disabled tabs" .-> Config
+    Loader --> Core
+    Loader --> Entries
+    Agent --> T_Gen & T_Dan & P_Mat
+
+    Router -- "lookup mergedRoutes" --> RT
+    P_Main & P_Mat -- "acquire() mount" --> RT
+    T_Gen -- "acquire() read/write" --> RT
+    T_Flag -. "controls wait param" .-> T_Gen
+```
+
+### Generation, indexing & gallery data flow
+
+```mermaid
+flowchart LR
+    subgraph In["Triggers"]
+        ToolRun["Model: comfyui_run / batch / rerun"]
+        PanelRun["Workflow panel: /run or /rerun"]
+        GalleryUI["Assets panel browsing & actions"]
+    end
+
+    subgraph Engine["Execution & collection (shared/run + comfy)"]
+        Run["submitWorkflow -> ComfyUI\n(Supervisor auto-start + /prompt)"]
+        Watch["watchRun / sweepRun\n(background watch & resume)"]
+        Collect["collectArtifacts\n(save files + sidecar .json)"]
+        Record["recordArtifacts\n(dedupe into AssetIndex)"]
+    end
+
+    subgraph Store["External service & local storage"]
+        Comfy["ComfyUI instance\n(HTTP / WS / comfyui.log)"]
+        Disk["Output dir + .trash/\n~/.dsh-comfyui-workbench/"]
+        Upstream["Upstream image hosts / Danbooru\n(server proxy + on-demand cache)"]
+    end
+
+    ToolRun & PanelRun --> Run
+    Run <--> Comfy
+    Run --> Watch --> Collect
+    Collect -- "write media + sidecar" --> Disk
+    Collect -- "onCollected" --> Record --> Disk
+    Watch -- "Agent.followup" --> ToolRun
+
+    GalleryUI -- "/items /file(Range) /trash /meta" --> Disk
+    P_Proxy["Characters / Poses / Costumes proxy"] --> Upstream
+    P_Proxy -- "cache & materialize to uploads" --> Disk
+```
+
+### Module dependency boundaries (enforced by `tests/arch.mjs`)
+
+```mermaid
+flowchart BT
+    subgraph Bottom["shared base layer (no upward imports)"]
+        Host["shared/host\n(config / paths / prefs / skill / toggles)"]
+        HTTP["shared/http\n(respond / readRawBody)"]
+        Media["shared/media\n(MIME / media kinds / PNG text chunks)"]
+    end
+
+    subgraph Mid["shared mid layer"]
+        Authz["shared/authz\n(rootsOf / isAuthorized)"]
+        Workflow["shared/workflow\n(API/UI convert / IO surface / store)"]
+        Comfy["shared/comfy\n(client / supervisor / catalog / audit)"]
+        Tools["shared/tools\n(ToolSpec / arg helpers)"]
+        Run["shared/run\n(submit / watch / sweep / sidecar / record)"]
+    end
+
+    subgraph Comp["Component layer (no cross-component imports)"]
+        Server["components/*/server & tools"]
+        ClientPanel["components/*/client"]
+    end
+
+    subgraph Shell["Browser shell (src/client/)"]
+        ShellCore["api / i18n / icons / types / actions"]
+        Assembly["Workbench.tsx & client/index.tsx\n(only allowed SHELL_ASSEMBLY)"]
+    end
+
+    Authz --> Host
+    Workflow --> Host
+    Comfy --> Host
+    Comfy --> Workflow
+    Tools --> Host
+    Tools --> Comfy
+    Tools --> Workflow
+    Run --> Host
+    Run --> Comfy
+    Run --> Workflow
+    Run --> Media
+
+    Server --> Mid
+    Server --> Bottom
+    ClientPanel --> ShellCore
+    Assembly --> ClientPanel
+    Assembly --> ShellCore
+```
+
+- **Cross-bundle idempotency via `Runtime` and disk sidecars**: `RunRegistry` lives on `Runtime` so entries share run state; final collection idempotency relies on `comfy.promptId` in the on-disk sidecar, and `assets.jsonl` can be rebuilt cleanly from sidecars.
+- **Component decoupling via runtime registries**: `comfyui_compose` never imports pose/costume/character panel code directly — panels register fetchers on `rt.materials` and HTTP handlers on `rt.routes`.
+- **Root-only client assembly**: the host only loads `exports["./client"]` for the exact package specifier, so `core` hosts the browser shell, `/config`, and the fallback HTTP prefix.
+
 ## Layout
 
 ```
@@ -283,6 +409,7 @@ src/client/styles.css              shell styles (each panel keeps its own .css n
 src/components/panel-gallery/      assets: server/(routes/scan/index/thumbs) + client/
 src/components/panel-workflow/     workflow admin: server/(routes/run/import/config) + client/
 src/components/panel-tags/         tag library: server/(index/search/sync job) + client/
+src/components/panel-characters/   character library: server/(catalog/routes/tools) + client/
 src/components/panel-poses/        pose library: server/(catalog/image proxy/tools) + client/
 src/components/panel-costumes/     costume library: server/(catalog/routes/tools) + client/
 src/components/panel-terminal/     terminal: server/(log tail) + client/
