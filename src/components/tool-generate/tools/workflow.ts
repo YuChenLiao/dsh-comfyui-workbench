@@ -25,6 +25,7 @@ import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 import { auditWorkflows } from './workflow-audit.js'
 import { inspectWorkflow } from './workflow-inspect.js'
 import { listWorkflows } from './workflow-list.js'
+import { listModels, modelKindsHint, wantsModels } from './workflow-models.js'
 
 /**
  * `audit` 的真值判断。
@@ -43,10 +44,11 @@ export function workflowTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_workflow',
     description:
-      '工作流的**一个入口，四档视角**：不给 `workflowId` 列清单（含 id、标题、作用备注、底模、输入种类、输出形状）；'
+      '工作流的**一个入口，五档视角**：不给 `workflowId` 列清单（含 id、标题、作用备注、底模、输入种类、输出形状、可套的预设）；'
       + '给 `workflowId` 看那套的输入输出面与节点清单（`inputs` 里就是 `vars` 能用的键名）；'
       + '再加 `nodeId` 看单个节点的完整配置；给 `audit: true` 体检全库 —— 哪些模板缺节点（必然跑不起来）、'
-      + '哪些缺模型（能提交但会跑偏）。'
+      + '哪些缺模型（能提交但会跑偏）；给 `models: true` 盘点**本机可用模型**（按 checkpoint / lora / vae / '
+      + 'controlnet / upscaler 分类，带 LoRA 触发词备注）—— 填 `vars` 前不确定本机有什么，就先用这一档。'
       + '**服务没在跑时它会先自动拉起**（最多 3 分钟），第一次调用慢是正常的，'
       + '不要因为慢就以为卡住了、更不要手动去启动或 kill ComfyUI。',
     parameters: {
@@ -63,12 +65,28 @@ export function workflowTool(deps: ToolDeps): ToolSpec {
           description: "列表时只看需要这类输入的工作流（找'能吃图的工作流'就用 image）。结果里会标 imageSlots 与 needsImage。",
         },
         includeDisabled: { type: 'boolean', description: '列表时连被管理员停用的工作流一起列出（默认只看可用的）。' },
+        models: {
+          type: ['boolean', 'string'],
+          description: '盘点本机模型：传 true 列全部（checkpoint / lora / vae / controlnet / upscaler），'
+            + '或传类别名只看一类（如 "lora"）。LoRA 的触发词从插件数据目录的 loras.json 读。',
+        },
       },
     },
     output: jsonOutput(),
     async execute(args) {
       // 体检优先：它和 workflowId 同时给时以体检为准（体检扫的是全库，workflowId 无意义）
       if (wantsAudit(args.audit)) return auditWorkflows(deps)
+      // 模型盘点同理：它问的不是哪套模板
+      if (wantsModels(args.models)) return listModels(deps, args)
+      // 给了 models 但值不认识：**必须报错**，不能静默降级成列工作流 ——
+      // 模型会以为自己拿到了模型清单，然后在 vars 里瞎填
+      if (args.models !== undefined && args.models !== null && args.models !== false) {
+        return {
+          ok: false,
+          mode: 'models',
+          message: `models 参数只接受 ${modelKindsHint()}，收到「${String(args.models)}」。`,
+        }
+      }
 
       const workflowId = asString(args.workflowId).trim()
       if (workflowId !== '') return inspectWorkflow(deps, args)

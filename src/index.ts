@@ -145,6 +145,7 @@ export { nodeSearchTool, resetNodeIndexCache } from './components/tool-generate/
 export { planOrder, runBatchTool } from './components/tool-generate/tools/run-batch.js'
 export { composeTool, CHARACTER_VIEWS } from './components/tool-generate/tools/compose.js'
 export { workflowEditTool } from './components/tool-workflow-edit/tools/workflow-edit.js'
+export { catalogModels, readTriggers } from './shared/comfy/catalog.js'
 export { planSlots, ROLE_CN } from './components/tool-generate/tools/compose-slots.js'
 export { buildPrompt } from './components/tool-generate/tools/compose-prompt.js'
 export { runsTool } from './components/tool-generate/tools/runs.js'

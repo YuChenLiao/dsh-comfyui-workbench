@@ -351,6 +351,35 @@ UI 格式的 JSON 体、`object_info` 拉取失败降级成 400（不是 500）�
 > 相册按 batchId 折叠产物这一条这批没做：`batchId` 目前只活在运行注册表里，sidecar
 > 里没有它，要折叠得先让 `runner` 把它写进 sidecar（会动到 sidecar 的契约）。
 
+### 本机模型盘点与 LoRA 触发词
+
+`comfyui_workflow { models: true }` 盘点本机可用模型，按类别分（checkpoint / lora /
+vae / controlnet / upscaler），也可以只给类别名看一类。**复用已有工具、不新增工具名** ——
+工具数量本身就是负担，而"我本机有哪些模型"和"我有哪些模板"是同一个问题域的两面。
+
+- 收集的唯一入口是**字段必须像模型槽位**（`*_name` / `*_file` / `*_path`），并显式排除枚举字段。
+  审查实测过：只按"节点类型带关键词就收"的话，`UNETLoader.weight_dtype`、
+  `CheckpointLoader.config_name`、`LatentUpscale.upscale_method` 会把精度档位与插值算法
+  列成"本机可用的模型"。节点类型只用来消歧 `model_name`（Upscale → upscaler，其余 → checkpoint）。
+- 同一判据把 `other` 从"形同虚设"救回来：`InstantIDModelLoader.instantid_file`、
+  `IPAdapterModelLoader.ipadapter_file`、`GLIGENLoader.gligen_name` 之前一条都不在清单里。
+- 非模型 COMBO（`sampler_name` / `scheduler`）不进清单 —— 否则分不清"缺模型"和"缺采样器"。
+- 离线时回 `ok: false` 并说明原因，**不假装"本机没有模型"**：一份空清单会被模型
+  当成"这台机器什么都没有"，从而放弃使用本机已有的权重。
+- `models` 给错值（`'loras'` / `'all'`）报错并列出合法值，**不静默降级成列工作流** ——
+  那会让模型以为自己拿到了模型清单。`'TRUE'` / `'1 '` 这类大小写与空白差异归一后仍有效，不算错。
+
+**LoRA 触发词**：`<插件数据目录>/loras.json`，形状容忍两种写法
+（`{"模型名": "触发词"}` 或 `{"模型名": {"triggers": "…"}}`）。读失败只报一句人话、
+不抛 —— 那是可选增强，不该让盘点本身挂掉。文件不存在时也把路径回给模型，
+并在 hint 里写明格式：被指到一个文件却不知道怎么写，等于没给。
+
+工具 description 与 README（中英）从"四档"改成"五档"：模型**只看得到 description**，
+`models` 不写进去等于不存在。
+
+`tests/model-catalog.test.mjs`（5 条）钉住：分类、触发词两种写法与两种写坏方式、
+工具分支在线/离线两种表现、枚举字段不进清单、`models` 给错值必须报错。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口
