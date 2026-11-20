@@ -1,5 +1,5 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
-import { listEntries } from '../../../shared/workflow/index.js'
+import { listEntries, normalizedPresets } from '../../../shared/workflow/index.js'
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { asString } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
@@ -11,7 +11,7 @@ import type { ToolDeps } from '../../../shared/tools/types.js'
  * 理由见那边的注释。共同字段（workflowId / title / description / undescribed / enabled）
  * 由 `tests/workflow-list-shape.test.mjs` 钉住不能漂。
  */
-export function toModelItem(surface: WorkflowIOSurface): Record<string, unknown> {
+export function toModelItem(surface: WorkflowIOSurface, presetNames: readonly string[] = []): Record<string, unknown> {
   const primary = surface.models.find(model => model.primary === true) ?? surface.models[0]
   const others = surface.models.filter(model => model !== primary).map(model => model.name)
   return {
@@ -29,6 +29,8 @@ export function toModelItem(surface: WorkflowIOSurface): Record<string, unknown>
     outputs: surface.outputs.map(slot => ({ kind: slot.kind, count: slot.count })),
     nodes: surface.meta.nodeCount,
     enabled: surface.enabled,
+    // 预设名列表：模型据此知道能 `comfyui_run { preset }` 套哪几组常用参数
+    ...(presetNames.length === 0 ? {} : { presets: [...presetNames] }),
   }
 }
 
@@ -62,7 +64,9 @@ export async function listWorkflows(deps: ToolDeps, args: Record<string, unknown
 
   const items = visible
     .map(entry => {
-      const item = toModelItem(entry.surface)
+      // 与运行侧共用同一份归一化：各写一份的话会出现"清单里列着 broken、点了却说没有"
+      const presets = Object.keys(normalizedPresets(entry.meta?.presets))
+      const item = toModelItem(entry.surface, presets)
       if (available === null) return item
       const missing = missingModels(entry.surface.models, available)
       if (missing.length === 0) return item

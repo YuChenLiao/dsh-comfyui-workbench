@@ -85,6 +85,14 @@ export interface WorkflowMeta {
   description?: string
   tags?: string[]
   /**
+   * 预设：名字 → 一组默认 vars。
+   *
+   * `comfyui_run { preset: '夜景' }` 先把它铺底，同时传的 `vars` 覆盖同名键。
+   * 放这里而不是 `schema.json`：预设是"常用参数组合"，跟措辞、分组这些展示层的东西
+   * 不是一回事；而且它可以直接被 `comfyui_workflow_edit` 写。
+   */
+  presets?: Record<string, Record<string, unknown>>
+  /**
    * 是否提供给它模型使用。默认可用。
    *
    * 关掉之后 `workflow_list` 不再列出、`run` 直接拒绝 —— 有些工作流（实验品、

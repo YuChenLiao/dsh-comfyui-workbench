@@ -316,6 +316,41 @@ UI 格式的 JSON 体、`object_info` 拉取失败降级成 400（不是 500）�
 只对应 ComfyUI 原生内嵌块，恰好把上面那个 bug 盖住了。变异验证：`summary` 不再从 `vars`
 取底模、两层都去掉大小写归一 —— 都被拦住。
 
+### 工作流预设与参数网格
+
+**预设**：模板的 `.meta.json` 支持 `presets`（名字 → 一组默认 vars）。
+`comfyui_run { preset: '夜景' }` 把它铺底，同时传的 `vars` 覆盖同名键 ——
+`{ preset: '夜景', vars: { seed: 9 } }` 就是"用夜景那套参数，但换个种子"。
+名字拼错时报 `preset_unknown` 并列出可用预设（静默忽略会让人以为"预设没生效"）。
+`comfyui_workflow` 的列表项带上 `presets` 名字，模型不用猜。
+
+放在 `.meta.json` 而不是 `.schema.json`：预设是"常用参数组合"，跟措辞、分组这些
+展示层的东西不是一回事，而且它可以直接被 `comfyui_workflow_edit` 写。
+
+**网格**：`comfyui_run_batch { grid: { cfg: [5, 7], sampler_name: ['euler', 'dpmpp_2m'] } }`
+按维度笛卡尔展开成 4 条，共用外层 workflow 与同一个 batchId。
+**上限在展开过程中就拦住**——先算乘积再判断的话，一个手滑的 20×20×20 会先造出 8000 条
+才报错。与 `runs` 二选一（同时给以 `runs` 为准）；非数组、空数组都给明确错误。
+
+`tests/presets-grid.test.mjs`（5 条）钉住：预设合入与覆盖、`preset_unknown` 带可用列表、
+预设形状不对时不崩、网格四种组合都真的提交、三种边界报错。断言落在**真正交给 client
+的那份 workflow** 上——"看起来生效、实际没进参数"是这两个功能最容易出的错。
+
+
+**审查修掉的**：
+
+- `preset_unknown` 原来用 `error` 字段，而 `render` 只读 `message` —— 模型只看到一句
+  「执行失败。」，可用预设列表一个字都到不了。现在用 `message`，并补了**直接跑 render**
+  的断言（只断言返回对象的话，这类"模型看不到"的问题测不出来）。
+- `comfyui_workflow_edit` 写备注会把整份 meta 从零重建：`presets` 与 `enabled` 被静默抹掉。
+  现在先摊开已有 meta 再覆盖（面板那侧一直是摊开的，两条写入路径不能语义相反）。
+- 列表侧与运行侧各写一份预设归一化，于是"清单里列着 `broken`、点了却说没有这个预设"。
+  现在共用 `shared/workflow` 的 `normalizedPresets`；预设名查找改用 `Object.hasOwn`
+  （`toString` / `constructor` 会踩原型链，静默当空预设提交）。
+
+> 相册按 batchId 折叠产物这一条这批没做：`batchId` 目前只活在运行注册表里，sidecar
+> 里没有它，要折叠得先让 `runner` 把它写进 sidecar（会动到 sidecar 的契约）。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

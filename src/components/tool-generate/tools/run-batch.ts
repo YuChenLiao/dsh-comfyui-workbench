@@ -28,6 +28,37 @@ const MAX_RUNS = 20
 /** 批量同步等待的总预算上限。超过就标 pending 交给后台通知。 */
 const BATCH_WAIT_BUDGET_MS = 30 * 60_000
 
+/**
+ * 把 `grid` 展开成一组 vars。
+ *
+ * `{ cfg: [5, 7], sampler_name: ['euler', 'dpmpp_2m'] }` → 4 组。
+ * **上限在展开过程中就拦住**：先算乘积再判断的话，一个手滑的 20×20×20
+ * 会在内存里先造出 8000 条才报错。
+ *
+ * @returns 展开后的 vars 列表；超限或形状不对时返回一句人话。
+ */
+function expandGrid(grid: Record<string, unknown>, limit: number): Record<string, unknown>[] | string {
+  const keys = Object.keys(grid)
+  if (keys.length === 0) return 'grid 里没有任何维度。'
+  for (const key of keys) {
+    if (Array.isArray(grid[key]) === false) return `grid.${key} 必须是数组。`
+  }
+  let combos: Array<Record<string, unknown>> = [{}]
+  for (const key of keys) {
+    const values = grid[key] as unknown[]
+    if (values.length === 0) return `grid.${key} 是空数组 —— 展开出来是零条。`
+    const next: Array<Record<string, unknown>> = []
+    for (const combo of combos) {
+      for (const value of values) {
+        next.push({ ...combo, [key]: value })
+        if (next.length > limit) return `grid 展开后超过 ${limit} 条（${keys.join(' × ')}），请分批。`
+      }
+    }
+    combos = next
+  }
+  return combos
+}
+
 /** 一条提交请求。 */
 interface RunItem {
   /** 工作流 id 或路径；不填则用外层 workflow。 */
@@ -92,7 +123,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
         },
         runs: {
           type: 'array',
-          description: `提交清单，每条含 vars（可选 workflow / outputPath），最多 ${MAX_RUNS} 条。`,
+          description: `提交清单，每条含 vars（可选 workflow / outputPath），最多 ${MAX_RUNS} 条。与 grid 二选一。`,
           items: {
             type: 'object',
             properties: {
@@ -106,6 +137,12 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
             },
           },
         },
+        grid: {
+          type: 'object',
+          description: '参数网格：`{ "cfg": [5, 7], "sampler_name": ["euler", "dpmpp_2m"] }` 会笛卡尔展开成 4 条'
+            + `（外层 workflow 共用，最多 ${MAX_RUNS} 组）。与 runs 二选一 —— 两者都给时以 runs 为准。`,
+          additionalProperties: true,
+        },
         ...waitSchema(deps,
           '是否同步等全部出图。不传时按配置 `runWait`（内置 async，即全部异步）。'
           + '批量同步等待很容易撞超时，一般不要开。'),
@@ -117,8 +154,18 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     async execute(args, exec) {
-      const raw = Array.isArray(args.runs) ? args.runs : []
-      if (raw.length === 0) return { ok: false, error: 'runs 不能为空。' }
+      // `grid`：外层 workflow 一套，按给出的维度做笛卡尔展开。
+      // 与 `runs` 二选一 —— 两者同时给时以 `runs` 为准（调用方显然是想精确控制每一条）。
+      const grid = args.grid !== null && typeof args.grid === 'object' && Array.isArray(args.grid) === false
+        ? (args.grid as Record<string, unknown>)
+        : undefined
+      let raw = Array.isArray(args.runs) ? args.runs : []
+      if (raw.length === 0 && grid !== undefined) {
+        const expanded = expandGrid(grid, MAX_RUNS)
+        if (typeof expanded === 'string') return { ok: false, error: expanded }
+        raw = expanded.map(vars => ({ vars }))
+      }
+      if (raw.length === 0) return { ok: false, error: 'runs 不能为空（或者给 grid 让插件展开）。' }
       if (raw.length > MAX_RUNS) {
         return { ok: false, error: `一次最多提交 ${MAX_RUNS} 条，收到 ${raw.length} 条。请分批。` }
       }

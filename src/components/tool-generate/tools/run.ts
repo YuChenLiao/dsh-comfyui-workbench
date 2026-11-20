@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { hasPreset, normalizedPresets } from '../../../shared/workflow/index.js'
 import { applyOverrides, codeOrDefault, finalStateOf, overrideNotes, recallRun, recordArtifacts, resumeRun, submitWorkflow, sweepRun, waitForRun, watchRun } from '../../../shared/run/index.js'
 import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
@@ -25,6 +26,8 @@ interface LoadedWorkflow {
   workflowId: string
   workflow: ApiWorkflow
   surface: WorkflowIOSurface
+  /** 模板的预设表（ 的 ）。 */
+  presets: Record<string, Record<string, unknown>>
 }
 
 /** 从 workflow 参数里取模板：优先 { id }，其次 { path }。 */
@@ -38,7 +41,7 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
     if (!entry.surface.enabled) {
       throw new Error(`工作流 ${id} 已被停用，不能执行。需要的话在工作流管理面板里重新启用。`)
     }
-    return { workflowId: id, workflow: entry.workflow, surface: entry.surface }
+    return { workflowId: id, workflow: entry.workflow, surface: entry.surface, presets: normalizedPresets(entry.meta?.presets) }
   }
 
   const filePath = asString(spec.path).trim()
@@ -58,7 +61,7 @@ function loadWorkflow(deps: ToolDeps, args: Record<string, unknown>): LoadedWork
   const workflow = raw as ApiWorkflow
   const workflowId = path.basename(filePath, path.extname(filePath))
   // 单文件模式：临时算一份 IO 面，保证变量校验与模板走同一套规则。
-  return { workflowId, workflow, surface: buildSurface({ workflowId, workflow }) }
+  return { workflowId, workflow, surface: buildSurface({ workflowId, workflow }), presets: {} }
 }
 
 /** 没有会话通道时用的收尾：只更新注册表，不投递消息。 */
@@ -142,6 +145,11 @@ export function runTool(deps: ToolDeps): ToolSpec {
           type: 'object',
           description: '变量绑定。键必须是该工作流的输入名；不认识的键会报错而不是被忽略。',
           additionalProperties: true,
+        },
+        preset: {
+          type: 'string',
+          description: '套用一个预设（模板 `.meta.json` 里配好的一组默认 vars）。预设先铺底，'
+            + '同时传的 `vars` 覆盖它。用 `comfyui_workflow` 看有哪些预设。',
         },
         outputPath: { type: 'string', description: '产物落盘目录；不传用配置的 outputDir' },
         ...waitSchema(deps,
@@ -272,10 +280,32 @@ export function runTool(deps: ToolDeps): ToolSpec {
       }
 
       const pending = deps.overrides.get(loaded.workflowId)
+      // 预设：先套一组默认 vars，显式传入的 vars 覆盖它。
+      // 名字拼错时把可用预设列出来 —— 静默忽略会让人以为预设没生效。
+      const presetName = asString(args.preset).trim()
+      const explicitVars = asRecord(args.vars)
+      let mergedVars = explicitVars
+      if (presetName !== '') {
+        // hasOwn： /  会踩原型链，静默当空预设提交
+        const preset = hasPreset(loaded.presets, presetName) ? loaded.presets[presetName] : undefined
+        if (preset === undefined) {
+          const names = Object.keys(loaded.presets)
+          return {
+            ok: false,
+            code: 'preset_unknown',
+            // 用 `message` 而不是 `error`：这个文件的 render 只读 message / hint，
+            // 用 error 的话模型只会看到一句「执行失败。」，可用预设列表根本到不了
+            message: names.length === 0
+              ? `工作流 ${loaded.workflowId} 没有配置任何预设。`
+              : `没有叫「${presetName}」的预设。可用：${names.join(' / ')}。`,
+          }
+        }
+        mergedVars = { ...preset, ...explicitVars }
+      }
       const applied = applyOverrides(
         loaded.workflow as Record<string, { class_type?: string; inputs?: Record<string, unknown> }>,
         loaded.surface,
-        asRecord(args.vars),
+        mergedVars,
         pending,
       )
       const preNotes: string[] = [...overrideNotes(applied)]

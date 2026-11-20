@@ -20,6 +20,8 @@ export {
   readEntry,
   removeWorkflow,
   isSafeWorkflowId,
+  normalizedPresets,
+  hasPreset,
   sanitizeId,
   WorkflowExistsError,
   WorkflowFormatError,

@@ -1,6 +1,6 @@
 import { readEntry, writeMeta, writeWorkflow } from '../../../shared/workflow/index.js'
 import { applyVariables } from '../../../shared/workflow/variables.js'
-import type { ApiWorkflow, IOSlot } from '../../../shared/workflow/types.js'
+import type { ApiWorkflow, IOSlot, WorkflowMeta } from '../../../shared/workflow/types.js'
 import { asRecord, asString, jsonOutput } from '../../../shared/tools/types.js'
 import type { Override, ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
 
@@ -100,11 +100,17 @@ export function workflowEditTool(deps: ToolDeps): ToolSpec {
 
       // ── 备注 ──
       if (Object.keys(notes).length > 0) {
-        const next = {
-          title: typeof notes.title === 'string' ? notes.title : entry.meta?.title,
-          description: typeof notes.description === 'string' ? notes.description : entry.meta?.description,
-          tags: Array.isArray(notes.tags) ? notes.tags.filter((tag): tag is string => typeof tag === 'string') : entry.meta?.tags,
-          updatedBy: 'agent' as const,
+        // **必须先摊开已有的 meta**：这份文件里还住着 `enabled` 与 `presets`，
+        // 从零重建的话，"改一句备注"会把它们静默抹掉 —— 面板那侧的
+        // `handleWorkflowUpdate` 一直是摊开的，两条写入路径不能语义相反。
+        const next: WorkflowMeta = {
+          ...(entry.meta ?? {}),
+          ...(typeof notes.title === 'string' ? { title: notes.title } : {}),
+          ...(typeof notes.description === 'string' ? { description: notes.description } : {}),
+          ...(Array.isArray(notes.tags)
+            ? { tags: notes.tags.filter((tag): tag is string => typeof tag === 'string') }
+            : {}),
+          updatedBy: 'agent',
         }
         writeMeta(deps.workflowsDir, workflowId, next)
       }

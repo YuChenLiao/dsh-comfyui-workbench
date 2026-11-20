@@ -118,10 +118,10 @@ test('wait 给字符串数字也认（模型偶尔给 "300"）', async () => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-test('参数表只剩六个，wait 承担了原来的 wait + waitMs + timeoutMs', async () => {
+test('参数表只剩七个（多了 preset），wait 承担了原来的 wait + waitMs + timeoutMs', async () => {
   const { deps, dir } = makeDeps()
   const names = Object.keys(runTool(deps).parameters.properties).sort()
-  assert.deepEqual(names, ['outputPath', 'promptId', 'tags', 'vars', 'wait', 'workflow'])
+  assert.deepEqual(names, ['outputPath', 'preset', 'promptId', 'tags', 'vars', 'wait', 'workflow'])
   for (const gone of ['waitMs', 'timeoutMs', 'returnImages']) {
     assert.equal(names.includes(gone), false, `${gone} 应该已经删掉`)
   }

@@ -140,6 +140,32 @@ export class WorkflowExistsError extends Error {
 }
 
 /**
+ * 预设表归一化：只接受"名字 → 对象"的形状。
+ *
+ * `<id>.meta.json` 是手改得动的文件，写错一层（`presets: { foo: "bar" }`）
+ * 不该让运行在合并阶段崩，只该让那个预设不可用。
+ *
+ * **导出是必须的**：列表侧（`comfyui_workflow`）与运行侧（`comfyui_run`）各自归一化
+ * 的话，会出现"清单里列着 `broken`、点了却说没有这个预设"—— 模型照着点、撞墙、还不知道为什么。
+ * `Object.hasOwn` 也不能省：`loaded.presets['toString']` 会命中原型链，静默当空预设通过。
+ */
+export function normalizedPresets(raw: unknown): Record<string, Record<string, unknown>> {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, Record<string, unknown>> = {}
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value !== null && typeof value === 'object' && Array.isArray(value) === false) {
+      out[name] = value as Record<string, unknown>
+    }
+  }
+  return out
+}
+
+/** 这个预设名是否真的存在（不踩原型链）。 */
+export function hasPreset(presets: Record<string, unknown>, name: string): boolean {
+  return Object.hasOwn(presets, name)
+}
+
+/**
  * 导入一份**已经解析好**的工作流 JSON。
  *
  * 面板的「上传 / 粘贴导入」走这条：它拿到的是内存里的对象，没有文件路径。
