@@ -2,6 +2,8 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { mimeOfPath } from '../media/constants.js'
+
 import { ensureDir } from '../host/paths.js'
 import { readPngTextChunks } from '../media/png-text.js'
 import { isFatalRunError, isRetryable, TRANSIENT_LIMIT } from './policy.js'
@@ -249,21 +251,6 @@ export function fileRefsOf(
   return found
 }
 
-/** 扩展名 → MIME。 */
-function mimeOf(file: string): string {
-  const table: Record<string, string> = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.webp': 'image/webp',
-    '.gif': 'image/gif',
-    '.webm': 'video/webm',
-    '.mp4': 'video/mp4',
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-  }
-  return table[path.extname(file).toLowerCase()] ?? 'application/octet-stream'
-}
 
 /** 落盘文件名：保留 ComfyUI 给的名字，冲突时加时间戳前缀而不是覆盖。 */
 function targetFor(outputDir: string, filename: string): string {
@@ -326,7 +313,7 @@ function collectedBefore(outputDir: string, filename: string, promptId: string):
     if (recorded !== promptId) continue
     try {
       const bytes = fs.readFileSync(target)
-      const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOf(target), bytes: bytes.length }
+      const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOfPath(target), bytes: bytes.length }
       if (path.extname(target).toLowerCase() === '.png') {
         const parsed = readPngTextChunks(target, bytes.length)
         if (parsed !== undefined && parsed.width > 0 && parsed.height > 0) {
@@ -561,7 +548,7 @@ async function collectArtifactsOnce(
     fs.writeFileSync(target, bytes)
     fresh.add(target)
 
-    const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOf(target), bytes: bytes.length }
+    const artifact: Artifact = { path: target, digest: digestOf(bytes), mime: mimeOfPath(target), bytes: bytes.length }
     if (path.extname(target).toLowerCase() === '.png') {
       const parsed = readPngTextChunks(target, bytes.length)
       if (parsed !== undefined && parsed.width > 0 && parsed.height > 0) {

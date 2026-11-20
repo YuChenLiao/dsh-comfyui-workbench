@@ -36,6 +36,8 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
+  // 与卡片同一套降级：解不了的容器给一句人话 + 路径，而不是一个永远不播的控件条
+  const [mediaBroken, setMediaBroken] = useState(false)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
@@ -140,9 +142,25 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
         onPointerCancel={endDrag}
         onPointerLeave={endDrag}
       >
-        {item.kind === 'video' ? (
-          // 视频不做缩放/平移：自带的控件和捏合手势会打架
-          <video key={item.path} className="cfa-lb-img" src={fileUrl(item.path)} controls autoPlay loop playsInline />
+        {item.kind === 'video' && mediaBroken === false ? (
+          // 视频不做缩放/平移：自带的控件和捏合手势会打架。muted 必须有：
+          // 相册是浏览场景，自动出声比"不上自动播放"更打扰。
+          <video
+            key={item.path}
+            className="cfa-lb-img"
+            src={fileUrl(item.path)}
+            controls
+            muted
+            autoPlay
+            loop
+            playsInline
+            onError={() => setMediaBroken(true)}
+          />
+        ) : item.kind === 'video' ? (
+          <div className="cfa-lb-audio">
+            <div className="cfa-lb-audio-name">{t('mediaUnsupported')}</div>
+            <div className="cfa-lb-audio-path" title={item.path}>{item.path}</div>
+          </div>
         ) : item.kind === 'audio' ? (
           <div className="cfa-lb-audio">
             <div className="cfa-lb-audio-name">{item.name}</div>

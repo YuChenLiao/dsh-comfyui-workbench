@@ -387,7 +387,8 @@ vae / controlnet / upscaler），也可以只给类别名看一类。**复用已
 
 - `MEDIA_EXTS`（图片 + 视频 + 音频）成为扫描与删除校验的唯一判据；`mediaKindOf(ext)` 归一成
   `image` / `video` / `audio`，列表项带 `kind`。
-- 卡片：视频用 `<video muted preload="metadata">`（浏览器会显示首帧，等价于缩略图），
+- 卡片：视频用 `<video muted preload="metadata">`（**通常**能显示首帧 —— 具体取决于浏览器，
+  Chrome 只拿到 moov 时画面要到播放才出现），
   音频用占位块；灯箱里视频/音频换成自带控件（视频不做缩放平移 —— 会和捏合手势打架）。
 - **缩略图对非图片直接返回 undefined**：`ensureThumb` 里是先试再 catch 的，视频会为每个请求
   白试一次解码。现在先按扩展名判，非图片根本进不去。
@@ -397,6 +398,23 @@ vae / controlnet / upscaler），也可以只给类别名看一类。**复用已
 
 `tests/api.test.mjs` 补一条真入口用例：mp4/mp3 进列表且 `kind` 正确、`/file` 的 MIME、
 `thumb=1` 回退原文件（不是 404、也不是 image/webp）、视频可删除。
+
+**审查修掉的**（两条都会让"视频真的能看"落空）：
+
+- **`/file` 不支持 Range**：灯箱里 `<video controls>` 的进度条**拖不动**（用户看到的是
+  "播放器坏了"），而卡片网格一页 60 个 `<video preload="metadata">` 各自从字节 0 拉整个文件
+  （动辄几十 MB）。现在支持单区间 `bytes=start-end` / `bytes=start-` / `bytes=-N`，
+  返回 206 + `Content-Range` + `Accept-Ranges: bytes`，越界回 416 + `*/总长`。
+- **`.mkv` / `.avi` 浏览器解不了，却没有任何降级**：之前是网格里一块黑卡 + 灯箱里一个永远
+  不播的控件条，没有任何"为什么"或出路。现在 `<video>` 带 `onError`，失败时换成占位块
+  （卡片给一句"浏览器解不了这个格式"，灯箱直接给出文件路径让你用系统播放器打开）。
+  顺手把灯箱视频的 `autoPlay` 配上 `muted`——相册是浏览场景，自动出声比"不自动播放"更打扰。
+- **MIME 表原来有 5 份，只有 `/file` 那份补了视频/音频**：于是索引重建写进去的 `.mov` / `.flac`
+  是 `application/octet-stream`，`kind=video` 筛不到、`kind=file` 反而命中。现在收口成
+  `shared/media/constants.ts` 里唯一的一份，`rebuild.ts` 与 `runner.ts` 都改用它。
+- **去重键不含媒体类别**：图片与视频若共享同一组 sidecar 字段会被合成一条，视频只剩灯箱里
+  一行路径、删除合并项时还会被一起删掉。`looseKey` 现在带 `kind`。
+- `tests/render.mjs` 补了视频/音频的渲染断言（这条 CR 之前是零覆盖，整条分支删掉都没人管）。
 
 **`customRefsDir` 没有做**，理由见下一条：现有 `assetRoots` 已经覆盖"把私有参考图库挂进来"。
 

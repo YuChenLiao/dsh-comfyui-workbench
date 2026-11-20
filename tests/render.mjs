@@ -101,6 +101,24 @@ assert.match(cardHtml, /640×640/)
 assert.match(cardHtml, /seed 4058497695/)
 assert.doesNotMatch(cardHtml, /class="cfa-dup"/, '没有副本时不该出现角标')
 
+// 视频 / 音频：渲染成各自的元素，不能是 <img>
+const videoHtml = renderToStaticMarkup(React.createElement(Card, {
+  item: { ...item, name: 'clip.mp4', path: 'D:\\dsh\\clip.mp4', kind: 'video' },
+  t,
+  onOpen() {},
+  onAction() {},
+}))
+assert.match(videoHtml, /<video/, '视频卡片要用 <video>')
+assert.doesNotMatch(videoHtml, /<img/, '视频卡片不该再用 <img>')
+
+const audioHtml = renderToStaticMarkup(React.createElement(Card, {
+  item: { ...item, name: 'voice.mp3', path: 'D:\\dsh\\voice.mp3', kind: 'audio' },
+  t,
+  onOpen() {},
+  onAction() {},
+}))
+assert.match(audioHtml, /cfa-thumb-audio/, '音频卡片用占位块')
+
 // 副本角标
 const dupCardHtml = renderToStaticMarkup(React.createElement(Card, {
   item: { ...item, duplicateCount: 3, duplicates: ['x.png', 'y.png'] },

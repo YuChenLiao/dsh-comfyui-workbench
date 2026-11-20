@@ -1348,3 +1348,56 @@ test('视频与音频：进图库、MIME 正确、缩略图回退原文件、可
     await app.close()
   }
 })
+
+/**
+ * `/file` 的 Range 支持：视频能不能拖动进度条全看它。
+ *
+ * 不支持 Range 时 `<video controls>` 的进度条在 Chrome/Firefox 里**拖不动**，
+ * 用户看到的是"播放器坏了"；而且卡片网格一页 60 个 `<video preload="metadata">`
+ * 会各自从字节 0 拉整个文件（几十 MB）。
+ */
+test('/file：Range 返回 206 与正确的 Content-Range，整文件请求带 Accept-Ranges', async () => {
+  const dirs = tmpDirs()
+  const clip = path.join(dirs.out, 'range.mp4')
+  const bytes = Buffer.alloc(4096, 7)
+  fs.writeFileSync(clip, bytes)
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index, autoStart: false, autoDetect: false })
+  const base = `${app.origin}/comfyui-workbench/api`
+  const fileUrl = `${base}/file?path=${encodeURIComponent(clip)}`
+  try {
+    // 整文件：200 + Accept-Ranges（播放器据此才知道可以发 Range）
+    const full = await fetch(fileUrl)
+    assert.equal(full.status, 200)
+    assert.equal(full.headers.get('accept-ranges'), 'bytes')
+    assert.equal((await full.arrayBuffer()).byteLength, 4096)
+
+    // 前 100 字节
+    const head = await fetch(fileUrl, { headers: { Range: 'bytes=0-99' } })
+    assert.equal(head.status, 206)
+    assert.equal(head.headers.get('content-range'), 'bytes 0-99/4096')
+    assert.equal(head.headers.get('content-length'), '100')
+    assert.equal((await head.arrayBuffer()).byteLength, 100)
+
+    // 从 4000 到结尾
+    const tail = await fetch(fileUrl, { headers: { Range: 'bytes=4000-' } })
+    assert.equal(tail.status, 206)
+    assert.equal(tail.headers.get('content-range'), 'bytes 4000-4095/4096')
+    assert.equal((await tail.arrayBuffer()).byteLength, 96)
+
+    // 末尾 96 字节（bytes=-96 是"最后 N 字节"）
+    const suffix = await fetch(fileUrl, { headers: { Range: 'bytes=-96' } })
+    assert.equal(suffix.status, 206)
+    assert.equal(suffix.headers.get('content-range'), 'bytes 4000-4095/4096')
+
+    // 越界：416 + 总长，播放器会自己退回从头请求
+    const bad = await fetch(fileUrl, { headers: { Range: 'bytes=99999-' } })
+    assert.equal(bad.status, 416)
+    assert.equal(bad.headers.get('content-range'), 'bytes */4096')
+
+    // 缩略图请求仍然优先回缩略图（这里没有 sharp，回退原图，但 Range 不该生效）
+    const thumb = await fetch(`${fileUrl}&thumb=1`)
+    assert.equal(thumb.status, 200)
+  } finally {
+    await app.close()
+  }
+})

@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { mimeOfPath } from '../../../../shared/media/constants.js'
+
 import { collectImages, readMeta } from '../scan/index.js'
 import type { AssetRecord } from './index-file.js'
 
@@ -48,7 +50,7 @@ export function rebuildFromSidecars(
         digest: typeof meta.digest === 'string' ? meta.digest : '',
         path: file.path,
         bytes,
-        mime: mimeOfExt(path.extname(file.path)),
+        mime: mimeOfPath(path.extname(file.path)),
         ...(typeof meta.width === 'number' ? { width: meta.width } : {}),
         ...(typeof meta.height === 'number' ? { height: meta.height } : {}),
         workflowId,
@@ -63,20 +65,3 @@ export function rebuildFromSidecars(
   return out
 }
 
-/** 扩展名 → MIME（重建时不必回到宿主层）。 */
-function mimeOfExt(ext: string): string {
-  switch (ext.toLowerCase()) {
-    case '.png': return 'image/png'
-    case '.jpg':
-    case '.jpeg': return 'image/jpeg'
-    case '.webp': return 'image/webp'
-    case '.gif': return 'image/gif'
-    case '.avif': return 'image/avif'
-    case '.bmp': return 'image/bmp'
-    case '.mp4': return 'video/mp4'
-    case '.webm': return 'video/webm'
-    case '.mp3': return 'audio/mpeg'
-    case '.wav': return 'audio/wav'
-    default: return 'application/octet-stream'
-  }
-}

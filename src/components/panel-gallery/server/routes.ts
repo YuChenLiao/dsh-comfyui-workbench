@@ -137,7 +137,7 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
     res.end(body)
   }
 
-  const handleFile = async (url: URL, res: ServerResponse): Promise<void> => {
+  const handleFile = async (url: URL, res: ServerResponse, req: IncomingMessage): Promise<void> => {
     const target = url.searchParams.get('path') ?? ''
     if (!isAuthorized(target, roots())) {
       sendJson(res, 403, { ok: false, error: 'forbidden', message: '这个路径不在资产库的白名单里。' })
@@ -176,9 +176,54 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
       }
     }
 
+    /**
+     * **Range 支持**是两个具体问题的解药，不是"顺手加的规范"：
+     *
+     * - 灯箱里的 `<video controls>` 在服务端不认 `Range` 时**拖不动进度条** ——
+     *   用户看到的是"播放器坏了"。
+     * - 卡片网格一页 60 张，每个 `<video preload="metadata">` 都会发一次请求；
+     *   不认 Range 就是从字节 0 起把整个文件（动辄几十 MB）流一遍。
+     *
+     * 只支持单区间 `bytes=start-end`（浏览器播放器只用这一种），多区间回 416 太绕，
+     * 这里直接忽略 Range 回整份 —— 播放器能接受。
+     */
+    const range = req.headers.range
+    const mime = mimeOf(target)
+    const match = typeof range === 'string' ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null
+    if (match !== null) {
+      const rawStart = match[1] ?? ''
+      const rawEnd = match[2] ?? ''
+      // `bytes=-500` 是"最后 500 字节"；`bytes=100-` 是"从 100 到结尾"
+      let start = rawStart === '' ? Number.NaN : Number.parseInt(rawStart, 10)
+      let end = rawEnd === '' ? stat.size - 1 : Number.parseInt(rawEnd, 10)
+      if (rawStart === '' && rawEnd !== '') {
+        start = Math.max(0, stat.size - Number.parseInt(rawEnd, 10))
+        end = stat.size - 1
+      }
+      if (Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start <= end && start < stat.size) {
+        const stop = Math.min(end, stat.size - 1)
+        res.writeHead(206, {
+          'Content-Type': mime,
+          'Content-Length': stop - start + 1,
+          'Content-Range': `bytes ${start}-${stop}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'private, max-age=86400',
+        })
+        const ranged = fs.createReadStream(target, { start, end: stop })
+        ranged.on('error', () => { res.destroy() })
+        ranged.pipe(res)
+        return
+      }
+      // 区间不合法：416 并告诉对方文件多大（播放器会自己退回从头请求）
+      res.writeHead(416, { 'Content-Range': `bytes */${stat.size}`, 'Accept-Ranges': 'bytes' })
+      res.end()
+      return
+    }
+
     res.writeHead(200, {
-      'Content-Type': mimeOf(target),
+      'Content-Type': mime,
       'Content-Length': stat.size,
+      'Accept-Ranges': 'bytes',
       'Cache-Control': 'private, max-age=86400',
     })
     const stream = fs.createReadStream(target)

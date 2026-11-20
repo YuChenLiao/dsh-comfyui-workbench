@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { fileUrl } from '../../../client/api.js'
 import { metaLine } from '../../../client/format.js'
 import { Icon } from '../../../client/icons.js'
@@ -27,6 +29,9 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
     onAction(kind, item)
   }
   const dupCount = typeof item.duplicateCount === 'number' ? item.duplicateCount : 0
+  // 浏览器解不了的容器（.mkv / .avi）会触发 onError：没有降级的话，用户看到的是
+  // 一块黑卡 —— 正是这次要消灭的"看不见"，只是换了个形态。
+  const [mediaBroken, setMediaBroken] = useState(false)
 
   return (
     <figure
@@ -35,16 +40,19 @@ export function Card({ item, t, selecting, selected, onToggle, onOpen, onAction 
       title={item.prompt !== undefined && item.prompt !== '' ? item.prompt : item.name}
     >
       {/* 视频/音频不走缩略图：把 mp4 塞进 <img> 只会得到破图图标，而它本来能直接播 */}
-      {item.kind === 'video' ? (
+      {item.kind === 'video' && mediaBroken === false ? (
         <video
           className="cfa-thumb"
           src={fileUrl(item.path)}
           muted
           preload="metadata"
           playsInline
+          onError={() => setMediaBroken(true)}
         />
-      ) : item.kind === 'audio' ? (
-        <div className="cfa-thumb cfa-thumb-audio" title={item.name} aria-label={item.name}>♪</div>
+      ) : item.kind === 'video' || item.kind === 'audio' ? (
+        <div className="cfa-thumb cfa-thumb-audio" title={item.name} aria-label={item.name}>
+          {item.kind === 'video' ? <span className="cfa-thumb-broken">{t('mediaUnsupported')}</span> : '♪'}
+        </div>
       ) : (
         <img
           className="cfa-thumb"

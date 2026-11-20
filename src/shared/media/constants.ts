@@ -57,6 +57,13 @@ export const SIDECAR_MAX_BYTES = 8 * 1024 * 1024
 export const PNG_META_READ_BYTES = 64 * 1024
 
 /** 扩展名 → MIME。 */
+/**
+ * 扩展名 → MIME。**只保留这一份**。
+ *
+ * 曾经有 5 份（scan/constants、rebuild、runner、shared/media、upload），只有 `/file`
+ * 那份补了视频/音频 —— 于是索引重建写进去的 `.mov` / `.flac` 是 `application/octet-stream`，
+ * `kind=video` 筛不到、`kind=file` 反而命中。同一个教训在 MIME 上又重演了一次。
+ */
 export const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -65,4 +72,21 @@ export const MIME_BY_EXT: Record<string, string> = {
   '.gif': 'image/gif',
   '.avif': 'image/avif',
   '.bmp': 'image/bmp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+}
+
+/** 扩展名 → MIME；认不出来给 octet-stream（由浏览器决定怎么处理）。 */
+export function mimeOfPath(filePath: string): string {
+  const dot = filePath.lastIndexOf('.')
+  const ext = dot < 0 ? '' : filePath.slice(dot).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }

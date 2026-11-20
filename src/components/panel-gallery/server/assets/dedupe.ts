@@ -26,6 +26,14 @@ export interface DedupedItem extends ListItem {
  * @param item - 列表项。
  */
 export function looseKey(item: ListItem): string | undefined {
+  const base = looseKeyLegacy(item)
+  if (base === undefined) return undefined
+  // **必须含媒体类别**：图片与视频若共享同一组 sidecar 字段（同 seed、同提示词），
+  // 会被合成一条 —— 视频只剩灯箱里一行路径，删除合并项时还会被一起删掉。
+  return `${item.kind ?? 'image'}|${base}`
+}
+
+function looseKeyLegacy(item: ListItem): string | undefined {
   if (typeof item.seed !== 'number') return undefined
   const prompt = typeof item.prompt === 'string' ? item.prompt.trim() : ''
   if (prompt === '') return undefined
