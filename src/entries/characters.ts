@@ -55,20 +55,39 @@ export const CHARACTER_PATH = /^(设定图|docs)\/(?!.*\.\.\/)[\p{Script=Han}A-Z
 interface Store { index: CharactersIndex; images: PoseImages; uploadsDir: () => string }
 let singleton: { key: string; store: Store } | null = null
 
-function storeOf(dataDir: string, uploadsDir: () => string): Store {
-  const index = createCharactersIndex(dataDir)
-  const commit = index.stats().commit
-  // commit 直接拼进 origin。只认 40 位十六进制：塞 `#` / `?` / `/../` 改不了主机
-  // （authority 在域名处就闭合了），但能把全部取图悄悄指向另一个 ref。
+/**
+ * 角色图的单张上限。
+ *
+ * 显式给而不是吃 `images.ts` 的默认值：那个默认值是三个素材库共用的，改它不该
+ * 悄悄改变角色库能取多大的图。当前最大的一张是 2.65 MB 的整板切片，8 MB 留足余量。
+ * `tests/characters.test.mjs` 会核对 catalog 里最大的 bytes 仍在这条线以内。
+ */
+export const CHARACTER_MAX_BYTES = 8_000_000
+
+/**
+ * 上游 origin：**固定到某个 commit**。
+ *
+ * 上游改名/删目录时，钉住 commit 的路径仍然可达。只认 40 位十六进制 —— 塞 `#` / `?`
+ * 改不了主机（authority 在域名处就闭合了），但能把全部取图悄悄指向另一个 ref。
+ * 之所以导出，是因为在线体检脚本要对拍同一个拼法；两处各拼一份就是两份真相。
+ */
+export function characterOrigin(commit: string): string {
   if (/^[0-9a-f]{40}$/.test(commit) === false) {
     throw new Error(`角色库 catalog 的 commit 不是 40 位十六进制：${JSON.stringify(commit)}（重跑 npm run characters:import）`)
   }
-  // origin 带 commit：上游改名/删目录时，固定到某个 commit 的路径仍然可达。
-  const origin = `${CHARACTER_ORIGIN}/lmy414/ai-chan-sheets/${commit}`
-  const key = `${dataDir}|${origin}`
-  if (singleton !== null && singleton.key === key) return singleton.store
-  const images = createImageCache({
-    cacheDir: path.join(dataDir, 'cache', 'characters'),
+  return `${CHARACTER_ORIGIN}/lmy414/ai-chan-sheets/${commit}`
+}
+
+/**
+ * 角色库的取图器参数。
+ *
+ * 抽成函数是为了让测试能验**真配置**：测试若自己写一份 `createImageCache({...})`，
+ * 就等于给闸门配一把假钥匙 —— entries 漏传 `pathPattern` 或把 `cacheSubdirs`
+ * 写成 `['img']` 时，测试照样全绿（这两种改法都实测过，全绿）。
+ */
+export function characterImageOptions(cacheDir: string, origin: string): Parameters<typeof createImageCache>[0] {
+  return {
+    cacheDir,
     origin,
     pathPattern: CHARACTER_PATH,
     // 落盘路径是 `cacheDir + 白名单放行的相对路径`，也就是 `cache/characters/设定图/…`
@@ -77,7 +96,16 @@ function storeOf(dataDir: string, uploadsDir: () => string): Store {
     cacheSubdirs: ['设定图', 'docs'],
     // 角色图落成 `设定图/<角色目录>/<槽位>.jpg` 多级，必须递归扫。
     recursiveCache: true,
-  })
+    maxBytes: CHARACTER_MAX_BYTES,
+  }
+}
+
+function storeOf(dataDir: string, uploadsDir: () => string): Store {
+  const index = createCharactersIndex(dataDir)
+  const origin = characterOrigin(index.stats().commit)
+  const key = `${dataDir}|${origin}`
+  if (singleton !== null && singleton.key === key) return singleton.store
+  const images = createImageCache(characterImageOptions(path.join(dataDir, 'cache', 'characters'), origin))
   const store = { index, images, uploadsDir }
   singleton = { key, store }
   return store

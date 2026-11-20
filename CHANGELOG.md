@@ -1,5 +1,63 @@
 # CHANGELOG
 
+## 未发布
+
+### 角色库：两类校验各补一道闸门
+
+角色库此前**没有专门的测试文件**：路由分派跟着通用路由在 `api.test.mjs` 里测过，
+缺的是「数据 ↔ 白名单 ↔ 落盘 ↔ 生产取图参数」这几层。这几层坏起来全是静默的，
+表现只在用户点开卡片的那一刻：
+
+- 取图配置漏传参数（`pathPattern`、`cacheSubdirs`、`recursiveCache`）→ 每条图 502，
+  或缓存上限与 `/characters/cache` 双双失效，而导入脚本毫无反应
+- `catalog.json` 里两个角色指向同一个文件 → 某个角色永远显示别人的图
+- 落盘不按 `<id>_<slot>` 改名 → 20 个角色的三视图互相覆盖，工作流里那条旧路径悄悄指向另一张图
+- 运行时 origin 与 `catalog.origin` 各拼一份 → 上游迁移后体检全绿、生产全 502
+
+**离线：`tests/characters.test.mjs`（13 条，进 `npm test`，零网络）**
+
+- 取图参数**从生产工厂 `characterImageOptions()` 导入**，测试不再自己配一份：
+  以前每个用图用例都自建 `createImageCache({...})`，entries 那边删掉 `pathPattern`
+  或把 `cacheSubdirs` 写成 `['img']`，测试照样全绿。现在这两处一改就红，
+  并且会断言缓存真的落在 `设定图/` 子树下、`stats().diskFiles > 0`
+- origin 与 `characterOrigin(commit)` 互锁：两处各拼一份是"体检全绿、生产全 502"的根
+- `catalog.json` 的 120 条路径全部过 `CHARACTER_PATH`（同样从生产代码导入），
+  且互不相同、不含 `..`、不是绝对路径、不越出所属角色目录
+- 白名单反向：八种坏形状必须被拒，其中两条 `.png` 结尾的穿越形状只能靠 `..` 那段负向断言拦住
+- 两份手写槽位清单对账：工具的 `view` enum 必须覆盖 catalog 出现的每个槽位键，
+  且不提供 `preview`（那是面板缩略图）；路由侧六个槽位逐个断言 200
+- 落盘改名：工具与 `/characters/fetch` 两条路径都验，同一角色两个槽位落成两个文件、
+  内容不同 —— basename 全库相同，这是真会互相覆盖的点
+- `/characters/image` 的**响应体**也断言（只验头的话，`res.end()` 不写体会让缩略图全白、
+  「入对话」传 0 字节 blob，而头一切正常）
+- 取图 URL 逐段编码：目录名含中文，整串编码会把 `/` 变成 `%2F`，上游一律 404
+- 工具的默认 `view`、`bad_input` / `not_found`（不打网络）/ `no_view` 三条错误路径、
+  搜索结果的 `views` 与空结果 `hint`，以及返回值能无损 JSON 往返（宿主对 `undefined` 那条规则）
+- 字节数与 `CHARACTER_MAX_BYTES` 互锁：catalog 里最大的一张（2.65 MB）必须仍在取图上限以内，
+  超了那个角色会永远取不到图而导入脚本不会有任何反应
+- `catalog.json` 改了要能看见：索引的 mtime+size 指纹变了就重建，面板常驻不该显示旧数据
+
+**在线：`npm run characters:verify`（12 条探针测试，不进 `pretest`）**
+
+`catalog.json` 记的是上游相对路径与导入那一刻的字节数，没有任何东西保证它们今天还在。
+脚本对 120 条路径发 `HEAD`（并发 8、5xx 与 429 才重试、`redirect: 'error'`），
+核对 `200` 与 `Content-Length === bytes`。**默认只拿状态码与长度**；上游不给长度时
+才对那一条补一个 `Range: bytes=0-0`，取首字节、从 `Content-Range` 读总长然后立刻断开 ——
+不下载、不落缓存，许可边界不变。
+
+判定分四类且互斥：`ok` / `unreachable` / `size-mismatch` / `unmeasured`。
+「有字节数但量不出长度」归 `unmeasured` 而不是「不符」，**说不清就不报通过**。
+失败逐条打印路径与原因，非零退出；`--limit` 抽查，`--json` 给机器读，
+`--catalog` 可以拿别的目录演练故障。
+
+`probe` / `rangedLength` 抽成可导入的纯函数并有测试（`tests/verify-characters.test.mjs`）。
+起因是一个真 bug：`Number(headers.get('content-length'))` 在头缺失时是 `Number(null) === 0`，
+于是「没给长度」被当成「长度是 0」—— 有字节数的条目被误判成不符（假红），
+只有路径的 preview 被判 ok（假绿），而 `Range` 兜底永远执行不到。
+
+现状：**120/120 可达；100 条槽位图的字节数与 catalog 逐条相符**
+（20 张 preview 在 catalog 里只有路径，只验了可达）。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

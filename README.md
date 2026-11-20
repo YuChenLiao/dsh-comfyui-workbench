@@ -226,6 +226,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 - **15 个品牌**：DeepSeek 4 / OpenAI 2 / 小米 2，其余智谱 GLM、百度、阿里、月之暗面、字节、MiniMax、xAI、Google、Anthropic、美团、Mistral、Meta 各 1。面板按品牌筛，点开卡片才拉那五张——20×5 全预加载会把上游打满。
 - **许可比另两个库严格一档**：CC BY-NC-SA 4.0，可作生成参考，但**不得商用，也不得再分发图像数据**。12–14 号上游标注作者为 `unknown`，这里照实保留。详见 [data/characters/NOTICE.md](data/characters/NOTICE.md)。
 - 关掉组件：`disabledComponents: ["panel.characters"]`。数据更新：`npm run characters:import`（`npm run characters:check` 只校验不写盘）。
+- **上游变了会有人发现**：`npm run characters:verify` 对 120 条路径发 HEAD，核对每一条仍可达、且字节数与 `catalog.json` 记的一致；不一致会逐条列出来并非零退出。默认只拿状态码与长度（缺长度时才补一个 `Range: bytes=0-0` 取首字节），**不下载、不落缓存** —— 上面那条许可边界不变。`--limit 10` 抽查，`--json` 给 CI 读。
 
 ## 姿势库
 

@@ -12,7 +12,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** 一个角色某个槽位的图。`bytes` 来自导入期，仅用于展示与上限判断。 */
+/**
+ * 一个角色某个槽位的图。
+ *
+ * `bytes` 是导入那一刻的上游字节数。**运行时不用它判大小** —— 取图器按实际读到的
+ * 字节判上下界；面板也不显示它（`CharacterHit` 里没有这个字段）。它的读者只有两个：
+ * `tests/characters.test.mjs` 的离线互锁，以及 `npm run characters:verify` 的在线核对 ——
+ * 上游把某张图换掉时，这个数字是唯一能发现「图变了」的凭据。
+ */
 export interface CharacterSlot {
   path: string
   bytes: number
