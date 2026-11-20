@@ -247,6 +247,33 @@ UI 格式的 JSON 体、`object_info` 拉取失败降级成 400（不是 500）�
 - `tests/classes.mjs` 的前缀表补上 `cmf` / `csf`：漏了的话这两个弹层的 27 个类名
   既不进 defined 也不进 used，"全部通过"对它们是空转。
 
+### 相册：删除改为回收站（软删除）
+
+产物旁的 `.json` sidecar 是"再来一张一模一样的"的**唯一**凭据。误删一张图丢的不只是
+一张图，是那一整组参数（seed / prompt / 工作流版本）—— 而删除在面板上只是一次点击。
+
+- `/delete` 与 `/delete-many` **默认软删除**：图片与 sidecar 一起移进 `<root>/.trash/`，
+  `soft=0` 才是原来的物理删除（含同 digest 副本与缩略图）。目录按份独立
+  （`.trash/<stamp>-<rand>/.restore.json` + 文件），因为同一张图可能被删两次，平铺会撞名。
+- 新增 `GET /trash`、`POST /trash/restore`、`POST /trash/empty`；面板工具栏有了回收站入口
+  （列表 + 恢复 + 彻底清空）。
+- `.trash` 进 `SKIP_DIRS` ——**并且把 `scan/constants.ts` 改成 `shared/media` 的兼容层**：
+  它原本是一份完整副本，把 `.trash` 加在 shared 那份上不会生效（默认配置看不出来，
+  `.trash` 以点开头被"隐藏目录"规则顺手挡住；一旦 `includeHidden: true`，删掉的图会回流，
+  索引重建还会把它收进去）。与 `assets/authorize.ts`、`assets/roots.ts` 同一个教训。
+- 恢复时不覆盖：原路径被占时循环找 `-restored` / `-restored-2`…（`renameSync` 会覆盖既有
+  文件，只查一次的话第二次恢复会把第一次恢复回来的图静默顶掉），并对最终路径再过一次
+  授权根校验。
+- 清空只删**我们造的**那些目录（必须带 `.restore.json`）：授权根下可能本来就有用户自己的
+  `.trash`，一次点击就 `rm -rf` 别人的东西不可接受；跳过的条目数会回传。
+- 软删除时 `removed` 里仍给原路径：前端按它算"要撤掉哪些卡片"，只回 `trashed` 的话
+  前端得到一个空集合 —— 卡片留在原地、总数却 -1。
+- 删除确认文案一并改掉（原来写着"不进回收站、无法恢复"，与现在的行为正好相反），
+  `docs/design.md` 里把这条写成契约的两处也同步。
+
+`tests/api.test.mjs` 补两条回归：`includeHidden: true` 下回收站里的图不回流、
+恢复撞名不互相覆盖。四条变异（`.trash` 失效、`removed` 回空、撞名只查一次）都被拦住。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

@@ -101,7 +101,7 @@ custom(settings.roots) → workingDirectory → workspaceRegistry.list()
 | `/archive` | POST | 归档 / 反归档 |
 | `/tag` | POST | 改标签（写 sidecar + 索引） |
 
-冲突处理：`/delete` 与 `/delete-many` 的语义不变（删文件 + sidecar + 同组副本 + 缩略图，不进回收站），前端文案与二次确认一并搬过来，不要出现两套删除语义。
+冲突处理：`/delete` 与 `/delete-many` **默认软删除**（移进 `<root>/.trash/`，可恢复、可清空；`soft=0` 才是物理删除），前端文案与二次确认一并搬过来，不要出现两套删除语义。
 
 ---
 
@@ -607,7 +607,7 @@ sidecar 字段是 `dsh-comfyui-image` 的超集，且 `readMeta` 的 PNG 内嵌�
 | `index` | 扫描 roots，按 `duplicateKey` 归组，按 `digest` 认同一文件 | — |
 | `tag` | 改 sidecar 的 tags + 索引 | 可逆 |
 | `archive` | 移入 `<root>/.archive/`，标 `archived` | 可逆（目标同名加时间戳后缀） |
-| `delete` | 删文件 + sidecar + 同 digest 副本 + 缩略图，**不进回收站** | 不可逆，二次确认 |
+| `delete` | 默认**软删除**：图片 + sidecar 一起移进 `<root>/.trash/`，可恢复、可清空；`soft=0` 才物理删除（含同 digest 副本与缩略图） | 一次点击，至少要能撤回一次 |
 | `repair` | sidecar 缺失/损坏时从 PNG 内嵌工作流回填 | 可逆 |
 | `prune` | 文件已消失的行标 `missing`，不删行 | 可逆 |
 

@@ -1,25 +1,15 @@
-/** 资产库认的图片扩展名。 */
-export const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.bmp'])
+/**
+ * 兼容层：图片相关的常量以 `shared/media/constants.ts` 为唯一实现。
+ *
+ * **这里曾经是一份完整副本**（`IMAGE_EXTS` / `SKIP_DIRS` / 体积上限全抄一遍），
+ * 于是「给 `SKIP_DIRS` 加 `.trash`」加在了 shared 那份上，而扫描实际用的是这份 ——
+ * 默认配置看不出来（`.trash` 以点开头，被"隐藏目录"规则顺手挡住了），
+ * 一旦 `includeHidden: true`，软删除的图会重新出现在列表里，还会被索引重建收进去。
+ * 与 `assets/authorize.ts`、`assets/roots.ts` 是同一个教训：只保留一个实现。
+ */
+export { IMAGE_EXTS, SKIP_DIRS, SIDECAR_MAX_BYTES, PNG_META_READ_BYTES } from '../../../../shared/media/constants.js'
 
-/** 扫描时跳过的目录：版本库、依赖、归档区（归档产物不该再出现在列表里）。 */
-export const SKIP_DIRS = new Set([
-  '.git',
-  '.hg',
-  '.svn',
-  'node_modules',
-  'dist',
-  'build',
-  '.dsh',
-  '.archive',
-])
-
-/** sidecar 体积上限：自定义工作流可能很大，但读进内存要有界。 */
-export const SIDECAR_MAX_BYTES = 8 * 1024 * 1024
-
-/** PNG 元数据只读文件头这一段：文本块都在 IDAT 之前。 */
-export const PNG_META_READ_BYTES = 64 * 1024
-
-/** 扩展名 → MIME。 */
+/** 扩展名 → MIME。只在这里用，没跟着搬进 shared。 */
 export const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

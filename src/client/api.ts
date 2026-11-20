@@ -480,6 +480,61 @@ export async function uploadImage(
   }
 }
 
+/** 回收站：列出可恢复的条目。 */
+export interface TrashEntry {
+  dir: string
+  path: string
+  original: string
+  name: string
+  bytes: number
+  trashedAt: string
+}
+
+export async function fetchTrash(): Promise<{ entries: TrashEntry[] }> {
+  const data = await apiJson('/trash')
+  const list = Array.isArray(data.entries) ? data.entries : []
+  return {
+    entries: list.flatMap(item => {
+      if (item === null || typeof item !== 'object') return []
+      const row = item as Record<string, unknown>
+      if (typeof row.dir !== 'string' || typeof row.original !== 'string') return []
+      return [{
+        dir: row.dir,
+        path: String(row.path ?? ''),
+        original: row.original,
+        name: String(row.name ?? ''),
+        bytes: Number(row.bytes) || 0,
+        trashedAt: String(row.trashedAt ?? ''),
+      }]
+    }),
+  }
+}
+
+/** 从回收站恢复一份（`dir` 来自 `fetchTrash`）。 */
+export async function restoreTrash(dir: string): Promise<string> {
+  // 裸 fetch：`apiJson` 只支持 GET 查询参数，这条要 POST body
+  const res = await fetch(`${API}/trash/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  })
+  const body = await res.json().catch(() => null)
+  if (res.ok === false || body?.ok !== true) {
+    throw new Error(typeof body?.message === 'string' ? body.message : `恢复失败：HTTP ${res.status}`)
+  }
+  return String(body.restored ?? '')
+}
+
+/** 清空回收站。 */
+export async function emptyTrash(): Promise<number> {
+  const res = await fetch(`${API}/trash/empty`, { method: 'POST' })
+  const body = await res.json().catch(() => null)
+  if (res.ok === false || body?.ok !== true) {
+    throw new Error(typeof body?.message === 'string' ? body.message : `清空失败：HTTP ${res.status}`)
+  }
+  return Number(body.removed) || 0
+}
+
 /** 停掉本插件拉起的 ComfyUI 进程（外部实例不会被停）。 */
 export async function stopService(): Promise<{ stopped: boolean; message?: string }> {
   const res = await fetch(`${API}/service/stop`, { method: 'POST' })

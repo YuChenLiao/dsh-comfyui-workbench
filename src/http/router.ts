@@ -22,7 +22,7 @@ export const PREFIX = '/comfyui-workbench/api'
  *    所以按 `selfManaged` 之外最贴切的先例登记进 `POST_ONLY`，不碰本集合 ——
  *    与第 2 条同一个理由。
  */
-const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop', '/upload'])
+const WRITABLE = new Set(['/delete', '/delete-many', '/assets/rebuild', '/run', '/service/stop', '/upload', '/trash/restore', '/trash/empty'])
 
 /** 这些只接受 POST（GET 也没有语义）。 */
 const POST_ONLY = new Set(['/run', '/rerun', '/free', '/interrupt'])

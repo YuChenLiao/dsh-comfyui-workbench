@@ -902,8 +902,8 @@ test('写接口真入口：/delete、/delete-many、/assets/rebuild、/free、/s
     assert.equal(rebuilt.ok, true)
     assert.equal(rebuilt.rebuilt, 2, `该从两份 sidecar 重建出两条，实际 ${rebuilt.rebuilt}`)
 
-    // 2) 删单张：图与 sidecar 一起走，否则重建会把已删的图复活
-    const del = await fetch(`${base}/delete?path=${encodeURIComponent(imageA)}`, { method: 'POST' })
+    // 2) 删单张：这里显式 `soft=0` 走物理删除（软删除的路径由「回收站」那条用例覆盖）
+    const del = await fetch(`${base}/delete?path=${encodeURIComponent(imageA)}&soft=0`, { method: 'POST' })
     assert.equal(del.status, 200, '405 就说明 WRITABLE 漏了 /delete')
     const delBody = await del.json()
     assert.equal(delBody.ok, true)
@@ -1058,6 +1058,172 @@ test('控制条接口：中断、显存统计、体检与删模板都走真实�
     assert.equal(evil.status, 404, '非法 id 一律拒绝')
     assert.equal(fs.existsSync(victim), true, '工作流目录外的文件不能被动到')
     fs.rmSync(victim, { force: true })
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 回收站：软删除 → 列表 → 恢复 → 清空。
+ *
+ * 产物旁边的 `.json` sidecar 是"再来一张一模一样的"唯一凭据，而面板上删除是一次点击。
+ * 所以默认走软删除（移进 `<root>/.trash/`），`soft=0` 才是物理删除。
+ *
+ * 同时覆盖写接口登记：api/trash/restore、api/trash/empty（漏进 WRITABLE 就是真机 405）。
+ */
+test('回收站：软删除、列表、恢复（含 sidecar）、清空，以及 .trash 不进图库', async () => {
+  const dirs = tmpDirs()
+  const image = path.join(dirs.out, 'trash-me.png')
+  const sidecar = `${image}.json`
+  fs.writeFileSync(image, TINY_PNG)
+  fs.writeFileSync(sidecar, JSON.stringify({
+    plugin: 'dsh-comfyui-workbench',
+    workflowId: 'text2img-basic',
+    createdAt: new Date().toISOString(),
+    vars: { prompt: '删了要能回来' },
+    comfy: { url: 'http://127.0.0.1:8188', promptId: 'pid-trash' },
+  }))
+
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index, autoStart: false, autoDetect: false })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    // 1) 默认软删除：图从原处消失，但文件还在（在 .trash 下）
+    const del = await fetch(`${base}/delete?path=${encodeURIComponent(image)}`, { method: 'POST' })
+    assert.equal(del.status, 200, `405 就说明 WRITABLE 漏了 /delete，实际 ${del.status}`)
+    const delBody = await del.json()
+    assert.equal(delBody.ok, true)
+    assert.ok(typeof delBody.trashed === 'string' && delBody.trashed !== '', '软删除要带回回收站目录')
+    // `removed` 里也要有原路径：前端按它算"要从列表里撤掉哪些卡片"。
+    // 只回 `trashed` 的话前端得到一个空集合 —— 卡片留在原地、总数却 -1。
+    assert.ok(delBody.removed.includes(image), `软删除也要把原路径放进 removed，实际 ${JSON.stringify(delBody.removed)}`)
+    assert.equal(fs.existsSync(image), false, '原处不该还有这张图')
+    assert.equal(fs.existsSync(sidecar), false, 'sidecar 要跟着一起移走')
+
+    // 2) .trash 不能出现在图库里（SKIP_DIRS）：否则用户看到的是"删了还在"
+    const items = await (await fetch(`${base}/items?all=1&limit=100`)).json()
+    assert.equal(items.items.some(row => row.name === 'trash-me.png'), false, '.trash 里的图不该回流到列表')
+
+    // 3) 列表能看见这一份
+    const list = await (await fetch(`${base}/trash`)).json()
+    assert.equal(list.ok, true)
+    assert.equal(list.total, 1, `回收站该有 1 条，实际 ${JSON.stringify(list)}`)
+    const entry = list.entries[0]
+    assert.equal(entry.name, 'trash-me.png')
+    assert.equal(entry.original, image)
+
+    // 4) 恢复：图与 sidecar 都要回来
+    const restore = await fetch(`${base}/trash/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir: entry.dir }),
+    })
+    assert.equal(restore.status, 200, `405 就说明 WRITABLE 漏了 /trash/restore，实际 ${restore.status}`)
+    assert.equal((await restore.json()).ok, true)
+    assert.equal(fs.existsSync(image), true, '图要回来')
+    assert.equal(fs.existsSync(sidecar), true, 'sidecar 也要回来（没有它就没法再来一张）')
+
+    // 5) 再删一次，然后清空
+    await fetch(`${base}/delete?path=${encodeURIComponent(image)}`, { method: 'POST' })
+    const empty = await fetch(`${base}/trash/empty`, { method: 'POST' })
+    assert.equal(empty.status, 200, `405 就说明 WRITABLE 漏了 /trash/empty，实际 ${empty.status}`)
+    assert.equal((await (await fetch(`${base}/trash`)).json()).total, 0, '清空后不该还有条目')
+
+    // 6) 恢复一个不在回收站里的目录：403，不能靠它把任意路径搬回来
+    const evil = await fetch(`${base}/trash/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir: dirs.base }),
+    })
+    assert.equal(evil.status, 403)
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 回收站的两条回归：
+ *
+ * 1. `includeHidden: true` 时，`.trash` 里的图**不能**回流到图库。
+ *    这条是审查抓到的真漏洞：`.trash` 最初只加进 `shared/media/constants.ts`，
+ *    而扫描实际用的是 `scan/constants.ts` 那份副本 —— 默认配置下看不出来
+ *    （`.trash` 以点开头被"隐藏目录"规则挡住），一旦显示隐藏文件就全回来了，
+ *    连索引重建都会把它收进去。
+ * 2. 两张同名图先后进回收站，恢复时不能互相覆盖（`renameSync` 会覆盖既有文件）。
+ */
+test('回收站回归：includeHidden 下不回流、同名恢复不互相覆盖', async () => {
+  const dirs = tmpDirs()
+  // 两个不同目录里的同名文件：回收站路径不同、恢复目标相同
+  const dirA = path.join(dirs.out, 'a')
+  const dirB = path.join(dirs.out, 'b')
+  fs.mkdirSync(dirA, { recursive: true })
+  fs.mkdirSync(dirB, { recursive: true })
+  const first = path.join(dirA, 'dup.png')
+  const second = path.join(dirB, 'dup.png')
+  fs.writeFileSync(first, Buffer.concat([TINY_PNG, Buffer.from('A')]))
+  fs.writeFileSync(second, Buffer.concat([TINY_PNG, Buffer.from('BB')]))
+  fs.writeFileSync(`${first}.json`, JSON.stringify({ plugin: 'dsh-comfyui-workbench', workflowId: 'wf-a' }))
+  fs.writeFileSync(`${second}.json`, JSON.stringify({ plugin: 'dsh-comfyui-workbench', workflowId: 'wf-b' }))
+
+  const app = await boot({
+    roots: [dirs.out],
+    outputDir: dirs.out,
+    workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads,
+    indexFile: dirs.index,
+    autoStart: false,
+    autoDetect: false,
+    // 关键：显示隐藏文件。默认 false 时 `.trash` 会被"隐藏目录"规则挡住，
+    // 这条用例就永远绿 —— 上一版就是这么漏过去的。
+    includeHidden: true,
+  })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    for (const file of [first, second]) {
+      const res = await fetch(`${base}/delete?path=${encodeURIComponent(file)}`, { method: 'POST' })
+      assert.equal(res.status, 200)
+    }
+
+    // 1) includeHidden 下也不能看到回收站里的图
+    const items = await (await fetch(`${base}/items?all=1&limit=100&refresh=1`)).json()
+    assert.equal(items.items.filter(row => row.name === 'dup.png').length, 0, '.trash 里的图不能回流到图库')
+    // 重建索引也不该把它收进去
+    const rebuilt = await (await fetch(`${base}/assets/rebuild`, { method: 'POST' })).json()
+    assert.equal(rebuilt.rebuilt, 0, `索引重建不能收回收站里的图，实际 ${rebuilt.rebuilt}`)
+
+    // 2) 恢复撞名：删掉之后又生成了同名新图，恢复不能覆盖它
+    //    审查实测过的真场景 —— 只查一次 `original` 时 `renameSync` 会覆盖既有文件，
+    //    两次都回 ok:true，先恢复的那份被静默顶掉。
+    const list = await (await fetch(`${base}/trash`)).json()
+    assert.equal(list.total, 2)
+    const restored = []
+    for (const [index, entry] of list.entries.entries()) {
+      // 恢复第一份之前，先在它的原路径上放一个"新生成的同名图"（内容不同）
+      if (index === 0) fs.writeFileSync(entry.original, Buffer.concat([TINY_PNG, Buffer.from('NEW')]))
+      const res = await fetch(`${base}/trash/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir: entry.dir }),
+      })
+      const body = await res.json()
+      assert.equal(body.ok, true, JSON.stringify(body))
+      restored.push(body.restored)
+    }
+    assert.equal(new Set(restored).size, 2, `两次恢复不能落到同一个路径：${JSON.stringify(restored)}`)
+    assert.equal(fs.existsSync(restored[0]), true)
+    assert.equal(fs.existsSync(restored[1]), true)
+    // 撞名那份必须带后缀，原路径上的新图不能被覆盖
+    assert.notEqual(restored[0], list.entries[0].original, '原路径被新图占着时必须改名，不能覆盖')
+    assert.equal(
+      fs.readFileSync(list.entries[0].original).toString('base64'),
+      Buffer.concat([TINY_PNG, Buffer.from('NEW')]).toString('base64'),
+      '原路径上的新图必须原封不动',
+    )
+    // 两份内容不同（回收站里的 A / BB）：如果发生覆盖，两份会变成同一份
+    assert.notEqual(
+      fs.readFileSync(restored[0]).toString('base64'),
+      fs.readFileSync(restored[1]).toString('base64'),
+      '恢复时不能互相覆盖',
+    )
   } finally {
     await app.close()
   }

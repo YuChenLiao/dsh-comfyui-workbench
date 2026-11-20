@@ -11,6 +11,7 @@ import { isAuthorized } from './assets/authorize.js'
 import { rootsOf } from './assets/roots.js'
 import { clearScanCache } from './assets/scan-cache.js'
 import { collectWorkflows, deleteMany, deleteOne, queryItems, UnknownRootError } from './assets/service.js'
+import { emptyTrash, listTrash, restoreTrash } from './assets/trash.js'
 import { ensureThumb } from './assets/thumbs.js'
 import { buildZip } from './assets/zip.js'
 import { mimeOf, readFullSidecar } from './scan/index.js'
@@ -179,18 +180,66 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
   const statusForCode = (code: string | undefined): number => {
     if (code === 'forbidden') return 403
     if (code === 'missing') return 404
-    if (code === 'delete-failed') return 500
+    // 落到磁盘上的失败（删不掉 / 移不进回收站 / 恢复失败）都是服务端问题
+    if (code === 'delete-failed' || code === 'trash-failed' || code === 'restore-failed') return 500
     return 400
   }
 
   const handleDelete = (url: URL, res: ServerResponse): void => {
-    const result = deleteOne(url.searchParams.get('path') ?? '', roots())
+    // `soft=0` 才是物理删除；默认软删除 —— 产物旁的 sidecar 是"再来一张"的唯一凭据，
+    // 而面板上删除是一次点击，至少要能撤回一次。
+    const soft = url.searchParams.get('soft') !== '0'
+    const result = deleteOne(url.searchParams.get('path') ?? '', roots(), { soft })
     if (result.error !== undefined) {
       sendJson(res, statusForCode(result.code), { ok: false, error: result.code, message: result.error })
       return
     }
     clearScanCache()
-    sendJson(res, 200, { ok: true, removed: result.removed })
+    sendJson(res, 200, { ok: true, removed: result.removed, ...(result.trashed === undefined ? {} : { trashed: result.trashed }) })
+  }
+
+  /** 回收站内容：恢复靠 `dir`（`/trash/restore` 要它）。 */
+  const handleTrashList = (_url: URL, res: ServerResponse): void => {
+    const entries = listTrash(roots())
+    sendJson(res, 200, { ok: true, total: entries.length, entries })
+  }
+
+  const handleTrashRestore = async (_url: URL, res: ServerResponse, req: IncomingMessage): Promise<void> => {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '恢复只接受 POST。' })
+      return
+    }
+    let body: Record<string, unknown>
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: 'bad-body', message: error instanceof Error ? error.message : String(error) })
+      return
+    }
+    const dir = typeof body.dir === 'string' ? body.dir : ''
+    const result = restoreTrash(dir, roots())
+    if (result.ok !== true) {
+      sendJson(res, statusForCode(result.code), { ok: false, error: result.code, message: result.error })
+      return
+    }
+    clearScanCache()
+    sendJson(res, 200, { ok: true, restored: result.restored })
+  }
+
+  const handleTrashEmpty = (_url: URL, res: ServerResponse, req: IncomingMessage): void => {
+    // 与 `/trash/restore` 统一：方法校验写在 handler 里，而不是靠 `WRITABLE` 表
+    // （那张表对 POST_ONLY 之外的写路由是"POST 或 DELETE 都放行"，清空不该接受 DELETE 之外的花样）
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '清空只接受 POST。' })
+      return
+    }
+    const result = emptyTrash(roots())
+    clearScanCache()
+    sendJson(res, 200, {
+      ok: true,
+      removed: result.removed,
+      ...(result.skipped === 0 ? {} : { skipped: result.skipped, message: `另有 ${result.skipped} 项不是本插件放进来的，没有动。` }),
+    })
   }
 
   const handleDeleteMany = async (_url: URL, res: ServerResponse, req: IncomingMessage): Promise<void> => {
@@ -206,7 +255,9 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
       sendJson(res, 400, { ok: false, error: 'bad-paths', message: '请求里需要 1–500 个 paths。' })
       return
     }
-    const result = deleteMany(paths, roots())
+    // 与 `/delete` 同一套语义：默认软删除，`soft=0` 才是物理删除
+    const soft = _url.searchParams.get('soft') !== '0'
+    const result = deleteMany(paths, roots(), { soft })
     clearScanCache()
     sendJson(res, 200, { ok: true, ...result })
   }
@@ -292,6 +343,10 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
     '/file': handleFile,
     '/delete': handleDelete,
     '/delete-many': handleDeleteMany,
+    // 回收站：软删除的图在这里，可以恢复或彻底清空
+    '/trash': handleTrashList,
+    '/trash/restore': handleTrashRestore,
+    '/trash/empty': handleTrashEmpty,
     '/upload': createUploadHandler(uploadsDir),
     // 导出的实现在相册这边（要读图、sidecar、打包），但**不挂在相册的路由表里**：
     // 同一路径的 GET（列表）属于工作流组件，两边都注册会互相覆盖。

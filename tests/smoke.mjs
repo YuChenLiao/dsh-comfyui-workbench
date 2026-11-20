@@ -282,7 +282,9 @@ try {
   const thumbFile = path.join(thumbDir, `${thumbKey}.webp`)
   fs.writeFileSync(thumbFile, 'stale')
 
-  const del = await fetch(origin + '/comfyui-workbench/api/delete?path=' + encodeURIComponent(imagePath), { method: 'POST' })
+  // 这里显式 `soft=0`：这条冒烟测的是**物理删除**（图 + sidecar + 缩略图缓存一起清掉）。
+  // 默认软删除的路径由 api.test.mjs 的「回收站」用例覆盖。
+  const del = await fetch(origin + '/comfyui-workbench/api/delete?path=' + encodeURIComponent(imagePath) + '&soft=0', { method: 'POST' })
   assert.equal(del.status, 200)
   const delBody = await del.json()
   assert.deepEqual(delBody.removed.slice().sort(), [imagePath, `${imagePath}.json`].sort())
@@ -413,7 +415,8 @@ try {
   assert.equal(emptyZip.status, 404)
 
   // ── 批量删除：一次删多条，越权项单独失败，不影响其它项 ──
-  const bulk = await fetch(origin + '/comfyui-workbench/api/delete-many', {
+  // `soft=0`：这条冒烟验证的是物理删除与越权隔离；软删除由 api.test.mjs 的回收站用例覆盖
+  const bulk = await fetch(origin + '/comfyui-workbench/api/delete-many?soft=0', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paths: [embeddedPath, duplicatePath, outsideImage] }),

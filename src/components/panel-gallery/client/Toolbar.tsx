@@ -18,6 +18,8 @@ export interface ToolbarProps {
   onToggleDuplicates: () => void
   onToggleSelecting: () => void
   onRefresh: () => void
+  /** 打开回收站。 */
+  onTrash: () => void
   /** 是否隐藏 NSFW 内容。 */
   hideNsfw: boolean
   /** 当前已加载的可见条数。 */
@@ -85,6 +87,9 @@ export function Toolbar(props: ToolbarProps): React.ReactElement {
         </button>
         <button type="button" className="cfa-btn" title={t('refresh')} aria-label={t('refresh')} onClick={props.onRefresh}>
           <Icon name="refresh" size={15} />
+        </button>
+        <button type="button" className="cfa-btn" title={t('trashTitle')} aria-label={t('trashTitle')} onClick={props.onTrash}>
+          <Icon name="trash" size={15} />
         </button>
         {/* 省略号只是入口：真正常用的开关收在悬浮里，工具条不至于被一堆按钮撑满 */}
         <div className="cfa-extra">

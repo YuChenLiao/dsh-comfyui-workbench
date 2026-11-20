@@ -46,7 +46,7 @@ const STYLE_FILES = [
  * 也不进 used —— 检查看起来全绿，实际那个面板完全没被校验（终端面板漏了整整一轮，
  * 直到样式迁移时才被发现：加了它的 .css 却没加 `cwt`，校验是空转的）。
  */
-const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt|cch|cmf|csf'
+const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt|cch|cmf|csf|csm'
 
 /** 样式表里定义过的类名。 */
 const defined = new Set()

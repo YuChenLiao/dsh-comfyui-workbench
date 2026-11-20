@@ -147,3 +147,19 @@
 /* 底图用 <img>，不烘焙进 canvas：橡皮只该擦显示层的红笔，不该把图擦掉 */
 .cmf-base{display:block;max-width:100%;max-height:62vh;user-select:none;-webkit-user-drag:none}
 .cmf-canvas{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;touch-action:none;cursor:crosshair}
+
+/* 回收站：与其余弹层同一档（2900，高于灯箱 2600）。 */
+.csm-root{position:fixed;inset:0;z-index:2900;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}
+.csm-panel{display:flex;flex-direction:column;gap:10px;width:min(520px,94vw);max-height:80vh;padding:12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.45)}
+.csm-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.csm-title{font-size:.95em;font-weight:500}
+.csm-empty{padding:14px 4px;font-size:.84em;color:var(--dsw-alias-label-secondary)}
+.csm-list{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;overflow:auto}
+.csm-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
+.csm-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+.csm-name{font-size:.86em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.csm-sub{font-size:.74em;color:var(--dsw-alias-label-secondary)}
+.csm-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.csm-hint{flex:1;min-width:200px;font-size:.76em;color:var(--dsw-alias-label-secondary)}
+.csm-actions{display:flex;gap:8px}
+.csm-panel .cfa-btn{width:auto;padding:0 10px}

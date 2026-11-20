@@ -9,6 +9,8 @@ import { isAuthorized } from './authorize.js'
 import { dedupeItems } from './dedupe.js'
 import type { DedupedItem } from './dedupe.js'
 import { thumbPathFor } from './thumbs.js'
+import { trashOne } from './trash.js'
+import { isInsideTrash } from './trash.js'
 import type { RootEntry } from './roots.js'
 import { scanRoot } from './scan-cache.js'
 
@@ -117,8 +119,12 @@ export function queryItems(
 export interface DeleteResult {
   target: string
   removed: string[]
+  /** 软删除时：这份现在在回收站的哪个目录里（`/trash/restore` 要它）。 */
+  trashed?: string
   error?: string
   code?: string
+  /** 非致命问题（例如 sidecar 没能一起移走）：操作算成功，但用户该知道。 */
+  warning?: string
 }
 
 /**
@@ -130,7 +136,11 @@ export interface DeleteResult {
  * @param target - 图片绝对路径。
  * @param roots - 授权根目录。
  */
-export function deleteOne(target: string, roots: readonly RootEntry[]): DeleteResult {
+export function deleteOne(
+  target: string,
+  roots: readonly RootEntry[],
+  options: { soft?: boolean } = {},
+): DeleteResult {
   if (!isAuthorized(target, roots)) {
     return { target, removed: [], error: '这个路径不在资产库的白名单里。', code: 'forbidden' }
   }
@@ -146,6 +156,27 @@ export function deleteOne(target: string, roots: readonly RootEntry[]): DeleteRe
   }
   if (!stat.isFile()) {
     return { target, removed: [], error: '路径不是文件。', code: 'not-a-file' }
+  }
+
+  // 软删除：移进 `<root>/.trash/`。产物旁边的 sidecar 是"再来一张"的唯一凭据，
+  // 而面板上删除是一次点击 —— 至少要能撤回一次。物理删除仍然保留（清空回收站时走它）。
+  if (options.soft === true) {
+    // 已经在回收站里的不能再删：会在 `.trash` 里再套一层，之后恢复也只能恢复到
+    // `.trash` 内 —— 那张图就再也看不见了
+    if (isInsideTrash(target, roots)) {
+      return { target, removed: [], error: '这张图已经在回收站里了。', code: 'in-trash' }
+    }
+    const result = trashOne(target, roots)
+    if (result.ok !== true) return { target, removed: [], error: result.error, code: result.code }
+    return {
+      target,
+      // `removed` 里放原路径：前端按它算"要从列表里撤掉哪些卡片"。
+      // 软删除时文件没消失（在 `.trash` 里），但对图库来说就是"移除" ——
+      // 只回 `trashed` 的话前端会算出一个空集合，卡片留在原地、计数却 -1。
+      removed: [target, ...(result.sidecarMoved ? [`${target}.json`] : [])],
+      trashed: result.dir,
+      ...(result.sidecarMoved ? {} : { warning: '参数记录（sidecar）没能一起移进回收站，原处留了一个孤儿 .json。' }),
+    }
   }
 
   const sidecar = `${target}.json`
@@ -181,6 +212,8 @@ export function deleteOne(target: string, roots: readonly RootEntry[]): DeleteRe
 /** 批量删除结果。 */
 export interface BatchDeleteResult {
   removed: string[]
+  /** 软删除时：每份被移进的回收站目录。 */
+  trashed?: string[]
   failed: Array<{ path: string; error: string; message: string }>
 }
 
@@ -190,18 +223,24 @@ export interface BatchDeleteResult {
  * @param paths - 待删路径。
  * @param roots - 授权根目录。
  */
-export function deleteMany(paths: readonly string[], roots: readonly RootEntry[]): BatchDeleteResult {
+export function deleteMany(
+  paths: readonly string[],
+  roots: readonly RootEntry[],
+  options: { soft?: boolean } = {},
+): BatchDeleteResult {
   const removed: string[] = []
+  const trashed: string[] = []
   const failed: BatchDeleteResult['failed'] = []
   for (const one of paths) {
-    const result = deleteOne(one, roots)
+    const result = deleteOne(one, roots, options)
     if (result.error !== undefined) {
       failed.push({ path: one, error: result.code ?? 'unknown', message: result.error })
     } else {
       removed.push(...result.removed)
+      if (result.trashed !== undefined) trashed.push(result.trashed)
     }
   }
-  return { removed, failed }
+  return { removed, ...(trashed.length === 0 ? {} : { trashed }), failed }
 }
 
 /** 批量导出工作流的中间产物。 */

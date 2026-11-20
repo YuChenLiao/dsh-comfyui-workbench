@@ -1,7 +1,12 @@
 /** 资产库认的图片扩展名。 */
 export const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.bmp'])
 
-/** 扫描时跳过的目录：版本库、依赖、归档区（归档产物不该再出现在列表里）。 */
+/**
+ * 扫描时跳过的目录：版本库、依赖、归档区、回收站。
+ *
+ * `.trash` 必须在里面 —— 否则软删除的图会立刻以"新图"的身份重新出现在列表里，
+ * 用户看到的是"删了还在"。
+ */
 export const SKIP_DIRS = new Set([
   '.git',
   '.hg',
@@ -11,6 +16,7 @@ export const SKIP_DIRS = new Set([
   'build',
   '.dsh',
   '.archive',
+  '.trash',
 ])
 
 /** sidecar 体积上限：自定义工作流可能很大，但读进内存要有界。 */

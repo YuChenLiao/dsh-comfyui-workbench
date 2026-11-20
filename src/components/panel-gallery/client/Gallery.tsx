@@ -14,6 +14,7 @@ import type { ActionKind, GalleryItem } from '../../../client/types.js'
 import { BulkBar } from './BulkBar.js'
 import { MaskEditor } from './MaskEditor.js'
 import { SendToWorkflow } from './SendToWorkflow.js'
+import { TrashModal } from './TrashModal.js'
 import { Card } from './Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from './Confirm.js'
 import { Lightbox } from './Lightbox.js'
@@ -64,6 +65,8 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [maskTarget, setMaskTarget] = useState<GalleryItem | null>(null)
   /** 「送入其他吃图工作流」的目标图。 */
   const [sendTarget, setSendTarget] = useState<GalleryItem | null>(null)
+  /** 回收站弹层。 */
+  const [trashOpen, setTrashOpen] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
@@ -316,7 +319,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
     if (target === null || busy === `remove:${target.path}`) return
     setBusy(`remove:${target.path}`)
     try {
-      // 删除就是彻底删：主项与它的全部副本一起从磁盘移除，不留任何一份。
+      // 删除默认进回收站（服务端软删除）：主项与它的全部副本一起移走，可从「回收站」恢复。
       const paths = [target.path, ...(target.duplicates ?? [])]
       const res = await fetch(`${API}/delete-many`, {
         method: 'POST',
@@ -498,6 +501,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         onToggleDuplicates={() => setMergeDuplicates(value => !value)}
         onToggleSelecting={() => (selecting ? exitSelect() : setSelecting(true))}
         onRefresh={() => gallery.reload(true)}
+        onTrash={() => setTrashOpen(true)}
         onOpenSidebar={openInSidebar}
       />
       <div className="cfa-body" ref={gallery.scrollRef}>
@@ -575,6 +579,13 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
             // 然后什么都没有，直到手动切页签（`rerunAsInput` 早就为此加过同一段）
             if (promptId !== undefined) setWatching(promptId)
           }}
+        />
+      ) : null}
+      {trashOpen ? (
+        <TrashModal
+          t={t}
+          onClose={() => setTrashOpen(false)}
+          onChanged={() => gallery.reload(true)}
         />
       ) : null}
       {pendingDelete !== null ? (
