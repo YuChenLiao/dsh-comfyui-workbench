@@ -2,6 +2,8 @@
 
 **中文** · [English](README.en.md)
 
+![dsh-comfyui-workbench](docs/screenshots/hero-banner.webp)
+
 给 [DSH](https://github.com/deepseek-ai) 的 ComfyUI 工作台：**把本机的 ComfyUI 工作流交给模型调用**，并管理"哪些工作流对模型可用"。
 
 面向用户的界面是七块：资产库、工作流管理、标签库、角色库、姿势库、衣装库、ComfyUI 终端 —— 都由 ComfyUI 原生能力支撑，不新增一套平行的状态。**不内置生图前端** —— 想手工出图直接开 ComfyUI 就行。

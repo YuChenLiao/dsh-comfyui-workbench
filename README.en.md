@@ -2,6 +2,8 @@
 
 [中文](README.md) · **English**
 
+![dsh-comfyui-workbench](docs/screenshots/hero-banner.webp)
+
 A ComfyUI workbench for [DSH](https://github.com/deepseek-ai): **hand your local ComfyUI workflows to the model**, and manage which workflows the model is allowed to use.
 
 There are seven user-facing panels — Assets, Workflows, Tags, Characters, Poses, Costumes, and the ComfyUI terminal — all backed by ComfyUI's own capabilities rather than a parallel state layer. **No built-in generation UI**: if you want to generate by hand, just open ComfyUI.
