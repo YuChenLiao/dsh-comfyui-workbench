@@ -4,13 +4,15 @@ import { Icon } from '../../../client/icons.js'
 import { API } from '../../../client/api.js'
 import { runAction } from '../../../client/actions.js'
 import { readPref, writePref } from '../../../shared/host/prefs.js'
-import { download, fetchBlob, fetchRunStatus, importWorkflowPng } from '../../../client/api.js'
+import { download, fetchBlob, fetchRunStatus, fileUrl, importWorkflowPng, uploadImage } from '../../../client/api.js'
+import { addImageToConversation } from '../../../client/conversation.js'
 import { useGalleryData } from './hooks/useGalleryData.js'
 import type { Translate } from '../../../client/i18n.js'
 import { isNsfw } from '../../../shared/gallery/nsfw.js'
 import CSS from './styles.css'
 import type { ActionKind, GalleryItem } from '../../../client/types.js'
 import { BulkBar } from './BulkBar.js'
+import { MaskEditor } from './MaskEditor.js'
 import { Card } from './Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from './Confirm.js'
 import { Lightbox } from './Lightbox.js'
@@ -57,6 +59,8 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [activePath, setActivePath] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
   const [pendingDelete, setPendingDelete] = useState<GalleryItem | null>(null)
+  /** 涂蒙版的目标图；非 null 时渲染画笔弹层。 */
+  const [maskTarget, setMaskTarget] = useState<GalleryItem | null>(null)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
@@ -213,6 +217,11 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       setPendingDelete(item)
       return
     }
+    // 涂蒙版：打开画笔弹层。上传与"发回对话"在 onMaskDone 里做。
+    if (kind === 'mask') {
+      setMaskTarget(item)
+      return
+    }
     // 作为输入出图：其余参数照旧、换图 + 换新 seed（服务端读 sidecar，不需要选工作流）
     if (kind === 'useAsInput') {
       const key = `useAsInput:${item.path}`
@@ -253,6 +262,32 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       .then(message => { if (message !== '') setNotice({ kind: 'ok', text: message }) })
       .catch(error => setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) }))
       .finally(() => setBusy(''))
+  }
+
+  /**
+   * 蒙版导出之后：落盘到 uploads，然后把**蒙版图**加入对话。
+   *
+   * 两个路径（原图 + 蒙版）都写进提示，模型拿到就能直接调
+   * `comfyui_compose { baseImage, maskImage }` —— 面板不做"选哪个工作流"的决定，
+   * 那一步本来就要看工作流的槽位。
+   */
+  const onMaskDone = async (item: GalleryItem, mask: Blob): Promise<void> => {
+    setMaskTarget(null)
+    const key = `mask:${item.path}`
+    setBusy(key)
+    try {
+      const base = item.name.replace(/\.[^.]+$/, '')
+      const saved = await uploadImage(mask, `mask-${base}.png`)
+      await addImageToConversation(mask, saved.name, { goToConversation }, saved.path)
+      setNotice({
+        kind: 'ok',
+        text: `${t('maskSaved')}\n原图：${item.path}\n蒙版：${saved.path}`,
+      })
+    } catch (reason) {
+      setNotice({ kind: 'err', text: reason instanceof Error ? reason.message : String(reason) })
+    } finally {
+      setBusy('')
+    }
   }
 
   const removeBusyKey = pendingDelete === null ? '' : `remove:${pendingDelete.path}`
@@ -498,6 +533,14 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
           onAction={onAction}
           onPrev={() => stepActive(-1)}
           onNext={() => stepActive(1)}
+        />
+      ) : null}
+      {maskTarget !== null ? (
+        <MaskEditor
+          src={fileUrl(maskTarget.path)}
+          t={t}
+          onCancel={() => setMaskTarget(null)}
+          onDone={(mask) => { void onMaskDone(maskTarget, mask) }}
         />
       ) : null}
       {pendingDelete !== null ? (

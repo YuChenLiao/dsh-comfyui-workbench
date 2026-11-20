@@ -457,8 +457,30 @@ export async function interruptRun(): Promise<void> {
   if (body?.ok !== true) throw new Error(body?.message ?? `中断失败：HTTP ${res.status}`)
 }
 
-/** 停掉本插件拉起的 ComfyUI 进程（外部实例不会被停）。 */
-export async function stopService(): Promise<{ stopped: boolean; message?: string }> {
+/** 把一张图（Blob）落到 uploads，返回本机绝对路径。蒙版画笔走这条。 */
+export async function uploadImage(
+  blob: Blob,
+  filename: string,
+): Promise<{ path: string; bytes: number; name: string; width?: number; height?: number }> {
+  const res = await fetch(`${API}/upload?filename=${encodeURIComponent(filename)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type === '' ? 'image/png' : blob.type },
+    body: blob,
+  })
+  const body = await res.json().catch(() => null)
+  if (res.ok === false || body?.ok !== true) {
+    throw new Error(typeof body?.message === 'string' ? body.message : `上传失败：HTTP ${res.status}`)
+  }
+  return {
+    path: String(body.path ?? ''),
+    bytes: Number(body.bytes) || 0,
+    name: String(body.name ?? filename),
+    ...(typeof body.width === 'number' ? { width: body.width } : {}),
+    ...(typeof body.height === 'number' ? { height: body.height } : {}),
+  }
+}
+
+/** 停掉本插件拉起的 ComfyUI 进程（外部实例不会被停）。 */export async function stopService(): Promise<{ stopped: boolean; message?: string }> {
   const res = await fetch(`${API}/service/stop`, { method: 'POST' })
   const body = await res.json().catch(() => null)
   if (body?.ok !== true) throw new Error(body?.message ?? `停止失败：HTTP ${res.status}`)
