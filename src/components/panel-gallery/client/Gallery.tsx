@@ -5,7 +5,7 @@ import { API } from '../../../client/api.js'
 import { runAction } from '../../../client/actions.js'
 import { readPref, writePref } from '../../../shared/host/prefs.js'
 import { download, fetchBlob, fetchRunStatus, fileUrl, importWorkflowPng, uploadImage } from '../../../client/api.js'
-import { addImageToConversation } from '../../../client/conversation.js'
+import { addImageToConversation, sendTextToComposer } from '../../../client/conversation.js'
 import { useGalleryData } from './hooks/useGalleryData.js'
 import type { Translate } from '../../../client/i18n.js'
 import { isNsfw } from '../../../shared/gallery/nsfw.js'
@@ -13,6 +13,7 @@ import CSS from './styles.css'
 import type { ActionKind, GalleryItem } from '../../../client/types.js'
 import { BulkBar } from './BulkBar.js'
 import { MaskEditor } from './MaskEditor.js'
+import { SendToWorkflow } from './SendToWorkflow.js'
 import { Card } from './Card.js'
 import { ConfirmBulkRemove, ConfirmRemove } from './Confirm.js'
 import { Lightbox } from './Lightbox.js'
@@ -61,6 +62,8 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   const [pendingDelete, setPendingDelete] = useState<GalleryItem | null>(null)
   /** 涂蒙版的目标图；非 null 时渲染画笔弹层。 */
   const [maskTarget, setMaskTarget] = useState<GalleryItem | null>(null)
+  /** 「送入其他吃图工作流」的目标图。 */
+  const [sendTarget, setSendTarget] = useState<GalleryItem | null>(null)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
@@ -217,9 +220,17 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
       setPendingDelete(item)
       return
     }
-    // 涂蒙版：打开画笔弹层。上传与"发回对话"在 onMaskDone 里做。
+    // 涂蒙版：打开画笔弹层。**先把灯箱关掉** —— 弹层虽然提了 z-index，
+    // 但两个全屏层叠着只会让人不知道自己在哪一层；而且关掉灯箱后 Esc / 点背景的行为才不歧义。
     if (kind === 'mask') {
+      setActivePath(null)
       setMaskTarget(item)
+      return
+    }
+    // 送入其他吃图工作流（放大 / 去背景 / 线稿提取）
+    if (kind === 'sendToWorkflow') {
+      setActivePath(null)
+      setSendTarget(item)
       return
     }
     // 作为输入出图：其余参数照旧、换图 + 换新 seed（服务端读 sidecar，不需要选工作流）
@@ -265,26 +276,34 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
   }
 
   /**
-   * 蒙版导出之后：落盘到 uploads，然后把**蒙版图**加入对话。
+   * 蒙版导出之后：落盘到 uploads，把两个路径**粘进对话草稿**，再关弹层。
    *
-   * 两个路径（原图 + 蒙版）都写进提示，模型拿到就能直接调
-   * `comfyui_compose { baseImage, maskImage }` —— 面板不做"选哪个工作流"的决定，
-   * 那一步本来就要看工作流的槽位。
+   * 顺序有讲究：上传成功之后才关弹层。反过来的话断网 / 413（/upload 上限 16MB）
+   * 会让用户画了几十笔的东西随弹层一起消失，连重试的机会都没有。
+   * 失败向上抛，由 `MaskEditor` 留在原地显示错误。
    */
   const onMaskDone = async (item: GalleryItem, mask: Blob): Promise<void> => {
-    setMaskTarget(null)
     const key = `mask:${item.path}`
     setBusy(key)
     try {
       const base = item.name.replace(/\.[^.]+$/, '')
       const saved = await uploadImage(mask, `mask-${base}.png`)
-      await addImageToConversation(mask, saved.name, { goToConversation }, saved.path)
+      // 两条绝对路径交给模型（贴进草稿而不是只弹 toast）：`comfyui_compose` 要的正是这两个路径，
+      // 而 toast 2.8 秒后就没，用户根本抄不下来。
+      const pasted = await sendTextToComposer(
+        `${t('maskPasteBase')} ${item.path}\n${t('maskPasteMask')} ${saved.path}`,
+        { goToConversation },
+      )
+      if (!pasted) await addImageToConversation(mask, saved.name, { goToConversation }, saved.path)
+      setMaskTarget(null)
       setNotice({
         kind: 'ok',
-        text: `${t('maskSaved')}\n原图：${item.path}\n蒙版：${saved.path}`,
+        text: `${t('maskSaved')}\n${t('maskPasteBase')} ${item.path}\n${t('maskPasteMask')} ${saved.path}`,
       })
     } catch (reason) {
       setNotice({ kind: 'err', text: reason instanceof Error ? reason.message : String(reason) })
+      // 让 MaskEditor 知道失败：它不会关弹层，画面还在
+      throw reason
     } finally {
       setBusy('')
     }
@@ -540,7 +559,22 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
           src={fileUrl(maskTarget.path)}
           t={t}
           onCancel={() => setMaskTarget(null)}
-          onDone={(mask) => { void onMaskDone(maskTarget, mask) }}
+          // 原样返回 Promise：失败要让画笔弹层知道（它留在原地显示错误，不关）
+          onDone={(mask) => onMaskDone(maskTarget, mask)}
+        />
+      ) : null}
+      {sendTarget !== null ? (
+        <SendToWorkflow
+          item={sendTarget}
+          t={t}
+          onCancel={() => setSendTarget(null)}
+          onStarted={(message, promptId) => {
+            setSendTarget(null)
+            setNotice({ kind: 'ok', text: message })
+            // 盯住这次运行：相册本身不轮询，不盯的话用户只会看到 2.8 秒的 toast，
+            // 然后什么都没有，直到手动切页签（`rerunAsInput` 早就为此加过同一段）
+            if (promptId !== undefined) setWatching(promptId)
+          }}
         />
       ) : null}
       {pendingDelete !== null ? (

@@ -103,7 +103,7 @@
 .cfa-extra-count{margin-left:auto;font-size:11px;opacity:.65}
 
 /* 蒙版画笔：一个覆盖整屏的弹层，中间是等比的画布。 */
-.cmf-root{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}
+.cmf-root{position:fixed;inset:0;z-index:2900;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}
 .cmf-panel{display:flex;flex-direction:column;gap:10px;max-width:min(960px,96vw);max-height:92vh;padding:12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.45)}
 .cmf-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .cmf-title{font-size:.95em;font-weight:500}
@@ -121,3 +121,29 @@
 .cmf-panel .cfa-btn{width:auto;padding:0 10px}
 .cmf-panel .cfa-btn.cfa-primary{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
 .cmf-panel .cfa-btn.cfa-primary:hover,.cmf-panel .cfa-btn.cfa-primary:focus-visible{background:var(--dsw-alias-brand-primary);color:#fff}
+
+/* 「送入其他工作流」：与蒙版同一种弹层，列表里只出现吃图的模板。 */
+.csf-root{position:fixed;inset:0;z-index:2900;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}
+.csf-panel{display:flex;flex-direction:column;gap:10px;width:min(460px,94vw);max-height:80vh;padding:12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.45)}
+.csf-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.csf-title{font-size:.95em;font-weight:500}
+.csf-source{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78em;color:var(--dsw-alias-label-secondary)}
+.csf-empty{padding:14px 4px;font-size:.84em;color:var(--dsw-alias-label-secondary)}
+.csf-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;overflow:auto}
+.csf-item{display:flex;flex-direction:column;gap:3px;width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.csf-item:hover:not([disabled]),.csf-item:focus-visible:not([disabled]){border-color:var(--dsw-alias-brand-primary);outline:none}
+.csf-item[disabled]{opacity:.5;cursor:default}
+.csf-item-name{font-size:.88em}
+.csf-item-meta{font-size:.76em;color:var(--dsw-alias-label-secondary)}
+.csf-foot{font-size:.76em;color:var(--dsw-alias-label-secondary)}
+
+/*
+ * 弹层层级：必须在灯箱之上。
+ * `.cfa-lb` 是 2600 —— 原来这两个弹层用 60，从灯箱打开时会被整个盖住，
+ * 点按钮看起来"毫无反应"（入口只有灯箱里那个按钮，所以功能完全进不去）。
+ * 也低于 `.cfa-notice`（3000），提示仍然压在弹层上。
+ */
+.cmf-wrap{position:relative;display:flex;align-items:center;justify-content:center;max-width:100%;max-height:62vh}
+/* 底图用 <img>，不烘焙进 canvas：橡皮只该擦显示层的红笔，不该把图擦掉 */
+.cmf-base{display:block;max-width:100%;max-height:62vh;user-select:none;-webkit-user-drag:none}
+.cmf-canvas{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;touch-action:none;cursor:crosshair}

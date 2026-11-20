@@ -182,6 +182,7 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
           <button type="button" className="cfa-btn" onClick={act('copyImage')}><Icon name="copy" size={14} />{t('copyImage')}</button>
           <button type="button" className="cfa-btn" onClick={act('copyPrompt')}><Icon name="text" size={14} />{t('copyPrompt')}</button>
           <button type="button" className="cfa-btn" onClick={act('mask')} title={t('maskHint')}><Icon name="image" size={14} />{t('maskEditor')}</button>
+          <button type="button" className="cfa-btn" onClick={act('sendToWorkflow')} title={t('sendHint')}><Icon name="workflow" size={14} />{t('sendToWorkflow')}</button>
           <button type="button" className="cfa-btn" onClick={act('exportWorkflow')}><Icon name="download" size={14} />{t('exportWorkflow')}</button>
           {/* 只有 PNG 里才可能有工作流文本块：jpg/webp 上点一下会白下载整张再吃 400 */}
           {/\.png$/i.test(item.name)

@@ -46,7 +46,7 @@ const STYLE_FILES = [
  * 也不进 used —— 检查看起来全绿，实际那个面板完全没被校验（终端面板漏了整整一轮，
  * 直到样式迁移时才被发现：加了它的 .css 却没加 `cwt`，校验是空转的）。
  */
-const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt|cch'
+const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt|cch|cmf|csf'
 
 /** 样式表里定义过的类名。 */
 const defined = new Set()
@@ -77,3 +77,28 @@ assert.deepEqual(missing, [], `这些类名在样式表里没有定义：\n  ${m
 
 const unused = [...defined].filter(name => !used.has(name))
 console.log(`classes: 全部通过（${used.size} 个类名都有定义${unused.length === 0 ? '' : `；${unused.length} 个已定义但没用到`}）`)
+
+/**
+ * 弹层层级：**必须在灯箱之上**。
+ *
+ * 这条是被真事故换来的：`MaskEditor` 与 `SendToWorkflow` 最初用 `z-index:60`，
+ * 而灯箱是 2600 —— 两个弹层的唯一入口都在灯箱里，于是点开按钮界面毫无反应，
+ * 整条"涂蒙版 → 局部重绘"和"送入工作流"完全进不去。上面的类名检查查不出这种错，
+ * 因为类名确实都有定义。
+ */
+const galleryStyles = path.join(root, 'src', 'components', 'panel-gallery', 'client', 'styles.css')
+const galleryCss = fs.readFileSync(galleryStyles, 'utf8')
+const zIndexOf = selector => {
+  const match = new RegExp(`${selector.replace('.', '\\.')}[^{]*\\{[^}]*z-index:\\s*(\\d+)`).exec(galleryCss)
+  return match === null ? NaN : Number(match[1])
+}
+const lightboxZ = zIndexOf('.cfa-lb')
+assert.ok(Number.isFinite(lightboxZ), '找不到 .cfa-lb 的 z-index —— 这条检查本身需要跟着改')
+for (const selector of ['.cmf-root', '.csf-root']) {
+  const z = zIndexOf(selector)
+  assert.ok(
+    Number.isFinite(z) && z > lightboxZ,
+    `${selector} 的 z-index（${z}）必须高于灯箱 ${lightboxZ}：入口在灯箱里，盖住就等于功能不可用`,
+  )
+}
+console.log(`层级: 弹层 ${zIndexOf('.cmf-root')} / ${zIndexOf('.csf-root')} > 灯箱 ${lightboxZ}`)

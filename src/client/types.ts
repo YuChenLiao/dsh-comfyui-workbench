@@ -42,7 +42,7 @@ export interface Notice {
 }
 
 /** 卡片与灯箱上的动作。 */
-export type ActionKind = 'copyImage' | 'copyPrompt' | 'exportWorkflow' | 'addToChat' | 'describe' | 'remove' | 'useAsInput' | 'saveAsWorkflow' | 'mask'
+export type ActionKind = 'copyImage' | 'copyPrompt' | 'exportWorkflow' | 'addToChat' | 'describe' | 'remove' | 'useAsInput' | 'saveAsWorkflow' | 'mask' | 'sendToWorkflow'
 
 /** 工作流列表项（GET /workflows 的 items）。 */
 export interface WorkflowListItem {
@@ -56,6 +56,13 @@ export interface WorkflowListItem {
   inputKinds: string[]
   inputCount: number
   basicCount: number
+  /**
+   * 吃图的工作流：这些槽名可以塞图片路径。
+   *
+   * 服务端一直在返回（`toPanelItem` 里按 `type === 'image'` 筛），只是类型没声明 ——
+   * 于是"用这张图去出图"那类动作只能靠 inputKinds 猜。
+   */
+  imageSlots?: string[]
   outputs: Array<{ kind: string; count: number | string }>
   nodes: number
   workflowHash: string

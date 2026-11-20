@@ -480,7 +480,8 @@ export async function uploadImage(
   }
 }
 
-/** 停掉本插件拉起的 ComfyUI 进程（外部实例不会被停）。 */export async function stopService(): Promise<{ stopped: boolean; message?: string }> {
+/** 停掉本插件拉起的 ComfyUI 进程（外部实例不会被停）。 */
+export async function stopService(): Promise<{ stopped: boolean; message?: string }> {
   const res = await fetch(`${API}/service/stop`, { method: 'POST' })
   const body = await res.json().catch(() => null)
   if (body?.ok !== true) throw new Error(body?.message ?? `停止失败：HTTP ${res.status}`)
