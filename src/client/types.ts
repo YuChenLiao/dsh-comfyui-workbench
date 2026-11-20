@@ -18,6 +18,8 @@ export interface GalleryItem {
   samplerName?: string
   scheduler?: string
   checkpoint?: string
+  /** sidecar 里那次运行用的工作流 id（检索能按它命中，灯箱也能直接显示来源）。 */
+  workflowId?: string
   mode?: string
   createdAt?: string
   duplicateCount?: number

@@ -495,3 +495,17 @@ test('catalog 换了要能看见：面板常驻，重跑导入脚本后不该还
   assert.equal(index.search({ query: '改过之后的名字' }).total, 1)
   assert.equal(index.search({ query: '旧名字' }).total, 0)
 })
+
+test('工具参数表：没有 outputDir —— 落盘固定 uploads，与另两库对齐', () => {
+  const index = createCharactersIndex(tempDir(), BUNDLED)
+  const tool = characterTool({
+    index,
+    images: createImageCache({ cacheDir: tempDir(), origin: ORIGIN, fetchImpl: async () => new Response(tinyJpeg(), { status: 200 }) }),
+    uploadsDir: () => tempDir(),
+  })
+  const keys = Object.keys(tool.parameters.properties).sort()
+  // 多一个自定义目录就多一条要校验的写路径，而这个工具没有"落到别处"的场景；
+  // `/characters/fetch` 路由本来就只落 uploads，删掉参数是把两边对齐。
+  assert.deepEqual(keys, ['brand', 'id', 'limit', 'query', 'view'])
+  assert.equal('outputDir' in tool.parameters.properties, false)
+})

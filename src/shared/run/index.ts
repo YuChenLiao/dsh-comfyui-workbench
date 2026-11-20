@@ -17,6 +17,9 @@ export {
   waitForRun,
 } from './runner.js'
 export { stopAllWatchers, sweepRun, watchRun } from './notify.js'
+export type { CollectedCallback } from './notify.js'
+export { recordArtifacts } from './record.js'
+export type { RecordableOutcome, RecordOptions } from './record.js'
 export { BatchCollector } from './batch-notify.js'
 export type { SettledRun } from './batch-notify.js'
 export type { NotifyTarget } from './notify.js'

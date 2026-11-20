@@ -93,7 +93,10 @@ export function queryItems(
     // 兜底：探测到内嵌块但完整解析失败时，这里仍会把它挡在「仅生成图」之外。
     if (!query.all && item.hasMeta !== true) continue
     if (query.q !== '') {
-      const haystack = `${item.name} ${item.prompt ?? ''} ${item.negativePrompt ?? ''}`.toLowerCase()
+      // 检索面：文件名的字面量之外，还要能按**底模**与**工作流**找。
+      // 用户记得「那张 SDXL 出的」「那个放大工作流跑的」，但不记得文件名 ——
+      // 只搜 name / prompt 时这两种意图都落空。
+      const haystack = `${item.name} ${item.prompt ?? ''} ${item.negativePrompt ?? ''} ${item.checkpoint ?? ''} ${item.workflowId ?? ''}`.toLowerCase()
       if (!haystack.includes(query.q)) continue
     }
     items.push(item)

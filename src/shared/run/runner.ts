@@ -74,6 +74,14 @@ export interface RunOptions {
   workflowId: string
   workflowHash: string
   writeMetadata?: boolean
+  /**
+   * 产物标签。
+   *
+   * 必须随上下文走：同步分支拿到产物就能登记，异步分支要等后台收完 —— 那时提交方
+   * 早就返回了，标签只能从 `PendingContext` 里取回。不透传的话，默认模式
+   * （`runWait: async`）下 `tags` 参数等于没写。
+   */
+  tags?: string[]
   onStage?: (stage: 'preflight' | 'queued' | 'waiting' | 'fetching') => void
 }
 
@@ -85,6 +93,13 @@ export interface PendingContext {
   effective: Record<string, unknown>
   writeMetadata: boolean
   submittedAt: number
+  /**
+   * 提交时给的产物标签。
+   *
+   * 异步路径的登记发生在几十分钟后（后台 watcher），那时调用方已经不在了，
+   * 标签只能从这里取回 —— 所以它必须和 `effective` 一样进登记表并写进 sidecar。
+   */
+  tags?: string[]
   /** 提交时的工作流：续查要靠它区分 SaveImage 与 PreviewImage。 */
   workflow?: ApiWorkflow | undefined
 }
@@ -396,6 +411,7 @@ export async function submitWorkflow(
     effective: applied.effective,
     writeMetadata: options.writeMetadata !== false,
     submittedAt: Date.now(),
+    ...(options.tags === undefined ? {} : { tags: options.tags }),
     workflow: options.workflow,
   })
 
@@ -577,6 +593,9 @@ async function collectArtifactsOnce(
       createdAt: new Date().toISOString(),
       workflowId: context.workflowId,
       workflowHash: context.workflowHash,
+      // 标签也写进 sidecar：索引是可删可重建的派生数据，重建时要靠 sidecar 找回标签，
+      // 否则「重建索引」等于把用户打的标签全丢了。
+      ...(context.tags === undefined ? {} : { tags: context.tags }),
       vars: context.effective,
       prompt: typeof context.effective.prompt === 'string' ? context.effective.prompt : undefined,
       negativePrompt: typeof context.effective.negative_prompt === 'string' ? context.effective.negative_prompt : undefined,

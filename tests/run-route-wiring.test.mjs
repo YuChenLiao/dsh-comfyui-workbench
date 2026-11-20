@@ -34,7 +34,7 @@ const PNG = Buffer.from(
 )
 
 /** 造生产路由（走 createWorkflowRoutes，不直接 createRunHandler）。 */
-function makeRoutes(historyFor) {
+function makeRoutes(historyFor, options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wr-'))
   fs.writeFileSync(path.join(dir, 'wf.json'), JSON.stringify(WF))
   const out = path.join(dir, 'out')
@@ -60,6 +60,9 @@ function makeRoutes(historyFor) {
     defaultOutputDir: out,
     runs,
     getExporter: () => undefined,
+    // 索引从**生产路由的入参**注入：这条参数原来只写在内部 SubmitDeps 上，
+    // 属性展开能绕过 TS 的多余属性检查，所以"没接线"在 tsc 上完全看不出来。
+    ...(options.index === undefined ? {} : { index: options.index }),
   })
   return { routes, dir, out, runs }
 }
@@ -191,4 +194,66 @@ test('生产路由：提交失败仍 ok:false', async () => {
   assert.equal(payload.code, 'comfy_unreachable')
   fs.rmSync(dir, { recursive: true, force: true })
   void routes
+})
+
+/**
+ * 面板路径的索引登记：`/run` 与 `/rerun` 都是"提交即返回"，产物由后台 `sweepRun` 收。
+ *
+ * 这两条用例存在的理由不是功能（功能早就通了），而是**接线**：
+ * `index` 只写在内部 `SubmitDeps` 上时，`routes.ts` 用属性展开传进来，
+ * TS 不做多余属性检查 —— `tsc` 不报错，运行时也"碰巧"能通（同一个对象引用被原样交给
+ * `submitAndTrack`）。一旦有人把那里拆成新对象，面板的登记就静默消失，全部用例仍然绿。
+ * 这与本文件开头记录的那个 `deps.runs` 坑完全同型。
+ */
+test('生产路由 POST /run：产物收完后进资产索引', async () => {
+  const added = []
+  const index = { add: record => added.push(record), list: () => [], remove: () => {}, dropItems: () => {} }
+  const { routes, dir } = makeRoutes(() => ({
+    status: { status_str: 'success', completed: true },
+    outputs: { 7: { images: [{ filename: 'o.png', subfolder: '', type: 'output' }] } },
+  }), { index })
+
+  const res = fakeRes()
+  await routes.exact['/run'](new URL('http://x/run'), res, fakeReq({ workflowId: 'wf', vars: { seed: 1 } }))
+  const promptId = JSON.parse(res.body).promptId
+
+  const landed = await waitFor(() => added.length > 0)
+  assert.equal(landed, true, '面板提交的产物要进索引（这条路径此前完全没有登记）')
+
+  const record = added[0]
+  assert.equal(record.promptId, promptId)
+  assert.equal(record.workflowId, 'wf')
+  assert.ok(record.path.endsWith('.png'), `登记的是产物本身，实际 ${record.path}`)
+  assert.equal(record.status, 'present')
+  // 面板 /run 没有 tags 参数：索引里统一是空数组，不能是 undefined（宿主无损 JSON）
+  assert.deepEqual(record.tags, [])
+
+  // interval 驱动的收尾只该登记一次
+  await new Promise(resolve => setTimeout(resolve, 200))
+  assert.equal(added.length, 1, `同一产物只该登记一次，实际 ${added.length} 条`)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('生产路由 POST /rerun：同样把产物登记进索引', async () => {
+  const added = []
+  const index = { add: record => added.push(record), list: () => [], remove: () => {}, dropItems: () => {} }
+  const { routes, dir, out } = makeRoutes(() => ({
+    status: { status_str: 'success', completed: true },
+    outputs: { 7: { images: [{ filename: 'o.png', subfolder: '', type: 'output' }] } },
+  }), { index })
+
+  // rerun 的入口是一张带 sidecar 的图
+  const source = path.join(out, 'source.png')
+  fs.writeFileSync(source, PNG)
+  fs.writeFileSync(`${source}.json`, JSON.stringify({ workflowId: 'wf', workflowHash: 'h'.repeat(16), vars: { seed: 5 } }))
+
+  const res = fakeRes()
+  await routes.exact['/rerun'](new URL('http://x/rerun'), res, fakeReq({ path: source }))
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, true, `/rerun 该成功，实际 ${res.body}`)
+
+  const landed = await waitFor(() => added.length > 0)
+  assert.equal(landed, true, '/rerun 的产物也要进索引')
+  assert.equal(added[0].workflowId, 'wf')
+  fs.rmSync(dir, { recursive: true, force: true })
 })

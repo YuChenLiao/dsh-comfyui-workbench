@@ -7,6 +7,7 @@ import type { ComfyClient, ComfySupervisor } from '../../../shared/comfy/index.j
 import { availableModels } from '../../../shared/comfy/index.js'
 import { sendJson } from '../../../shared/http/respond.js'
 import { createRerunHandler, createRunHandler } from './run-api.js'
+import type { ArtifactIndexSink } from './run-api.js'
 import { handleServiceStatus, handleServiceStop } from './service-api.js'
 import { handleWorkflowDetail, handleWorkflowImport, handleWorkflowList, handleWorkflowUpdate, workflowIdFromPath } from './workflows-api.js'
 
@@ -54,6 +55,14 @@ export interface WorkflowRouteDeps {
   }
   /** 后台 sweep 与进度订阅的日志（不给的话降级与连续失败都留不下痕）。 */
   logger?: LoggerLike | undefined
+  /**
+   * 资产索引的登记面。
+   *
+   * `/run` 与 `/rerun` 都是"提交即返回"，产物由后台 `sweepRun` 收 —— 那条路上
+   * 只有这个注入点能把产物写进索引。不给的话图还在、相册也扫得到，但按工作流 /
+   * 标签筛不出来。
+   */
+  index?: ArtifactIndexSink | undefined
   /** 面板开关（覆盖配置默认值 'progressStream'）。 */
   toggles?: { read: () => Toggles } | undefined
   /** 批量导出的处理器（相册组件提供）；关掉相册时返回 undefined。 */
@@ -82,7 +91,7 @@ export interface WorkflowRoutes {
  * 关掉这个组件时，`/run`、`/workflows` 这些路径整体消失，相册不受影响。
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
-  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, runs, logger, toggles, getExporter } = deps
+  const { client, supervisor, workflowDir, settings, assertWritable, defaultOutputDir, runs, logger, toggles, getExporter, index } = deps
 
 
   return {
@@ -158,12 +167,14 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         client, workflowDir, settings, assertWritable, defaultOutputDir, runs,
         ...(logger === undefined ? {} : { logger }),
         ...(toggles === undefined ? {} : { toggles }),
+        ...(index === undefined ? {} : { index }),
       }),
       // 以产物当时的参数重跑（可选把图当输入）：面板上"再用这张图跑一遍"
       '/rerun': createRerunHandler({
         client, workflowDir, settings, assertWritable, defaultOutputDir, runs,
         ...(logger === undefined ? {} : { logger }),
         ...(toggles === undefined ? {} : { toggles }),
+        ...(index === undefined ? {} : { index }),
       }),
       '/free': async (_url: URL, res: ServerResponse) => {
         try {

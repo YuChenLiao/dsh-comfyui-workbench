@@ -27,6 +27,16 @@ function asStringArray(value: unknown): string[] {
 /** 素材角色能放进的槽位类型：mask 专门接蒙版，其余走 image。 */
 const IMAGE_SLOTS = new Set(['image', 'mask'])
 
+/**
+ * 角色的视图清单。
+ *
+ * 与 `panel-characters/server/tools.ts` 的 `VIEWS` 是两处手写（组件之间不能互相 import，
+ * 只能经 `shared` 的形状接触），由 `tests/compose.test.mjs` 的对账用例钉住两者一致。
+ * 漂移的后果不对称：**多**一个视图会被这里硬拒（模型用不了、还难归因），
+ * **少**一个则靠 `fetchCharacter` 抛错兜住。
+ */
+export const CHARACTER_VIEWS = ['turnaround', 'expression', 'outfit', 'props', 'sheet'] as const
+
 /** 列工作流目录里的 id（不带 .json）。 */
 function requireList(dir: string): string[] | undefined {
   try {
@@ -124,11 +134,27 @@ function pickPromptSlot(inputs: readonly IOSlot[]): IOSlot | undefined {
 /** 取一个素材（元数据 + 落盘路径）。 */
 async function resolveMaterial(
   source: MaterialSource,
-  role: 'pose' | 'costume',
+  role: 'character' | 'pose' | 'costume',
   id: string,
   size: 'full' | 'thumb',
   costumeSource: 'real' | 'anime',
+  view = 'turnaround',
 ): Promise<{ item: MaterialItem; file: string }> {
+  const label = ROLE_CN[role]
+
+  // 角色库是「一个角色挂多个视图」：取图要 id + view，落盘名 `<id>_<view>`。
+  // 与衣装的两个画风库不是一回事，单独一条分支比塞进三元链清楚。
+  if (role === 'character') {
+    if (source.character === undefined || source.fetchCharacter === undefined) {
+      throw new Error(`${label}库没有启用（或被关掉了），拿不到 ${id}。`)
+    }
+    const item = source.character(id)
+    if (item === undefined) {
+      throw new Error(`${label}库里没有 ${id}。先用 comfyui_character 搜一下（给 query，不是 id）。`)
+    }
+    return { item, file: await source.fetchCharacter(id, view) }
+  }
+
   // 衣装有两个画风库，id 格式相同（SPR-xxxx）—— 必须按 costumeSource 明确选，
   // 否则「搜 anime 拿到 id 再交给 compose」会静默取到写实版同号图。
   const lookup = role === 'pose'
@@ -137,7 +163,6 @@ async function resolveMaterial(
   const fetch = role === 'pose'
     ? source.fetchPose
     : costumeSource === 'anime' ? source.fetchCostumeAnime : source.fetchCostume
-  const label = ROLE_CN[role]
   if (lookup === undefined || fetch === undefined) {
     throw new Error(`${label}库没有启用（或被关掉了），拿不到 ${id}。`)
   }
@@ -160,16 +185,25 @@ export function composeTool(deps: ToolDeps): ToolSpec {
   return {
     name: 'comfyui_compose',
     description:
-      '把素材（衣装 / 姿势 / 标签 / 自由描述）整理成**一次可以直接交给 comfyui_run 的调用**：'
+      '把素材（角色设定板 / 衣装 / 姿势 / 标签 / 自由描述）整理成**一次可以直接交给 comfyui_run 的调用**：'
       + '选好工作流、把素材图落进 uploads、按槽位语义填好 vars、拼好提示词。'
       + '它**不出图**，只产出参数 —— 拿到返回里的 call 原样喂 comfyui_run 就行。'
-      + '典型场景：「用这套衣服 + 这个姿势出一张」。'
+      + '典型场景：「用这套衣服 + 这个姿势出一张」「拿这个角色的三视图当参考」。'
       + '返回里的 assumptions 是槽位映射的推断依据，**请读一遍**：不对就用 extraVars 覆盖。',
     parameters: {
       type: 'object',
       additionalProperties: false,
       required: [],
       properties: {
+        characterId: {
+          type: 'string',
+          description: '角色设定图库的 id（如 c01），来自 comfyui_character 的搜索结果。给它就取那张设定板当人物参考。',
+        },
+        characterView: {
+          type: 'string',
+          enum: [...CHARACTER_VIEWS],
+          description: '角色取哪个视图，默认 turnaround（三视图）。一张板里已排好正面/侧面/背面，通常不用再拼图。',
+        },
         costumeId: { type: 'string', description: '衣装库的 id（如 SPR-0001），来自 comfyui_costume 的搜索结果。' },
         costumeSource: {
           type: 'string',
@@ -204,9 +238,23 @@ export function composeTool(deps: ToolDeps): ToolSpec {
         return { ok: false, error: `costumeSource 只能是 real 或 anime，收到「${costumeSourceArg}」。` }
       }
       const costumeSource: 'real' | 'anime' = costumeSourceArg === 'anime' ? 'anime' : 'real'
+      const characterId = asString(args.characterId).trim()
+      const characterView = asString(args.characterView, 'turnaround').trim() || 'turnaround'
+      // 模块级常量：每次调用重建一份没有意义，也让"与 tools.ts 对账"没处可对
+      if (characterId !== '' && (CHARACTER_VIEWS as readonly string[]).includes(characterView) === false) {
+        return { ok: false, error: `characterView 只能是 ${CHARACTER_VIEWS.join(' / ')}，收到「${characterView}」。` }
+      }
       const poseId = asString(args.poseId).trim()
       const baseImage = asString(args.baseImage).trim()
       const maskImage = asString(args.maskImage).trim()
+
+      // 顺序即优先级：角色（身份）→ 姿势 → 衣装 → 底图 → 蒙版。
+      // 角色放最前是因为它决定"画的是谁"，其余是这个人物的姿态与穿着。
+      if (characterId !== '') {
+        if (materials === undefined) return { ok: false, error: '角色库还没就绪（或被关掉了），拿不到素材。' }
+        const { item, file } = await resolveMaterial(materials, 'character', characterId, size, costumeSource, characterView)
+        wanted.push({ role: 'character', file, item })
+      }
 
       if (poseId !== '') {
         if (materials === undefined) return { ok: false, error: '姿势库还没就绪（或被关掉了），拿不到素材。' }
@@ -236,7 +284,7 @@ export function composeTool(deps: ToolDeps): ToolSpec {
         if (wanted.length === 0 && asString(args.prompt).trim() === '' && asStringArray(args.tags).length === 0) {
           return {
             ok: false,
-            error: '什么都没给：至少给一个素材（costumeId / poseId / baseImage）、一段 prompt，或指定 workflowId。',
+            error: '什么都没给：至少给一个素材（characterId / costumeId / poseId / baseImage）、一段 prompt，或指定 workflowId。',
           }
         }
         const picked = pickWorkflow(deps, wanted.map(item => item.role))

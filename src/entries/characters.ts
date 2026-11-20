@@ -156,6 +156,29 @@ function applyInner(ctx: HostContext, config: unknown): void {
   const rt = acquire(ctx, config)
   if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'characters: runtime')
 
+  // 素材面的第三半（姿势库与衣装库各占一半，工具侧惰性取）：
+  // 让 `comfyui_compose` 能直接吃角色设定板，不必让模型自己落盘再传路径。
+  rt.materials = {
+    ...rt.materials,
+    character: id => {
+      const item = index.get(id)
+      return item === undefined ? undefined : { id: item.id, name: item.name }
+    },
+    fetchCharacter: async (id, view) => {
+      const found = index.get(id)
+      if (found === undefined) throw new Error(`没有这个角色：${id}`)
+      const slot = found.slots[view]
+      if (slot === undefined) {
+        throw new Error(`${found.name} 没有 ${view}，可用：${Object.keys(found.slots).join(' / ')}。`)
+      }
+      // 落盘名 `<id>_<view>.<ext>`：所有角色的切片 basename 相同
+      // （都叫 `横版完整设定图_01_三视图_查看用.jpg`），不指定就互相覆盖。
+      const ext = /\.(png|jpe?g|webp)$/i.exec(slot.path)?.[1]?.toLowerCase() ?? 'jpg'
+      const { file } = await images.materialize(slot.path, uploadsDir(), `${id}_${view}.${ext}`)
+      return file
+    },
+  }
+
   ensureHttp(ctx, rt)
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => mountRoutes(ctx, COMPONENT, { exact: routes.exact }), 'characters: routes')

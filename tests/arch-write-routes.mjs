@@ -62,19 +62,15 @@ const apiTests = fs.readFileSync(path.join(root, 'tests', 'api.test.mjs'), 'utf8
 assert.match(apiTests, /applyAll\(/, 'api.test.mjs 必须走 applyAll 装配，而不是手工拼 handler')
 
 /**
- * 已知缺真实入口测试的写接口 —— **历史债，不是豁免**。
+ * 已知缺真实入口测试的写接口 —— **现在是空的，请保持为空**。
  *
- * 列在这里的唯一作用是：让新加的写接口立刻被拦，同时不让这五条老接口把整个检查
- * 卡死。每补一条就从这里删一条；数量只该减少。删掉之前请不要往里加新条目 ——
- * 那正好是这条检查要防的事。
+ * 这五条历史债（/delete、/delete-many、/assets/rebuild、/service/stop、/free）
+ * 已在 `tests/api.test.mjs` 的「写接口真入口」用例里补齐：走 `boot()` + 真实 fetch，
+ * 并断言分派层不再把它们拦成 405。
+ *
+ * 往这里加新条目等于给新接口开一张豁免单，而这条检查存在的全部意义就是防这个。
  */
-const KNOWN_UNTESTED = new Set([
-  '/delete',          // 删单张：要造资产 + 走确认层，测试成本高，待补
-  '/delete-many',     // 批量删：同上
-  '/assets/rebuild',  // 重建索引：要真扫目录，待补
-  '/service/stop',    // 停服务：会真的杀进程，测试里得注入 supervisor
-  '/free',            // 释放显存：直接打到 ComfyUI
-])
+const KNOWN_UNTESTED = new Set([])
 
 const missing = writePaths.filter(item => !apiTests.includes(`api${item}`) && !KNOWN_UNTESTED.has(item))
 assert.deepEqual(

@@ -19,7 +19,7 @@
 | `comfyui-workbench:workflow` | 面板 | 工作流管理：列表、`enabled` 开关、用途备注，外加 `/run`、`/rerun`、`/config`、服务托管接口 |
 | `comfyui-workbench:tags` | 面板 | 标签库：搜索四类标签、按语义大类筛、一键复制 tag；浏览只读，「更新标签」按钮会从上游刷新数据 |
 | `comfyui-workbench:poses` | 面板 + 工具 | 姿势库：288 组人体姿势 / 1439 个角度，搜索与体系、分类筛选，取线稿存进 uploads 当工作流输入图；另出 `comfyui_pose` 一个工具（给 `query` 搜、给 `id` 取图） |
-| `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：**面板只展示写实版**（1407 套实拍照风）；另有一批 1320 套二次元版，经 `comfyui_costume { source: "anime" }` 使用。两批都不含人物，搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
+| `comfyui-workbench:costumes` | 面板 + 工具 | 衣装库：**面板可在写实 / 二次元两套之间切换**（1407 套实拍照风 + 1320 套二次元）；工具侧用 `comfyui_costume { source: "anime" }` 指定二次元版。两批都不含人物，搜索与分类筛选，**每条都带英文关键词**，取图存进 uploads 当参考图；另出 `comfyui_costume` 一个工具（给 `query` 搜、给 `id` 取图） |
 | `comfyui-workbench:characters` | 面板 + 工具 | 角色库：20 个 AI 娘设定板（三视图 / 表情 / 服装 / 道具 / 整板），来自 lmy414/ai-chan-sheets，**CC BY-NC-SA 4.0 仅非商业参考**；另出 `comfyui_character` 一个工具（给 `query` 搜、给 `id`+`view` 取图） |
 | `comfyui-workbench:generate` | 工具 | `comfyui_workflow`、`comfyui_run`、`comfyui_run_batch`、`comfyui_rerun`、`comfyui_runs`、`comfyui_node_search`、`comfyui_compose` |
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |

@@ -80,22 +80,22 @@ export interface RunRecordLike {
 
 /** 一件能塞进工作流的素材（姿势线稿 / 衣装图）。 */
 export interface MaterialItem {
-  /** 库 id（衣装 `SPR-0001`、姿势视角 `full_single_P012_front`）。 */
+  /** 库 id（衣装 `SPR-0001`、姿势视角 `full_single_P012_front`、角色 `c01`）。 */
   id: string
   /** 中文名，给模型认人用。 */
   name: string
-  /** 可直接拼进提示词的关键词串（衣装有，姿势通常没有）。 */
+  /** 可直接拼进提示词的关键词串（衣装有，姿势与角色通常没有）。 */
   keywords?: string
 }
 
 /**
- * 素材取用面：姿势库与衣装库两个 entry **各自注册自己那一半**。
+ * 素材取用面：三个素材库（姿势 / 衣装 / 角色）**各自注册自己那一半**。
  *
- * 为什么不直接 import 那两个组件：`components/*` 之间不该互相依赖（只有装配层可以）。
+ * 为什么不直接 import 那几个组件：`components/*` 之间不该互相依赖（只有装配层可以）。
  * 这里只留一个接口，`Runtime.materials` 由各自 entry 在 apply 时填，工具侧通过
  * `getMaterials()` 惰性取 —— 不依赖 entry 的加载顺序。
  *
- * 两个半面都可缺省：关掉某个库时 compose 只少一种素材来源，不会整体失效。
+ * 每个半面都可缺省：关掉某个库时 compose 只少一种素材来源，不会整体失效。
  */
 export interface MaterialSource {
   pose?: (id: string) => MaterialItem | undefined
@@ -112,6 +112,15 @@ export interface MaterialSource {
   fetchCostume?: (id: string, size: 'full' | 'thumb') => Promise<string>
   /** 动画版衣装的取图（落在 uploads/anime/ 下，不与写实版撞名）。 */
   fetchCostumeAnime?: (id: string, size: 'full' | 'thumb') => Promise<string>
+  /**
+   * 角色库（AI 娘设定板）：一个角色挂五个固定槽位。
+   *
+   * 取图要 `id + view` 两个参数 —— 只给 id 不知道要三视图还是表情。
+   * 与衣装同理，落盘名是 `<id>_<view>.<ext>`：所有角色的切片 basename 相同，
+   * 不改名就会互相覆盖。
+   */
+  character?: (id: string) => MaterialItem | undefined
+  fetchCharacter?: (id: string, view: string) => Promise<string>
 }
 
 /** 工具执行需要的依赖。 */

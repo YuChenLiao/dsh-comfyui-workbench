@@ -5,6 +5,31 @@ import type { ComfyClient } from '../comfy/index.js'
 import type { LoggerLike } from '../host/types.js'
 import { codeOf, finalStateOf, giveUpMessage, isFatalRunError, TRANSIENT_LIMIT } from './policy.js'
 import { checkRun, collectArtifacts, recallRun } from './runner.js'
+import type { PendingContext, RunOutcome } from './runner.js'
+
+/**
+ * 产物收完后的回调。
+ *
+ * 后台路径原先只更新运行注册表、不登记资产索引 —— 而默认模式就是异步，所以
+ * `tags` 在没人改配置的情况下等于没写。这条回调就是补上的接线。
+ *
+ * 只给 `outcome`：工作流 id / hash / tags 由装配层的闭包持有（它们比 `PendingContext`
+ * 里那份 fallback 更准 —— 跨 bundle 丢登记时 fallback 的 `workflowHash` 是空串）。
+ *
+ * **回调抛错会被吞掉**：索引是派生的（真源是 sidecar），登记失败不该让一次成功的
+ * 出图变成失败，更不该挡住已经攒好的通知。
+ */
+export type CollectedCallback = (outcome: RunOutcome) => void
+
+/** 调一次回调，只兜错不上报（登记失败会由调用方自己 `warn`）。 */
+function notifyCollected(callback: CollectedCallback | undefined, outcome: RunOutcome): void {
+  if (callback === undefined) return
+  try {
+    callback(outcome)
+  } catch {
+    // 派生数据：登记失败不影响这次运行，也不影响通知
+  }
+}
 
 /**
  * 插件通知的 source kind。
@@ -162,6 +187,15 @@ export function watchRun(options: {
    * （tests/arch.mjs 两个方向都查），所以不能 import 那边的类型。
    */
   registry?: QueueRegistry | undefined
+  /**
+   * 产物收完后调用一次，用来登记资产索引。
+   *
+   * 同步分支在 `comfyui_run` 里当场登记；异步分支没有"当场"——产物是几十分钟后
+   * 由这个 watcher 收的，所以必须由它回调出去，否则索引里没有这一行。
+   * 与 `registry` 同一种组装方式：`shared/run` 不认识 `AssetIndex` 的类型宿，
+   * 只声明形状，装配层把 `recordArtifacts` 包进来。
+   */
+  onCollected?: CollectedCallback
 }): () => void {
   const { client, target, promptId, outputDir } = options
   // 与 sweepRun 对称：调用方传超小值时不该把 ComfyUI 打爆
@@ -265,6 +299,9 @@ export function watchRun(options: {
         }
         const outcome = await collectArtifacts(client, promptId, state.entry, context)
         stop()
+        // 产物已经在磁盘上了：先把索引登记补上，再拼通知文本。
+        // 放在 `settled = true` 之前 —— 那之后才允许投递，但登记不该被投递失败牵连。
+        notifyCollected(options.onCollected, outcome)
 
         // settled 只在真正投递之前置位：拼装若抛错，catch 还能走失败通知而不是静默。
         const lines = [`工作流 ${context.workflowId} 出图完成，用时 ${Math.round(outcome.durationMs / 1000)} 秒。`, '']
@@ -412,6 +449,8 @@ export function sweepRun(options: {
    */
   progressStream?: boolean
   registry?: QueueRegistry | undefined
+  /** 产物收完后登记资产索引（面板提交走这条路，它没有会话通道）。 */
+  onCollected?: CollectedCallback
 }): () => void {
   const { client, promptId, outputDir, workflowId } = options
   const intervalMs = Math.max(50, options.intervalMs ?? 1_000)
@@ -503,6 +542,9 @@ export function sweepRun(options: {
           const outcome = await collectArtifacts(client, promptId, state.entry, context)
           // 收敛前再确认一次：并发 tick 可能已经写过终态了
           if (settled) return
+          // 登记放在收敛守卫之后：两个 tick 同时走到这里时，只有真的负责收敛的那个登记，
+          // 否则 assets.jsonl 会对同一个路径追加两行。
+          notifyCollected(options.onCollected, outcome)
           finish({
             state: 'done',
             finishedAt: Date.now(),

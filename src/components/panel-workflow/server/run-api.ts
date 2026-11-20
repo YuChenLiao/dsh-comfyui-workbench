@@ -6,12 +6,20 @@ import type { Settings } from '../../../shared/host/config.js'
 import { effectiveProgressStream } from '../../../shared/host/toggles.js'
 import type { Toggles } from '../../../shared/host/toggles.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
-import { resumeRun, submitWorkflow, sweepBudgetOf, sweepRun } from '../../../shared/run/index.js'
+import { recallRun, resumeRun, recordArtifacts, submitWorkflow, sweepBudgetOf, sweepRun } from '../../../shared/run/index.js'
 import { readEntry } from '../../../shared/workflow/index.js'
 import { readJsonBody, sendJson } from '../../../shared/http/respond.js'
 
 /** `submitWorkflow` 的入参形状，避免在这里手抄字段。 */
 type SubmitWorkflowInput = Parameters<typeof submitWorkflow>[0]
+
+/**
+ * 资产索引的登记面（只用到 `add`）。
+ *
+ * 类型从 `recordArtifacts` 的形参推导，不另 import 一份
+ * `panel-gallery/server/store` —— 组件之间只经由 `shared` 的公共形状接触。
+ */
+export type ArtifactIndexSink = NonNullable<Parameters<typeof recordArtifacts>[1]['index']>
 
 /** `submitAndTrack` 需要的依赖。 */
 interface SubmitDeps {
@@ -26,6 +34,15 @@ interface SubmitDeps {
     update: (promptId: string, patch: object) => void
     get: (promptId: string) => { state?: string } | undefined
   } | undefined
+  /**
+   * 资产索引。给了就在后台收完产物时登记一行。
+   *
+   * 面板提交走的是"提交即返回"，产物由 `sweepRun` 在后台收 —— 这条路径原来只写
+   * 运行注册表，索引里永远没有这一行：图在磁盘上、相册列表里也在（相册扫目录），
+   * 但按工作流或标签筛不出来，而且没有 sidecar 之外的 `tags` 可依。
+   * 类型用 `recordArtifacts` 的形参推导，避免这里再 import 一份组件的类型宿。
+   */
+  index?: ArtifactIndexSink | undefined
 }
 
 /**
@@ -74,6 +91,20 @@ async function submitAndTrack(
   // 参数先落成一个对象，**note 读的就是这里传给 `sweepRun` 的同一个值** ——
   // 这样「接线被删掉」不是只有阅读才能发现：摘掉 `maxWaitMs`，note 会变成 0 分钟，
   // route 级测试立刻变红。直接内联字面量的话，note 与接线可以各自漂移。
+  // 收窄提到对象字面量之前：TS 的属性收窄不进入回调，
+  // 写在外面才不会在闭包里再判一次 undefined（也不用 `as`）。
+  const index = deps.index
+  const onCollected = index === undefined
+    ? undefined
+    : (outcome: Parameters<typeof recordArtifacts>[0]): void => {
+      recordArtifacts(outcome, {
+        index,
+        workflowId: options.workflowId,
+        workflowHash: options.workflowHash,
+        ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+      })
+    }
+
   const sweepOptions = {
     client: deps.client,
     promptId: submitted.promptId,
@@ -88,6 +119,8 @@ async function submitAndTrack(
     // 用户设了 `COMFYUI_PROGRESS_WS=1` 却永远 0 事件时无从发现。
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
     ...(deps.runs === undefined ? {} : { registry: deps.runs }),
+    // 面板提交的产物是后台收的，索引登记只能在这里补。
+    ...(onCollected === undefined ? {} : { onCollected }),
   }
   try {
     sweepRun(sweepOptions)
@@ -143,6 +176,16 @@ export function createRunHandler(deps: {
   logger?: LoggerLike | undefined
   /** 面板开关（覆盖配置默认值 'progressStream'）。 */
   toggles?: { read: () => Toggles } | undefined
+  /**
+   * 资产索引：后台收完产物时登记一行。
+   *
+   * **必须写在这个导出的入参类型上**，不能只写在内部 `SubmitDeps` 里。
+   * 只写在内部时，`routes.ts` 用属性展开传进来，TS 不做多余属性检查 —— `tsc` 不会报错，
+   * 而运行时能通完全是靠"同一个对象引用被原样交给 `submitAndTrack`"。
+   * 一旦有人把那里改成 `submitAndTrack({ client: deps.client, … }, …)`，
+   * 面板的登记就静默消失，类型检查和用例都不会红（与 `run-route-wiring` 记录的那个坑同型）。
+   */
+  index?: ArtifactIndexSink | undefined
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: RunBody
@@ -172,6 +215,18 @@ export function createRunHandler(deps: {
         if ('pending' in outcome) {
           sendJson(res, 200, { ok: true, pending: true, promptId: resumeId })
           return
+        }
+        // 面板轮询拿到产物时也补一次索引（后台 sweep 可能已经死在重启前）。
+        // 同一 promptId+path 只会登记一次，与仍然活着的 sweep 撞车也不会双行。
+        if (deps.index !== undefined) {
+          const known = recallRun(resumeId)
+          recordArtifacts(outcome, {
+            index: deps.index,
+            workflowId: outcome.workflowId,
+            workflowHash: known?.workflowHash ?? '',
+            ...(known?.tags === undefined ? {} : { tags: known.tags }),
+            ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+          })
         }
         sendJson(res, 200, {
           ok: true,
@@ -285,6 +340,11 @@ export function createRerunHandler(deps: {
   logger?: LoggerLike | undefined
   /** 面板开关（覆盖配置默认值 'progressStream'）。 */
   toggles?: SubmitDeps['toggles']
+  /**
+   * 资产索引（与 `createRunHandler` 同一个理由写在导出类型上：
+   * 只写在内部 `SubmitDeps` 里时，属性展开能绕过 TS 的多余属性检查）。
+   */
+  index?: ArtifactIndexSink | undefined
 }): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (_url, res, req) => {
     let body: { path?: unknown; asInput?: unknown; seed?: unknown; timeoutMs?: unknown }

@@ -844,3 +844,140 @@ test('api/characters：搜索、统计，以及 /characters/fetch 的写方法�
     await app.close()
   }
 })
+
+/**
+ * 五个写接口的真入口覆盖：api/delete、api/delete-many、api/assets/rebuild、
+ * api/free、api/service/stop。
+ *
+ * `arch-write-routes.mjs` 的 `KNOWN_UNTESTED` 一直是历史债：路径进了 `router.ts` 的
+ * 三张表，但 `api.test.mjs` 里没有一条走真实 `boot()` + `fetch` 的用例 —— 于是
+ * "分派层把 POST 拦成 405" 这类错只有真机才发现（这个坑踩过四次）。
+ *
+ * 断言重点不是业务结果，而是**分派层真的放行了**：任何一条回 405，就说明
+ * `WRITABLE` / `POST_ONLY` 里漏了它。
+ */
+test('写接口真入口：/delete、/delete-many、/assets/rebuild、/free、/service/stop 都不再 405', async () => {
+  const dirs = tmpDirs()
+  const imageA = path.join(dirs.out, 'del-a.png')
+  const imageB = path.join(dirs.out, 'del-b.png')
+  const sidecarOf = name => JSON.stringify({
+    plugin: 'dsh-comfyui-workbench',
+    workflowId: 'text2img-basic',
+    workflowHash: 'h'.repeat(16),
+    createdAt: new Date().toISOString(),
+    vars: { prompt: name },
+    comfy: { url: 'http://127.0.0.1:8188', promptId: `pid-${name}` },
+    tags: [],
+  })
+  fs.writeFileSync(imageA, TINY_PNG)
+  fs.writeFileSync(imageB, TINY_PNG)
+  fs.writeFileSync(`${imageA}.json`, sidecarOf('a'))
+  fs.writeFileSync(`${imageB}.json`, sidecarOf('b'))
+
+  // `baseUrl` 故意指到不可达端口：`/free` 的 client 接了 `ensure: supervisor.ensureReady()`，
+  // 而 ensureReady 会 probe 真实地址，探通就直接 `POST /free {unload_models:true, free_memory:true}`。
+  // 用默认的 127.0.0.1:8188 时，一台**正开着 ComfyUI** 的机器跑 npm test 会真的卸载模型
+  // （出图中也会）—— 这条用例只想验分派层，不该有这个副作用。
+  const app = await boot({
+    roots: [dirs.out],
+    outputDir: dirs.out,
+    workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads,
+    indexFile: dirs.index,
+    baseUrl: 'http://127.0.0.1:1',
+  })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    // 1) 重建索引：真扫目录、真读 sidecar
+    const rebuild = await fetch(`${base}/assets/rebuild`, { method: 'POST' })
+    assert.equal(rebuild.status, 200, '405 就说明 WRITABLE 漏了 /assets/rebuild')
+    const rebuilt = await rebuild.json()
+    assert.equal(rebuilt.ok, true)
+    assert.equal(rebuilt.rebuilt, 2, `该从两份 sidecar 重建出两条，实际 ${rebuilt.rebuilt}`)
+
+    // 2) 删单张：图与 sidecar 一起走，否则重建会把已删的图复活
+    const del = await fetch(`${base}/delete?path=${encodeURIComponent(imageA)}`, { method: 'POST' })
+    assert.equal(del.status, 200, '405 就说明 WRITABLE 漏了 /delete')
+    const delBody = await del.json()
+    assert.equal(delBody.ok, true)
+    assert.ok(delBody.removed.includes(imageA), 'removed 要包含图本身')
+    assert.ok(delBody.removed.includes(`${imageA}.json`), 'sidecar 也要出现在 removed 里')
+    assert.equal(fs.existsSync(imageA), false)
+    assert.equal(fs.existsSync(`${imageA}.json`), false, 'sidecar 必须跟着删')
+
+    // 3) 批量删
+    const many = await fetch(`${base}/delete-many`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: [imageB] }),
+    })
+    assert.equal(many.status, 200, '405 就说明 WRITABLE 漏了 /delete-many')
+    assert.equal((await many.json()).ok, true)
+    assert.equal(fs.existsSync(imageB), false)
+
+    // 4) 释放显存：地址不可达，所以必然是结构化失败 —— 但**不是 405**。
+    //    断言 ok === false 同时锁住"这条真打到了 client"：只断 status 200 的话，
+    //    一个永远返回 {ok:false} 的空实现也能通过。
+    const free = await fetch(`${base}/free`, { method: 'POST' })
+    assert.equal(free.status, 200, '405 就说明 POST_ONLY 漏了 /free')
+    assert.equal((await free.json()).ok, false, '地址不可达时该是结构化失败')
+
+    // 5) 停托管服务：supervisor 在本测试里没拉起任何进程，stop 应是幂等的
+    const stop = await fetch(`${base}/service/stop`, { method: 'POST' })
+    assert.equal(stop.status, 200, '405 就说明 WRITABLE 漏了 /service/stop')
+    assert.equal(typeof (await stop.json()).ok, 'boolean')
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * 相册检索面：`/items?q=` 要能按**底模**与**工作流名**命中。
+ *
+ * 原来 haystack 只有文件名 + 提示词 + 负向提示词。真实的检索意图却常常是
+ * 「那张 SDXL 出的」「那个放大工作流跑的」—— 用户记得用的是哪套工具，不记得文件名。
+ * 这两种意图在旧实现里全部落空，而且没有任何提示（结果就是 0 条）。
+ */
+test('GET /items?q=：按底模、工作流名与提示词都能命中', async () => {
+  const dirs = tmpDirs()
+  const write = (name, meta) => {
+    const file = path.join(dirs.out, name)
+    fs.writeFileSync(file, TINY_PNG)
+    fs.writeFileSync(`${file}.json`, JSON.stringify({
+      plugin: 'dsh-comfyui-workbench',
+      createdAt: new Date().toISOString(),
+      vars: { prompt: meta.prompt },
+      prompt: meta.prompt,
+      checkpoint: meta.checkpoint,
+      workflowId: meta.workflowId,
+      comfy: { url: 'http://127.0.0.1:8188', promptId: `pid-${name}` },
+    }))
+    return file
+  }
+  write('sdxl-cat.png', { prompt: '一只猫', checkpoint: 'sd_xl_base_1.0.safetensors', workflowId: 'text2img-basic' })
+  write('flux-dog.png', { prompt: '一只狗', checkpoint: 'flux-dev.safetensors', workflowId: '放大-upscale' })
+
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows, uploadsDir: dirs.uploads, indexFile: dirs.index })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    const search = async q => (await (await fetch(`${base}/items?q=${encodeURIComponent(q)}`)).json())
+
+    // 底模名：旧实现里这条恒为 0 条
+    const byCheckpoint = await search('sd_xl_base')
+    assert.equal(byCheckpoint.total, 1, '按底模名要能命中')
+    assert.equal(byCheckpoint.items[0].name, 'sdxl-cat.png')
+
+    // 工作流名（中文，非文件名的一部分）
+    const byWorkflow = await search('放大')
+    assert.equal(byWorkflow.total, 1, '按工作流名要能命中')
+    assert.equal(byWorkflow.items[0].name, 'flux-dog.png')
+
+    // 提示词检索不能因此坏掉（这是原来的能力）
+    assert.equal((await search('一只猫')).items[0].name, 'sdxl-cat.png')
+
+    // 命中不到时仍然是 0，而不是"什么都能匹配"
+    assert.equal((await search('绝不可能存在的词')).total, 0)
+  } finally {
+    await app.close()
+  }
+})

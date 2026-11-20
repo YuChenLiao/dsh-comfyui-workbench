@@ -12,7 +12,7 @@
 import path from 'node:path'
 
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
-import { sweepRun } from '../../../shared/run/index.js'
+import { recordArtifacts, sweepRun } from '../../../shared/run/index.js'
 import { applyOverrides, overrideNotes } from '../../../shared/run/overrides.js'
 import { BatchCollector } from '../../../shared/run/batch-notify.js'
 import { codeOf, finalStateOf } from '../../../shared/run/policy.js'
@@ -227,6 +227,8 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
           if (pending !== undefined && pending.length > 0) deps.overrides.delete(loaded.workflowId)
 
           submittedIds.push(submitted.promptId)
+          // 后台收产物时（watch/sweep）索引登记要用它；同步分支登记也用同一份
+          const identity = { workflowId: loaded.workflowId, workflowHash: loaded.surface.workflowHash }
 
           if (!shouldWait) {
             items.push({
@@ -239,8 +241,8 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
                 : { notes: [...submitted.notes, ...batchNotes] }),
             })
             // 有会话就挂 watcher（会通知）；没有就只收敛注册表，否则记录永久 queued
-            if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir, collector, index)
-            else sweepOne(deps, submitted.promptId, loaded.workflowId, outputDir)
+            if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir, identity, collector, index)
+            else sweepOne(deps, submitted.promptId, outputDir, identity)
           } else {
             // 同步等待。每条各自等到产物或超时；超时的条目改用后台通知兜底 ——
             // 不能"等不到就什么都不管"，那和默认异步比反而是退步。
@@ -271,31 +273,17 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
               // 超时不标 failed（可能还在跑），标 unknown —— 否则永远停在 running。
               deps.runs.update(submitted.promptId, { state: 'unknown', queuePosition: undefined })
               // 没有会话通道时也要继续盯：unknown 只是"我们不再等"，任务可能还在跑
-              if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir, collector, index)
-              else sweepOne(deps, submitted.promptId, loaded.workflowId, outputDir)
+              if (canNotify) watchOne(deps, agent, submitted.promptId, outputDir, identity, collector, index)
+              else sweepOne(deps, submitted.promptId, outputDir, identity)
             } else {
-              // 与单次运行一样登记资产索引：索引是派生，失败不该让本次算失败
-              const createdAt = new Date().toISOString()
-              for (const artifact of outcome.artifacts) {
-                try {
-                  deps.index.add({
-                    digest: artifact.digest,
-                    path: artifact.path,
-                    bytes: artifact.bytes,
-                    mime: artifact.mime,
-                    ...(artifact.width === undefined ? {} : { width: artifact.width }),
-                    ...(artifact.height === undefined ? {} : { height: artifact.height }),
-                    workflowId: loaded.workflowId,
-                    workflowHash: loaded.surface.workflowHash,
-                    promptId: outcome.promptId,
-                    createdAt,
-                    tags: [],
-                    status: 'present',
-                  })
-                } catch {
-                  deps.logger?.warn?.('资产索引登记失败（产物已落盘）')
-                }
-              }
+              // 与单次运行一样登记资产索引：索引是派生，失败不该让本次算失败。
+              // 批量没有 tags 参数，这里不传 —— 与"传空数组"等价，索引里统一是 []。
+              recordArtifacts(outcome, {
+                index: deps.index,
+                workflowId: identity.workflowId,
+                workflowHash: identity.workflowHash,
+                ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+              })
               // wait 成功也要收敛终态（watcher 在 wait 路径上不挂）
               deps.runs.update(submitted.promptId, {
                 state: 'done',
@@ -404,16 +392,28 @@ export function planOrder(raw: readonly unknown[], shared: unknown): number[] {
 }
 
 /** 没有会话通道时的收尾：只更新注册表。 */
-function sweepOne(deps: ToolDeps, promptId: string, workflowId: string, outputDir: string): void {
+function sweepOne(deps: ToolDeps, promptId: string, outputDir: string, identity: RecordIdentity): void {
   sweepRun({
     client: deps.client,
     promptId,
-    workflowId,
+    workflowId: identity.workflowId,
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    onCollected: outcome => recordArtifacts(outcome, {
+      index: deps.index,
+      workflowId: identity.workflowId,
+      workflowHash: identity.workflowHash,
+      ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+    }),
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
   })
+}
+
+/** 异步路径登记需要的工作流身份：产物在后台才收到，工作流 id 与 hash 得随参数走。 */
+interface RecordIdentity {
+  workflowId: string
+  workflowHash: string
 }
 
 /** 挂一条后台等待者，出图后推回对话。 */
@@ -422,6 +422,7 @@ function watchOne(
   agent: NotifyTarget,
   promptId: string,
   outputDir: string,
+  identity: RecordIdentity,
   collector?: BatchCollector,
   index?: number,
 ): void {
@@ -432,6 +433,13 @@ function watchOne(
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    // 批次路径同样要进索引：否则批量出的图在相册里按工作流筛不出来
+    onCollected: outcome => recordArtifacts(outcome, {
+      index: deps.index,
+      workflowId: identity.workflowId,
+      workflowHash: identity.workflowHash,
+      ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+    }),
     // 交给批次收集器 -> 凑齐后一条汇总；没有收集器就退回逐条投递
     ...(collector === undefined
       ? {}

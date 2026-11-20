@@ -12,10 +12,11 @@
  */
 
 /** 素材角色。`base` / `mask` 是工作流要的输入图，不是我们库里的素材。 */
-export type MaterialRole = 'pose' | 'costume' | 'base' | 'mask'
+export type MaterialRole = 'character' | 'pose' | 'costume' | 'base' | 'mask'
 
 /** 角色中文名（写给模型看的说明用）。 */
 export const ROLE_CN: Record<MaterialRole, string> = {
+  character: '角色设定参考',
   pose: '姿势参考',
   costume: '服装参考',
   base: '待处理的底图',
@@ -49,6 +50,12 @@ export interface SlotPlan {
 
 /** 各角色的关键词：中英都收，命中即认。 */
 const ROLE_WORDS: Array<[MaterialRole, string[]]> = [
+  // 角色设定板：**不能收泛词**。`matchRole` 按数组顺序先命中即返回，而 character
+  // 排在最前 —— 收 `设定` 会让 label「服装设定图」被判成角色，于是衣装的线索被丢掉、
+  // 两张参考图还会对调（实测：角色进服装槽、针织衫进角色槽，且不报错）。
+  // 同理不收裸 `sheet`：`Costume Sheet` 会先于 costume 命中。
+  // 「角色设定图」「Character Sheet」仍分别由 `角色` / `character` 命中。
+  ['character', ['角色', '三视图', '立绘', 'character', 'turnaround']],
   ['pose', ['姿势', '姿态', '骨架', 'pose', 'openpose', 'skeleton']],
   ['costume', ['服装', '衣装', '衣服', 'costume', 'cloth', 'outfit', 'dress']],
   ['base', ['原图', '底图', '原照', 'source', 'base', 'photo']],

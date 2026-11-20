@@ -20,8 +20,8 @@ import path from 'node:path'
 import { submitWorkflow, waitForRun } from '../../../shared/run/runner.js'
 import { asInt, asRecord, asString, resolveWait, waitSchema } from '../../../shared/tools/types.js'
 import type { ToolDeps, ToolSpec } from '../../../shared/tools/types.js'
-import type { NotifyTarget } from '../../../shared/run/index.js'
-import { sweepRun, watchRun } from '../../../shared/run/index.js'
+import type { NotifyTarget, RunOutcome } from '../../../shared/run/index.js'
+import { recordArtifacts, sweepRun, watchRun } from '../../../shared/run/index.js'
 import { loadWorkflowForBatch } from './run.js'
 
 /** 一次最多出几张。 */
@@ -205,6 +205,22 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
       const canNotify = agent !== undefined && typeof agent.followup === 'function'
       const tags = Array.isArray(args.tags) ? args.tags.filter((tag): tag is string => typeof tag === 'string') : []
 
+      /**
+       * 异步路径（watch / sweep）的登记回调。
+       *
+       * 这里原来什么都没有：超时续盯与不等待这两条路都把产物收在后台，索引里不留行，
+       * 于是 `tags` 只在"真的等到出图"时才有去处。回调与同步分支共用 `recordArtifacts`。
+       */
+      const onCollected = (outcome: RunOutcome): void => {
+        recordArtifacts(outcome, {
+          index: deps.index,
+          workflowId: loaded.workflowId,
+          workflowHash: loaded.surface.workflowHash,
+          ...(tags.length === 0 ? {} : { tags }),
+          ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+        })
+      }
+
       // 与 comfyui_run 共用同一份解析（规则见 parseWait）。
       const parsed = resolveWait(deps, args.wait)
       const wait = parsed.shouldWait
@@ -243,6 +259,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
             pollIntervalMs: deps.pollIntervalMs,
             workflowId: loaded.workflowId,
             workflowHash: loaded.surface.workflowHash,
+            ...(tags.length === 0 ? {} : { tags }),
           })
           activePromptId = result.promptId
           deps.runs.submit(result.promptId, loaded.workflowId)
@@ -277,6 +294,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
                   outputDir,
                   intervalMs: deps.pollIntervalMs,
                   registry: deps.runs,
+                  onCollected,
                   ...(deps.logger === undefined ? {} : { logger: deps.logger }),
                 })
               } else {
@@ -287,6 +305,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
                   outputDir,
                   intervalMs: deps.pollIntervalMs,
                   registry: deps.runs,
+                  onCollected,
                   ...(deps.logger === undefined ? {} : { logger: deps.logger }),
                 })
               }
@@ -302,28 +321,8 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
                   ...(artifact.height === undefined ? {} : { height: artifact.height }),
                 })),
               })
-              // tags 只有在这一步才有落点：异步路径没有产物可登记
-              const createdAt = new Date().toISOString()
-              for (const artifact of outcome.artifacts) {
-                try {
-                  deps.index.add({
-                    digest: artifact.digest,
-                    path: artifact.path,
-                    bytes: artifact.bytes,
-                    mime: artifact.mime,
-                    ...(artifact.width === undefined ? {} : { width: artifact.width }),
-                    ...(artifact.height === undefined ? {} : { height: artifact.height }),
-                    workflowId: loaded.workflowId,
-                    workflowHash: loaded.surface.workflowHash,
-                    promptId: outcome.promptId,
-                    createdAt,
-                    tags,
-                    status: 'present',
-                  })
-                } catch {
-                  deps.logger?.warn?.('资产索引登记失败（产物已落盘）')
-                }
-              }
+              // 与 comfyui_run 共用同一份登记逻辑：标签随提交时的上下文回来
+              onCollected(outcome)
               submitted.push({
                 promptId: result.promptId,
                 artifacts: outcome.artifacts.map(artifact => artifact.path),
@@ -345,6 +344,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
               outputDir,
               intervalMs: deps.pollIntervalMs,
               registry: deps.runs,
+              onCollected,
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })
           } else {
@@ -355,6 +355,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
               outputDir,
               intervalMs: deps.pollIntervalMs,
               registry: deps.runs,
+              onCollected,
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })
           }

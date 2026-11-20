@@ -34,18 +34,30 @@ export function CharactersPanel({ t, visible, goToConversation }: CharactersPane
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * 请求序号：快速切品牌时，先发的请求可能后到。
+   *
+   * 没有这道守卫时表现是「点了 DeepSeek，列表先变成 DeepSeek，又闪回上一个品牌」——
+   * 因为旧响应覆盖了新结果。与 `CostumesPanel` 同一套做法。
+   */
+  const seq = useRef(0)
 
   const load = useCallback(async (nextQuery: string, nextBrand: string): Promise<void> => {
+    const mine = seq.current + 1
+    seq.current = mine
     setLoading(true)
     try {
       const result = await fetchCharacters({ query: nextQuery, brand: nextBrand, limit: 60 })
+      if (seq.current !== mine) return
       setItems(result.items)
       setTotal(result.total)
       setError('')
     } catch (reason) {
+      if (seq.current !== mine) return
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setLoading(false)
+      // 旧请求不该把 loading 关掉：新请求还在路上
+      if (seq.current === mine) setLoading(false)
     }
   }, [])
 
@@ -60,12 +72,22 @@ export function CharactersPanel({ t, visible, goToConversation }: CharactersPane
       })
       .catch(() => { /* 统计失败不影响列表 */ })
     void load('', '')
-    return () => { alive = false }
+    return () => {
+      alive = false
+      // 防抖计时器要跟着组件走：不清的话切走页签后还会补打一次请求
+      if (timer.current !== null) clearTimeout(timer.current)
+      // 让在途请求的结果作废
+      seq.current += 1
+    }
   }, [visible, load])
 
   /** 输入防抖：与另两个库同一套（250ms）。 */
   const schedule = useCallback((next: { query?: string; brand?: string }) => {
     if (timer.current !== null) clearTimeout(timer.current)
+    // 防抖窗口里的在途请求也要作废：只靠 `load` 里的序号不够 ——
+    // 从点品牌到新请求真正发出之间有 250ms，这期间旧响应仍然"是最新的"，
+    // 列表会先闪回旧品牌结果再被修正。与 `CostumesPanel.schedule` 同一做法。
+    seq.current += 1
     timer.current = setTimeout(() => {
       void load(next.query ?? query, next.brand ?? brand)
     }, 250)

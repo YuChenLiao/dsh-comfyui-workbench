@@ -63,7 +63,6 @@ export function characterTool(deps: CharacterToolDeps): ToolSpec {
           enum: [...VIEWS],
           description: '取哪个视图，默认 turnaround（三视图）。只在给了 id 时有意义。',
         },
-        outputDir: { type: 'string', description: '落盘目录；不传用 uploads。' },
         limit: { type: 'integer', description: '搜索返回条数，默认 20，上限 100。' },
       },
     },
@@ -84,7 +83,10 @@ export function characterTool(deps: CharacterToolDeps): ToolSpec {
         if (rel === undefined) {
           return { ok: false, code: 'no_view', error: `${found.name} 没有 ${slot}，可用：${Object.keys(found.slots).join(' / ')}。` }
         }
-        const dir = asString(args.outputDir).trim() || deps.uploadsDir()
+        // 落盘目录不由调用方指定：与 `comfyui_pose` / `comfyui_costume` 对齐，
+        // 统一进 uploads。多一个自定义目录就多一条要校验的写路径，
+        // 而这个工具没有任何需要"落到别处"的场景。
+        const dir = deps.uploadsDir()
         try {
           const ext = /\.(png|jpe?g|webp)$/i.exec(rel)?.[1]?.toLowerCase() ?? 'png'
           // 同名覆盖在这里是必然会发生的：所有角色的三视图 basename 都一样。

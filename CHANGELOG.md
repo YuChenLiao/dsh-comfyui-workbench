@@ -58,6 +58,68 @@
 现状：**120/120 可达；100 条槽位图的字节数与 catalog 逐条相符**
 （20 张 preview 在 catalog 里只有路径，只验了可达）。
 
+### P0：异步索引断链、角色库接入 compose、写接口测试债
+
+**异步出图的产物现在也会进资产索引。**
+
+原来只有「同步等到产物」那条分支 `index.add(...)`。而默认 `runWait: async`：提交即返回，
+产物由后台 `watchRun` / `sweepRun` 收 —— 那条路只更新运行注册表，索引里永远没有这一行。
+后果很安静：图在磁盘上、相册扫目录也看得见，但 `tags` 参数**等于没写**
+（`/assets?tag=…` 查不到），而且工具描述把这缺口写成了特性。
+
+- 新增 `shared/run/record.ts` 的 `recordArtifacts()`：同步分支、异步 watcher、面板
+  `/run`/`/rerun`、批量提交共用同一份登记逻辑。两边各写一份的话 `tags` / `workflowHash` /
+  `promptId` 迟早漂，而漂移只表现为"某些图按工作流筛不出来"，没有报错。
+- `PendingContext` 增加 `tags`：异步登记发生在几十分钟后，提交方早就不在了，
+  标签只能随上下文走。sidecar 里也写一份 —— 索引是可删可重建的派生数据，
+  重建时要靠 sidecar 找回标签。
+- `watchRun` / `sweepRun` 增加 `onCollected` 回调（形参推导，不引组件类型）。
+  `shared/run` 不认识 `AssetIndex`，只声明形状，装配层注入。
+- `/run` 与 `/rerun` 的路由依赖增加 `index`，由 `entries/workflow.ts` 注入 `rt.index`。
+- `comfyui_run` 的 `tags` 描述改成实话：同步与异步都登记。
+
+**`comfyui_compose` 能直接吃角色设定板了。**
+
+- `MaterialSource` 增加 `character` / `fetchCharacter(id, view)`；角色 entry 注册进
+  `rt.materials`，落盘名 `<id>_<view>.<ext>`（所有角色的切片 basename 相同，不改名会互相覆盖）。
+- `MaterialRole` 增加 `'character'`，语义词只收**具体词**：`角色 / 三视图 / 立绘 /
+  character / turnaround`。语义词表里**不能有泛词** —— `matchRole` 按数组顺序先命中
+  即返回，而 character 排在最前，收 `设定` 会让 label「服装设定图」被判成角色：
+  衣装的线索被丢掉，两张参考图还会静默对调（实测：角色板进服装槽、针织衫进角色槽，
+  不报错，唯一提示是一行 assumption）。裸 `sheet` 同理会让 `Costume Sheet` 先命中角色。
+  「角色设定图」「Character Sheet」仍分别由 `角色` / `character` 命中。
+- `comfyui_compose` 增加 `characterId` 与 `characterView`（默认 `turnaround`）。
+  视图清单与 `panel-characters/server/tools.ts` 的 `VIEWS` 是两处手写（组件之间不能
+  互相 import），由一条对账用例钉住两者一致 —— 漂移的后果不对称：多一个视图会被
+  compose 硬拒，少一个则靠 `fetchCharacter` 抛错兜住。
+  放不下时进 `dropped` 并说明原因，不静默丢。
+
+**角色库的安全边界与面板收口。**
+
+- `comfyui_character` 去掉自定义 `outputDir`，统一落 uploads —— 与 `comfyui_pose` /
+  `comfyui_costume` 对齐。多一个自定义目录就多一条要校验的写路径，而这个工具没有
+  "落到别处"的场景。
+- 角色面板补上请求序号守卫：快速切品牌时旧响应不再覆盖新列表（表现是"点了 DeepSeek
+  又闪回上一个品牌"）。**防抖窗口里也要 bump 序号** —— 从点品牌到新请求真正发出之间
+  有 250ms，只靠 `load` 里的守卫，那段时间旧响应仍然"是最新的"。卸载时清掉防抖计时器。
+- 工作台外壳的 `enabled` 初值补 `'panel.characters'`，与 `componentStateOf` 的键集对齐。
+  消费处是 `enabled[component] !== false`，键缺失得到 `undefined` 也照样显示 ——
+  所以这行**不是**硬约束，只是为了可读；真正钉住键集的是 `tests/arch.mjs`。
+- `comfyui_character` 的参数表有了断言（恰好 5 个键、不含 `outputDir`）：`additionalProperties`
+  只在宿主侧生效，单测直呼 `execute` 时旧参数会被静默忽略，没有这条断言删参数等于无法验证。
+- README 里「衣装面板只展示写实版」的旧描述更正为「可在写实 / 二次元之间切换」。
+
+**相册检索与写接口测试债。**
+
+- `/items?q=` 的 haystack 纳入 `checkpoint` 与 `workflowId`：能按底模名、工作流名检索。
+  原来只搜文件名与提示词 —— 而用户常记得「那张 SDXL 出的」「那个放大工作流跑的」。
+- `arch-write-routes.mjs` 的 `KNOWN_UNTESTED` **清零**。五条历史债
+  （`/delete`、`/delete-many`、`/assets/rebuild`、`/service/stop`、`/free`）都补上了走
+  `applyAll()` + 真实 `fetch` 的用例，断言分派层不再把它们拦成 405。
+  其中 `/free` 的用例把 `baseUrl` 指到不可达端口：client 接了
+  `supervisor.ensureReady()`，探通真实地址就会 `POST /free {unload_models:true}` ——
+  一台正开着 ComfyUI 的机器跑 `npm test` 会真的卸载模型，这条用例只想验分派层。
+
 ## 0.7.3 — 2026-11-19
 
 ### 修复：角色库的两个缺口

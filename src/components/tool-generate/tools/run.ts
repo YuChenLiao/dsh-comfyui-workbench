@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { applyOverrides, codeOrDefault, finalStateOf, overrideNotes, resumeRun, submitWorkflow, sweepRun, waitForRun, watchRun } from '../../../shared/run/index.js'
+import { applyOverrides, codeOrDefault, finalStateOf, overrideNotes, recallRun, recordArtifacts, resumeRun, submitWorkflow, sweepRun, waitForRun, watchRun } from '../../../shared/run/index.js'
 import type { NotifyTarget } from '../../../shared/run/index.js'
 import type { PendingRun, RunOutcome } from '../../../shared/run/index.js'
 import type { Artifact } from '../../../shared/run/index.js'
@@ -67,6 +67,7 @@ function sweepFallback(
   promptId: string,
   workflowId: string,
   outputDir: string,
+  context: { workflowHash: string; tags?: string[] },
 ): void {
   sweepRun({
     client: deps.client,
@@ -75,6 +76,15 @@ function sweepFallback(
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    // 这条路径是"没有 agent 可通知"时的兜底，产物仍要进索引 ——
+    // 否则用户会发现"图出来了，但相册里按标签搜不到"。
+    onCollected: outcome => recordArtifacts(outcome, {
+      index: deps.index,
+      workflowId,
+      workflowHash: context.workflowHash,
+      ...(context.tags === undefined ? {} : { tags: context.tags }),
+      ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+    }),
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
   })
 }
@@ -142,7 +152,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
         tags: {
           type: 'array',
           items: { type: 'string' },
-          description: '产物标签，登记进资产索引便于之后筛选。注意只有同步等到了产物（wait 为真，或配置 runWait: sync）才会登记；异步路径由后台通知落盘，不写索引。',
+          description: '产物标签，登记进资产索引便于之后筛选。同步与异步都会登记（异步路径由后台在收产物时写入），标签同时落进 sidecar，重建索引也不会丢。',
         },
 
       },
@@ -205,6 +215,20 @@ export function runTool(deps: ToolDeps): ToolSpec {
                 ...(artifact.height === undefined ? {} : { height: artifact.height }),
               })),
             })
+            // 续查拿到了产物：索引也要补一行。
+            //
+            // 这条路径原来只收敛注册表 —— 而它最常见的场景恰恰是"插件重启后 watcher
+            // 已经死在上一进程里，用户拿 promptId 回来问结果"。图能拿到、相册里却永远
+            // 没有那一行（按工作流/标签都筛不出来）。
+            // 与还活着的 watcher 撞车时由 `recordArtifacts` 的去重挡住（同一 promptId+path）。
+            const known = recallRun(resumeId)
+            recordArtifacts(outcome, {
+              index: deps.index,
+              workflowId: outcome.workflowId,
+              workflowHash: known?.workflowHash ?? '',
+              ...(known?.tags === undefined ? {} : { tags: known.tags }),
+              ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+            })
           }
           return formatOutcome(outcome, deps)
         } catch (error) {
@@ -255,6 +279,9 @@ export function runTool(deps: ToolDeps): ToolSpec {
         pending,
       )
       const preNotes: string[] = [...overrideNotes(applied)]
+      // 标签在提交前就要定下来：异步路径的登记发生在后台 watcher 里，那时这里已经返回了。
+      // 只留字符串，非字符串项直接丢掉（宿主传来的数组可能是任意类型）。
+      const tags = Array.isArray(args.tags) ? args.tags.filter((tag): tag is string => typeof tag === 'string') : []
 
       try {
         const submitted = await submitWorkflow({
@@ -268,6 +295,8 @@ export function runTool(deps: ToolDeps): ToolSpec {
           pollIntervalMs: deps.pollIntervalMs,
           workflowId: loaded.workflowId,
           workflowHash: loaded.surface.workflowHash,
+          // 提交时就交给上下文：后台 watcher 收产物时靠它把标签带回来
+          ...(tags.length === 0 ? {} : { tags }),
         })
 
         // 登记到运行表：提交之后那几分钟用户看不到任何东西，靠这张表补。
@@ -286,7 +315,12 @@ export function runTool(deps: ToolDeps): ToolSpec {
           const canNotify = agent !== undefined && typeof agent.followup === 'function'
           // 没有 agent 就没有 watcher —— 那样记录会永远停在 queued。
           // 这种情况不挂等待者，但要在短延迟后自查一次，把终态收敛掉。
-          if (!canNotify) sweepFallback(deps, submitted.promptId, loaded.workflowId, outputDir)
+          if (!canNotify) {
+            sweepFallback(deps, submitted.promptId, loaded.workflowId, outputDir, {
+              workflowHash: loaded.surface.workflowHash,
+              ...(tags.length === 0 ? {} : { tags }),
+            })
+          }
           if (canNotify) {
             watchRun({
               client: deps.client,
@@ -295,6 +329,15 @@ export function runTool(deps: ToolDeps): ToolSpec {
               outputDir,
               intervalMs: deps.pollIntervalMs,
               registry: deps.runs,
+              // 默认模式（async）的产物就是从这里进索引的：watcher 收完产物回调一次，
+              // 与同步分支共用同一份登记逻辑，字段不会两边漂。
+              onCollected: outcome => recordArtifacts(outcome, {
+                index: deps.index,
+                workflowId: loaded.workflowId,
+                workflowHash: loaded.surface.workflowHash,
+                ...(tags.length === 0 ? {} : { tags }),
+                ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+              }),
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })
           }
@@ -385,28 +428,15 @@ export function runTool(deps: ToolDeps): ToolSpec {
         }
 
         // 登记索引：索引是派生（真源是 sidecar），登记失败不该让本次运行算失败。
-        const createdAt = new Date().toISOString()
-        const tags = Array.isArray(args.tags) ? args.tags.filter((tag): tag is string => typeof tag === 'string') : []
-        for (const artifact of outcome.artifacts) {
-          try {
-            deps.index.add({
-              digest: artifact.digest,
-              path: artifact.path,
-              bytes: artifact.bytes,
-              mime: artifact.mime,
-              ...(artifact.width === undefined ? {} : { width: artifact.width }),
-              ...(artifact.height === undefined ? {} : { height: artifact.height }),
-              workflowId: loaded.workflowId,
-              workflowHash: loaded.surface.workflowHash,
-              promptId: outcome.promptId,
-              createdAt,
-              tags,
-              status: 'present',
-            })
-          } catch {
-            deps.logger?.warn?.('资产索引登记失败（产物已落盘）')
-          }
-        }
+        // 与异步路径共用 `recordArtifacts` —— 两边各写一份的话，`tags` / `workflowHash`
+        // / `promptId` 迟早漂，而漂移只表现为"某些图按工作流筛不出来"，没有报错。
+        recordArtifacts(outcome, {
+          index: deps.index,
+          workflowId: loaded.workflowId,
+          workflowHash: loaded.surface.workflowHash,
+          ...(tags.length === 0 ? {} : { tags }),
+          ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+        })
 
         // wait 成功：这条必须收敛成终态，否则记录永远停在 queued。
         // watcher 只在"异步 + 有 agent"时才挂，wait 路径完全绕过它。

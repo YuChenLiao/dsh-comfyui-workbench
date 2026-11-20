@@ -45,6 +45,12 @@ export interface SummaryFields {
   checkpoint?: string
   createdAt?: string
   /**
+   * sidecar 里那次运行用的工作流 id。
+   *
+   * 检索要能用它筛：用户记得「这张是那个放大工作流出的」，但不记得 checkpoint。
+   */
+  workflowId?: string
+  /**
    * 那次运行的标识（sidecar 的 `comfy.promptId`）。
    *
    * 列表去重要靠它——同 seed、同提示词跑两次是两张不同的图，不能合并。

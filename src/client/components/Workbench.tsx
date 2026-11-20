@@ -49,6 +49,10 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
     'panel.gallery': true,
     'panel.workflow': true,
     'panel.tags': true,
+    // 与 `componentStateOf` 的键集对齐，纯粹为了可读性 —— 消费处是
+    // `enabled[component] !== false`，键缺失得到 `undefined`，仍然显示。
+    // 真正的硬约束在 `tests/arch.mjs`（TABS 与 componentStateOf 的键集必须一致）。
+    'panel.characters': true,
     'panel.poses': true,
     'panel.costumes': true,
     'panel.terminal': true,

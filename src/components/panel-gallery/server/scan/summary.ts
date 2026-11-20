@@ -54,6 +54,8 @@ export function metaSummary(meta: MetaRecord | undefined): SummaryFields {
     scheduler: text(meta.scheduler),
     checkpoint: text(meta.checkpoint) ?? modelFromWorkflow(meta.workflow),
     createdAt: text(meta.createdAt),
+    // 相册能按工作流名检索时，`q` 的命中断言才有意义（见 service.ts 的 haystack）
+    workflowId: text(meta.workflowId),
     promptId: promptIdOf(meta),
     workflow: meta.workflow !== undefined && meta.workflow !== null,
   }

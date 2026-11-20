@@ -71,6 +71,8 @@ function applyInner(ctx: HostContext, config: unknown): void {
     // 面板开关（progressStream）：每次提交时读，改完下一次就生效，不用重启。
     toggles: { read: readToggles },
     getExporter: () => rt.exportWorkflows,
+    // 面板 /run 的产物由后台 sweep 收，索引登记只能从这里注入
+    ...(rt.index === undefined ? {} : { index: rt.index }),
   })
 
   const table = {
