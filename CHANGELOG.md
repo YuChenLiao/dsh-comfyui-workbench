@@ -1,6 +1,11 @@
 # CHANGELOG
 
-## 未发布
+## 0.8.0 — 2026-11-22
+
+### 文档与知识层同步
+
+- **内嵌 Skill 知识层**：[skill.ts](src/shared/host/skill.ts) 与 [workbench.skill.md](src/shared/host/workbench.skill.md) 同步 0.8.0 新能力（`preset` / `grid`、本机模型盘点与 `loras.json` 触发词、角色库与涂蒙版 `baseImage`/`maskImage` 接 `comfyui_compose`、工作流管理面板拖放导入 UI JSON / PNG、音视频产物与异步 `tags` 写入索引）。
+- **README（中英）**：补充 0.8.0 功能、工作流管理面板说明、开头目录、Mermaid 架构图、Star 趋势图与宣传头图。
 
 ### 工作流管理面板：按底模分组、搜索筛选、卡片减负
 
@@ -41,9 +46,6 @@
 折叠策略；`tests/api.test.mjs` 补预设真入口用例（列表带名字、删预设不动备注与开关）；
 `tests/render.mjs` 补卡片收起态与展开态断言。变异验证：斜杠不归一、兜底不置底、搜索不强制展开
 三项都会让对应用例变红。
-
-
-## 0.8.0 — 2026-11-21
 
 ### 相册：媒体语义收口（0.8.0 前的两处小毛刺）
 
