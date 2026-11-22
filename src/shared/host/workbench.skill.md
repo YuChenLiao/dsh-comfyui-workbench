@@ -5,23 +5,24 @@
 
 | 层 | 在哪 | 规矩 |
 |---|---|---|
-| 模板 | `workflows/` 下的 **API 格式** JSON | 改参数用 vars；要把新值**存回模板**才用 `comfyui_workflow_edit` |
-| 变量 | 模板的输入面 | `comfyui_run` 的 `vars`，键名来自 `inputs` |
-| 产物 | `outputDir` + 同名 `.json` sidecar | 只读，sidecar 是复现凭据 |
-| 素材 | 标签 99372 / 姿势 288 组 / 衣装 1407 套（写实）+ 1320 套（二次元） | 只读，能搜、能取图 |
+| 模板 | `workflows/` 下的 **API 格式** JSON（`.meta.json` 另存启用状态、备注与 `presets`） | 改参数用 vars；要把新值**存回模板**才用 `comfyui_workflow_edit` |
+| 变量 | 模板的输入面 | `comfyui_run` 的 `vars`（可用 `preset` 铺底），键名来自 `inputs` |
+| 产物 | `outputDir`（图片 / 视频 / 音频）+ 同名 `.json` sidecar | 只读，sidecar 是复现凭据；`tags` 在同步与异步路径都会写进 sidecar 与索引 |
+| 素材 | 标签 99372 / 角色 20 个设定板 / 姿势 288 组 / 衣装 1407 套（写实）+ 1320 套（二次元） | 只读，能搜、能取图 |
 
 ## 跑一次图的标准路径
 
-1. `comfyui_workflow` 列清单挑模板 —— 看 `models.primary`（底模）与 `description`（用途）。同名的模板靠这两项区分，别只看 id。
-2. 第一次用某个模板，先 `comfyui_workflow` 加 `workflowId` 看 `inputs`：那就是 `vars` 能用的键名，连同类型、默认值、取值范围。
-3. `comfyui_run { workflow: { id }, vars: {...} }`。
-4. 按返回的产物路径读原图；要改一点重跑用 `comfyui_rerun` —— sidecar 里存着 workflowId / hash / vars / seed，不用手抄。
+1. `comfyui_workflow` 列清单挑模板 —— 看 `models.primary`（底模）、`description`（用途）与可用的 `presets`（预设名）。同名的模板靠前两项区分，别只看 id；需要找"能吃图的工作流"传 `{ inputs: "image" }`。
+2. 需要先确认本机有哪些底模、LoRA、VAE 或触发词时，调 `comfyui_workflow { models: true }`（或传 `'lora'` / `'checkpoint'` 等类别名）；触发词读自 `<插件数据目录>/loras.json`，文件不存在时返回里的 `hint` 会说明格式。
+3. 第一次用某个模板，先 `comfyui_workflow` 加 `workflowId` 看 `inputs`：那就是 `vars` 能用的键名，连同类型、默认值、取值范围。
+4. `comfyui_run { workflow: { id }, preset?, vars: {...}, tags? }`。给了 `preset` 会先把它铺底，显式 `vars` 覆盖同名键；批量扫参直接用 `comfyui_run_batch { workflow: { id }, grid: { cfg: [5, 7], ... } }`，不必手拼长 `runs` 列表。
+5. 按返回的产物路径读原图；要改一点重跑用 `comfyui_rerun` —— sidecar 里存着 workflowId / hash / vars / seed，不用手抄。
 
 ## 三种常见误用
 
 **为了改参数去改写工作流 JSON。** 模板 + 变量就是为此存在的。改文件会让这次运行无法追溯（sidecar 记的是这次提交内容的 hash，跟你手改的文件对不上），也让 `workflows/` 越堆越乱。一次性改动用 vars；要把新值固定下来用 `comfyui_workflow_edit`（见下一节）；只有要增删节点、换连线时才直接碰文件。
 
-**把 UI 格式的 JSON 传给 `workflow.path`。** 带 `nodes` + `links` 的是 ComfyUI 界面工程文件，必须先「Export (API)」重新导出。工作流目录里的模板全是 API 格式，用 `{"id":"..."}` 就能跑，根本不需要 path。`path` 只用于目录之外的临时文件。
+**把 UI 格式的 JSON 传给 `workflow.path`。** 带 `nodes` + `links` 的是 ComfyUI 界面工程文件，`comfyui_run { workflow: { path } }` 只能跑 API 格式。工作流目录里的模板全是 API 格式，用 `{"id":"..."}` 就能跑，根本不需要 path；如果用户手上是 UI 格式 JSON 或带工作流元数据的 PNG 原图并想**存成模板长期用**，可以直接引导用户拖进「工作流管理」面板导入（会自动转成 API 格式），不必先回 ComfyUI 重新导出。
 
 **改产物的 sidecar。** 它记着 workflowId / workflowHash / vars / seed，是"再来一张一模一样的"的唯一凭据；改过之后 `comfyui_rerun` 复现不出来。
 
@@ -32,9 +33,9 @@
 1. `comfyui_workflow` 拿到当前的 `workflowHash`
 2. `comfyui_workflow_edit` 传 `patches`（节点 id + 输入名 + 值）、`persist: true`、`expectHash`
 
-`expectHash` 是并发保护：模板在这期间被别人改过就会拒绝，不会覆盖掉。**这是唯一该写模板的路径** —— 它改的是模板本身，带 hash 校验，也不产生副本。
+`expectHash` 是并发保护：模板在这期间被别人改过就会拒绝，不会覆盖掉。**这是唯一该写模板的路径** —— 它改的是模板本身，带 hash 校验，也不产生副本。注意 `notes` 只管 `title` / `description` / `tags`，不写 `presets`（预设在 `.meta.json` 维护，面板详情区支持查看与删除）。
 
-## 素材三库的用法
+## 素材四库的用法
 
 - **标签库**（99372 条）：`danbooru_lookup` 把中文想法转成 tag。语义分类只覆盖 `general` 那 30693 条的 26.9%（不是 99372 的），查不到时先去掉 `category` 再试。
 - **姿势库**（288 组 / 1439 角度）：`comfyui_pose` 给 `query` 找人，给 `id` 就把线稿落进 uploads → 当 ControlNet / 图生图的输入图。
@@ -93,15 +94,14 @@
 
 要找"能吃图的工作流"：`comfyui_workflow { inputs: "image" }` 会给出 `imageSlots`，告诉你该往哪个键传图。
 
-## 用素材出图
+## 用素材或局部重绘出图
 
-要"这套衣服 + 这个姿势出一张"，不必自己拼五步，用 `comfyui_compose`：
+要"这套衣服 + 这个姿势出一张"、"拿这个角色的三视图当参考"或"拿相册传来的原图 + 蒙版做局部重绘"，不必自己拼五步，用 `comfyui_compose`：
 
-1. 先搜素材：`comfyui_costume` / `comfyui_pose` 给 `query` 拿到 id
-2. `comfyui_compose { costumeId, poseId, tags, prompt }` —— 它把图落进 uploads、按槽位语义填好 vars、拼好提示词。
-   **衣装是二次元版就把 `costumeSource: "anime"` 一起带上** —— 两库编号格式相同（`SPR-xxxx`），
-   不带的话会取到写实版的同号衣服，而且不报错。
-3. 把返回的 `call` 原样交给 `comfyui_run`
+1. 角色/衣装/姿势参考先搜素材拿到 id（`comfyui_character` / `comfyui_costume` / `comfyui_pose`）；若用户在相册涂蒙版后把原图与蒙版路径贴进了对话，直接传 `baseImage` + `maskImage`。
+2. 调 `comfyui_compose { characterId?, characterView?, costumeId?, costumeSource?, poseId?, baseImage?, maskImage?, tags, prompt }` —— 它把素材落进 uploads、按槽位语义填好 vars、拼好提示词。
+   **衣装是二次元版就把 `costumeSource: "anime"` 一起带上** —— 两库编号格式相同（`SPR-xxxx`），不带的话会取到写实版的同号衣服，而且不报错；角色 `characterView` 默认 `turnaround`（三视图）。
+3. 把返回的 `call` 原样交给 `comfyui_run`（需要套预设或打标签时可一起补 `preset` / `tags`）。
 
 它**不出图**，只产出参数。返回里的 `assumptions` 是槽位映射的推断依据：label 有语义就用 label，
 否则看默认文件名（`pose_ref.png` 这种），再不行才按顺序。
@@ -127,7 +127,9 @@ ComfyUI 更新或装了新节点包之后，`comfyui_workflow { audit: true }` �
 ## 什么时候用哪个
 
 - 不知道有哪些模板 → `comfyui_workflow`（不带参数）
-- 知道模板、要改参数 → `comfyui_workflow` 加 `workflowId` 查完直接 `comfyui_run`
+- 查本机装了哪些底模 / LoRA / 触发词 → `comfyui_workflow { models: true }`（或传 `'lora'` 等类别）
+- 知道模板、要改参数或套预设 → `comfyui_workflow` 加 `workflowId` 查完，调 `comfyui_run { workflow, preset?, vars, tags? }`
 - 已有产物、想再来一张或做变体 → `comfyui_rerun`
-- 要批量 → `comfyui_run_batch`（只投一条汇总通知，并按工作流分组提交，避免反复重载底模）
+- 要角色/衣装/姿势参考或涂蒙版局部重绘 → `comfyui_compose` 组装后交给 `comfyui_run`
+- 要批量或参数网格扫参 → `comfyui_run_batch`（传 `runs` 或 `grid`，只投一条汇总通知，并按工作流分组提交，避免反复重载底模）
 - 跑失败了 → 看返回的 `failureKind`，五类各有对应改法；节点是否存在用 `comfyui_node_search` 查

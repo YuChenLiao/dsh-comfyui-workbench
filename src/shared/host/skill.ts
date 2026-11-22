@@ -22,9 +22,9 @@ export const WORKBENCH_SKILL_NAME = 'comfyui-workbench'
  * 要覆盖三类触发场景：驱动出图、用素材拼提示词、排查产物/复现问题。
  */
 export const WORKBENCH_SKILL_DESCRIPTION =
-  '这套 ComfyUI 工作台的使用说明：模板 / 变量 / 产物 / 素材四层怎么分工、跑图的标准路径、'
+  '这套 ComfyUI 工作台的使用说明：模板 / 变量 / 产物 / 素材四层怎么分工、跑图的标准路径（含预设 preset、参数网格 grid、本机模型盘点与 LoRA 触发词）、'
   + '以及三种常见误用（为改参数去改写工作流 JSON、把 UI 格式传给 workflow.path、改产物 sidecar）。'
-  + '要驱动 ComfyUI 出图、用姿势或衣装素材拼提示词、或排查产物与复现问题时加载。'
+  + '要驱动 ComfyUI 出图、用角色设定板/姿势/衣装素材或涂蒙版做局部重绘、盘点本机模型、或排查音视频/图片产物与复现问题时加载。'
 
 /** 宿主 skill 注册面的最小形状（只用到 register）。 */
 interface SkillRegistryLike {
