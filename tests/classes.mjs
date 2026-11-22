@@ -102,3 +102,17 @@ for (const selector of ['.cmf-root', '.csf-root', '.csm-root', '.cpm-root']) {
   )
 }
 console.log(`层级: 弹层 ${zIndexOf('.cmf-root')} / ${zIndexOf('.csf-root')} > 灯箱 ${lightboxZ}`)
+
+/**
+ * 滚动区里的组不能被 flex 压扁。
+ *
+ * `.cwa-list` 是工作流面板唯一的滚动区（`flex:1;min-height:0;overflow:auto`），而它的
+ * 子项默认 `flex-shrink:1` —— 内容一高，flex 先把组压扁，组上的 `overflow:hidden`
+ * 再把压掉的部分裁掉：展开的卡片看起来"被截断"，而且因为没有溢出到滚动区，
+ * 连滚动条都不出现。这条断言就是为这个真事故设的。
+ */
+const workbenchCss = fs.readFileSync(path.join(clientDir, 'styles.css'), 'utf8')
+const workbenchGroupRule = /\.cwa-group\{([^}]*)\}/.exec(workbenchCss)
+assert.ok(workbenchGroupRule !== null, '找不到 .cwa-group 规则')
+assert.match(workbenchGroupRule[1], /flex-shrink:0/, '.cwa-group 必须 flex-shrink:0，否则展开的卡片会被压扁截断且不出滚动条')
+console.log('滚动: .cwa-group 不参与 flex 压缩')

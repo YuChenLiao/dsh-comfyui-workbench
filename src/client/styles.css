@@ -177,7 +177,7 @@
 .cwa-chip{height:26px;padding:0 9px;border-radius:99px;border:1px solid var(--w-line);background:var(--w-bg);color:var(--w-muted);font:inherit;font-size:.78em;cursor:pointer}
 .cwa-chip.on{border-color:var(--w-accent);color:var(--w-accent);background:var(--w-surface)}
 .cwa-toolbar-actions{display:flex;align-items:center;gap:4px;margin-left:auto}
-.cwa-group{border:1px solid var(--w-line);border-radius:12px;background:var(--w-surface);overflow:hidden}
+.cwa-group{border:1px solid var(--w-line);border-radius:12px;background:var(--w-surface);overflow:hidden;flex-shrink:0}
 .cwa-group+.cwa-group{margin-top:8px}
 .cwa-group-head{display:flex;align-items:center;gap:7px;width:100%;padding:8px 11px;border:0;background:transparent;color:var(--w-text);font:inherit;font-size:.86em;text-align:left;cursor:pointer}
 .cwa-group-head:hover{background:var(--w-bg)}
@@ -212,3 +212,14 @@
 .cwa-preset-del{margin-left:auto}
 .cwa-batch-report{display:flex;flex-direction:column;gap:3px}
 .cwa-group-head[disabled]{cursor:default;opacity:.9}
+/*
+ * `.cwa-list` 是唯一的滚动区（flex:1;min-height:0;overflow:auto），但它的子项默认
+ * `flex-shrink:1` —— 内容一高，flex 先把每个组压扁，`.cwa-group` 的 `overflow:hidden`
+ * 再把压掉的部分裁掉：展开的卡片看起来"被截断"，而且因为没有溢出到滚动区，连滚动条都不出现。
+ * 子项一律 `flex-shrink:0`，让高度由内容决定、由 `.cwa-list` 统一滚动。
+ */
+.cwa-group+.cwa-group{margin-top:0}
+.cwa-panel,.cwa-import,.cwa-card{flex-shrink:0}
+.cwa-card-body{min-height:0}
+/* 槽位很多时卡片会很高；给个上限并让它在卡片内滚动，避免一层校验把整屏顶走 */
+.cwa-slots{max-height:260px;overflow:auto;scrollbar-gutter:stable}
