@@ -76,7 +76,7 @@ assert.deepEqual(mod.inject, ['slots'])
 assert.equal(typeof mod.apply, 'function')
 assert.ok(mod.__test, '应当导出 __test 便于自检')
 
-const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage } = mod.__test
+const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow } = mod.__test
 const t = key => key
 
 // ── Card：缩略图 + 四个悬浮动作 ──
@@ -468,4 +468,66 @@ const panel = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
 // SSR 不跑 useEffect，首帧停在"加载中"——这正是修掉"把加载中显示成空"的证明
 assert.match(panel, /loadingWorkflows/, '首帧应当显示加载中而不是空态')
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / TagsPanel）')
+// ── 工作流卡：紧凑态与展开详情 ──
+// 分组视图本身在 lib/client.js 里靠 useEffect 拉数据，SSR 首帧是"加载中"，
+// 所以这里直接渲单张卡 —— 至少钉住"紧凑态不刷大输入框、展开才露出编辑区与槽位"。
+const wfItem = {
+  workflowId: 'text2img-basic',
+  title: '文生图',
+  description: '基础出图',
+  model: 'sd_xl_base_1.0.safetensors',
+  modelKind: 'checkpoint',
+  otherModels: [],
+  inputKinds: ['string', 'number'],
+  inputCount: 4,
+  basicCount: 2,
+  outputs: [{ kind: 'image', count: 1 }],
+  nodes: 12,
+  workflowHash: 'abc',
+  enabled: true,
+  imageSlots: [],
+  presets: ['night'],
+}
+const rowProps = {
+  t,
+  saving: false,
+  audit: null,
+  onToggleOpen() {},
+  onEnabled: async () => {},
+  onSave: async () => {},
+  onRemovePreset: async () => {},
+  onSendToChat: async () => {},
+  onRemove: async () => {},
+}
+
+const rowCollapsed = renderToStaticMarkup(React.createElement(WorkflowRow, { ...rowProps, item: wfItem, open: false, detail: undefined }))
+assert.match(rowCollapsed, /class="cwa-row cwa-card/, '卡片要有自己的类名')
+assert.match(rowCollapsed, /cwa-switch/, '收起态也要有启用开关')
+assert.doesNotMatch(rowCollapsed, /cwa-card-body/, '收起态不该渲染编辑区（一屏全是输入框就是老毛病）')
+assert.match(rowCollapsed, /text2img-basic/, '副标要显示 workflowId')
+
+const rowOpen = renderToStaticMarkup(React.createElement(WorkflowRow, {
+  ...rowProps,
+  item: wfItem,
+  open: true,
+  detail: {
+    workflowId: 'text2img-basic',
+    title: '文生图',
+    description: '基础出图',
+    workflowHash: 'abc',
+    models: [{ name: 'sd_xl_base_1.0.safetensors', kind: 'checkpoint' }],
+    inputs: [
+      { name: 'prompt', label: '提示词', type: 'string', required: true, group: 'basic' },
+      { name: 'steps', label: '步数', type: 'number', required: false, default: 20, group: 'advanced' },
+    ],
+    outputs: [{ nodeId: '7', key: 'images', kind: 'image', count: 1 }],
+    meta: { nodeCount: 12, missingNodes: [], source: 'inferred' },
+  },
+}))
+assert.match(rowOpen, /cwa-card-body/, '展开态要渲染编辑区')
+assert.match(rowOpen, /prompt/, '槽位预览要列出 basic 参数')
+assert.match(rowOpen, /slotsTitle/, '槽位区要有标题（t 是 identity，所以断言的是键）')
+assert.match(rowOpen, /night/, '预设名要显示出来')
+assert.match(rowOpen, /sendToChat/, '要有「送进对话」入口')
+
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / TagsPanel）')

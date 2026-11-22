@@ -11,7 +11,8 @@
  * 打包后整体被 `window.__ModuleLoader__.load` 包住（见 scripts/build.mjs 的 banner），
  * React 由宿主通过 factory 的 require 注入。
  */
-import { WorkflowAdmin } from '../components/panel-workflow/client/WorkflowAdmin.js'
+import { WorkflowAdmin, WorkflowRow } from '../components/panel-workflow/client/WorkflowAdmin.js'
+import { groupWorkflows, groupsToExpandForAudit, isFiltering, matchesFilter, modelGroupOf, resolveExpanded, TAIL_LABEL } from '../components/panel-workflow/client/grouping.js'
 import { TagsPanel } from '../components/panel-tags/client/TagsPanel.js'
 import TAGS_CSS from '../components/panel-tags/client/styles.css'
 import { PosesPanel } from '../components/panel-poses/client/PosesPanel.js'
@@ -158,6 +159,7 @@ export const __test = {
   ConfirmBulkRemove,
   Workbench,
   WorkflowAdmin,
+  WorkflowRow,
   TagsPanel,
   TAGS_CSS,
   PosesPanel,
@@ -177,4 +179,12 @@ export const __test = {
   DICT,
   CSS,
   WORKBENCH_CSS,
+  // 工作流面板的分组/筛选纯函数：React 之外的逻辑，单独用单测钉住
+  groupWorkflows,
+  groupsToExpandForAudit,
+  isFiltering,
+  matchesFilter,
+  modelGroupOf,
+  resolveExpanded,
+  TAIL_LABEL,
 }

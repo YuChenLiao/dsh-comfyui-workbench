@@ -1401,3 +1401,73 @@ test('/file：Range 返回 206 与正确的 Content-Range，整文件请求带 A
     await app.close()
   }
 })
+
+/**
+ * 预设从面板侧可见、可删。
+ *
+ * 预设住在 `<id>.meta.json` 的 `presets`，模型用 `comfyui_run { preset }` 套用。
+ * 面板至少要让用户看得见「这套模板能套哪几组参数」，否则它们等于隐形。
+ */
+test('工作流预设：列表项带出名字，删除预设只动 presets 不动别的 meta 字段', async () => {
+  const dirs = tmpDirs()
+  importWorkflowFile(dirs.workflows, SAMPLE)
+  const metaFile = path.join(dirs.workflows, 'text2img-basic.meta.json')
+  fs.writeFileSync(metaFile, JSON.stringify({
+    enabled: true,
+    description: '已有的备注',
+    presets: {
+      night: { steps: 30, cfg: 5 },
+      quick: { steps: 8 },
+      // 形状不对的预设：与运行侧共用 normalizedPresets，两边都不该认
+      broken: 'not-an-object',
+    },
+  }))
+
+  const app = await boot({ roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows })
+  const base = `${app.origin}/comfyui-workbench/api`
+  try {
+    const list = await (await fetch(`${base}/workflows`)).json()
+    const item = list.workflows.find(row => row.workflowId === 'text2img-basic')
+    assert.ok(item !== undefined)
+    assert.deepEqual(item.presets.sort(), ['night', 'quick'], `列表项要带预设名，实际 ${JSON.stringify(item.presets)}`)
+
+    // 详情也带（面板展开某张卡时用的就是它）
+    const detail = await (await fetch(`${base}/workflows/text2img-basic`)).json()
+    assert.deepEqual(detail.presets.sort(), ['night', 'quick'])
+
+    // 删一个预设
+    const res = await fetch(`${base}/workflows/text2img-basic`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ removePreset: 'night' }),
+    })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.deepEqual(body.presets, ['quick'], `删完只剩 quick，实际 ${JSON.stringify(body.presets)}`)
+
+    // 删**最后一个**：服务端必须无条件回  —— 省略字段的话前端对象展开
+    // 不会删掉旧键，卡片会继续显示已经删掉的预设名。
+    const last = await (await fetch(`${base}/workflows/text2img-basic`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ removePreset: 'quick' }),
+    })).json()
+    assert.deepEqual(last.presets, [], `删完最后一个要给空数组，实际 ${JSON.stringify(last.presets)}`)
+
+    // 删一个不存在的预设：不能回 200 让面板显示"已删除"
+    const ghost = await fetch(`${base}/workflows/text2img-basic`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ removePreset: 'ghost' }),
+    })
+    assert.equal(ghost.status, 404, '删不存在的预设要 404')
+
+    // 落盘检查：别的字段（描述 / enabled）不能被顺手抹掉
+    const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
+    assert.deepEqual(Object.keys(meta.presets), [], '两个预设都删完后 presets 是空对象')
+    assert.equal(meta.description, '已有的备注', '删预设不该影响用途备注')
+    assert.equal(meta.enabled, true, '删预设不该影响可用开关')
+  } finally {
+    await app.close()
+  }
+})

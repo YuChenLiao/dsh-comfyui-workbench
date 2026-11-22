@@ -110,7 +110,7 @@ export function Workbench({ t, visible, embedded, goToConversation, openSidebar 
             {current === 'assets' ? (
               <Gallery t={t} visible={visible} {...(embedded === true ? { embedded } : {})} goToConversation={goToConversation} openSidebar={openSidebar} />
             ) : current === 'workflow' ? (
-              <WorkflowAdmin t={t} visible={visible} />
+              <WorkflowAdmin t={t} visible={visible} goToConversation={goToConversation} />
             ) : current === 'tags' ? (
               <TagsPanel t={t} visible={visible} />
             ) : current === 'characters' ? (

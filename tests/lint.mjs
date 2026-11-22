@@ -25,7 +25,7 @@ for (const match of source.matchAll(pattern)) {
   references.get(callback).add(match[1])
 }
 
-/** 是否在本文件里声明过这个名字（const/let/var、函数声明、解构具名）。 */
+/** 是否在本文件里声明过这个名字（const/let/var、函数声明、解构具名、函数参数解构）。 */
 function isDeclared(name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const patterns = [
@@ -33,6 +33,10 @@ function isDeclared(name) {
     new RegExp(`\\b(?:const|let|var)\\s*\\[[^\\]]*\\b${escaped}\\b[^\\]]*\\]`),
     new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}`),
     new RegExp(`\\bfunction\\s+${escaped}\\b`),
+    // 函数参数解构：`function Row({ onOpen, onClose })` 里 onOpen 是**已声明**的。
+    // 漏掉这一条会把子组件的 props 全报成"未定义"，而它们恰恰是最常见的事件回调来源。
+    new RegExp(`\\bfunction\\s+\\w+\\s*\\(\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}`),
+    new RegExp(`\\(\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}\\s*(?::[^=)]*)?\\)\\s*=>`),
   ]
   return patterns.some(one => one.test(source))
 }

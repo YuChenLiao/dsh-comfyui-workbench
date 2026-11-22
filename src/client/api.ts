@@ -99,8 +99,8 @@ async function postToggles(patch: Record<string, unknown>): Promise<TogglesView>
 /** 改工作流设置（是否可用 / 备注 / 标题），返回服务端确认后的值。 */
 export async function updateWorkflow(
   id: string,
-  body: { enabled?: boolean; description?: string; title?: string },
-): Promise<{ enabled: boolean; description: string; title: string }> {
+  body: { enabled?: boolean; description?: string; title?: string; removePreset?: string },
+): Promise<{ enabled: boolean; description: string; title: string; presets?: string[] }> {
   const res = await fetch(`${API}/workflows/${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -114,7 +114,7 @@ export async function updateWorkflow(
   }
   const bag = data !== null && typeof data === 'object' ? (data as { ok?: unknown; message?: unknown }) : null
   if (bag?.ok !== true) throw new Error(typeof bag?.message === 'string' ? bag.message : `保存失败：HTTP ${res.status}`)
-  return data as { enabled: boolean; description: string; title: string }
+  return data as { enabled: boolean; description: string; title: string; presets: string[] }
 }
 
 /** 标签面板的一行。 */
@@ -418,7 +418,15 @@ export async function freeMemory(): Promise<void> {
 export interface ServiceStats {
   service: unknown
   gpu: Array<{ name: string; vramTotal: number; vramFree: number; vramUsedPct: number }>
-  active: Array<{ promptId?: string; state?: string; workflowId?: string; progress?: { value: number; max: number } }>
+  active: Array<{
+    promptId?: string
+    state?: string
+    workflowId?: string
+    /** 排队位次（`queued` 时才有）。 */
+    queuePosition?: number
+    /** 采样进度（开了 `progressStream` 且是面板提交的运行才有）。 */
+    progress?: { value: number; max: number }
+  }>
 }
 
 /** 取显存与活跃任务。服务离线时 gpu 为空、service 仍然有状态。 */
@@ -441,11 +449,27 @@ export async function fetchServiceStats(): Promise<ServiceStats> {
     : []
   const active = Array.isArray(bag.active)
     ? bag.active.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object')
-      .map(item => ({
-        ...(typeof item.promptId === 'string' ? { promptId: item.promptId } : {}),
-        ...(typeof item.state === 'string' ? { state: item.state } : {}),
-        ...(typeof item.workflowId === 'string' ? { workflowId: item.workflowId } : {}),
-      }))
+      .map(item => {
+        // `progress` 与 `queuePosition` 服务端一直在返回，这里漏掉的话面板就只能显示
+        // "有个任务在跑"，看不到排队位次与百分比 —— 控制条的信息密度全靠它们。
+        const rawProgress = item.progress
+        const progress = rawProgress !== null && typeof rawProgress === 'object'
+          ? (() => {
+              const value = Number((rawProgress as { value?: unknown }).value)
+              const max = Number((rawProgress as { max?: unknown }).max)
+              return Number.isFinite(value) && Number.isFinite(max) && max > 0 ? { value, max } : undefined
+            })()
+          : undefined
+        // 只认数字：`Number(null)` 与 `Number('')` 都是 0，会把"没有位次"显示成排队第 0 位
+        const queuePosition = typeof item.queuePosition === 'number' ? item.queuePosition : Number.NaN
+        return {
+          ...(typeof item.promptId === 'string' ? { promptId: item.promptId } : {}),
+          ...(typeof item.state === 'string' ? { state: item.state } : {}),
+          ...(typeof item.workflowId === 'string' ? { workflowId: item.workflowId } : {}),
+          ...(Number.isFinite(queuePosition) ? { queuePosition } : {}),
+          ...(progress === undefined ? {} : { progress }),
+        }
+      })
     : []
   return { service: bag.service ?? null, gpu, active }
 }

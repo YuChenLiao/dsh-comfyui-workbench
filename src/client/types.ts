@@ -70,6 +70,8 @@ export interface WorkflowListItem {
   workflowHash: string
   /** 是否对模型可用（面板可切换）。 */
   enabled?: boolean
+  /** 可套用的预设名（模板 `.meta.json` 里的 `presets`）。 */
+  presets: string[]
   /** 本机没有的模型（拿不到 object_info 时不出现）。 */
   missingModels?: string[]
   modelHint?: string

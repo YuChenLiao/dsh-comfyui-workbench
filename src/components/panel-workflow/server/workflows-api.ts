@@ -1,5 +1,5 @@
 import { availableModels, missingModels, suggestModels } from '../../../shared/comfy/index.js'
-import { importWorkflowValue, isSafeWorkflowId, listEntries, readEntry, WorkflowExistsError, WorkflowFormatError, writeMeta } from '../../../shared/workflow/index.js'
+import { importWorkflowValue, isSafeWorkflowId, listEntries, normalizedPresets, readEntry, WorkflowExistsError, WorkflowFormatError, writeMeta } from '../../../shared/workflow/index.js'
 import { detectFormat } from '../../../shared/workflow/detect.js'
 import type { WorkflowIOSurface } from '../../../shared/workflow/types.js'
 import { readPngTextChunksFromBuffer } from '../../../shared/media/png-text.js'
@@ -19,8 +19,12 @@ const PNG_BODY_LIMIT = 64 * 1024 * 1024
 export function toPanelItem(
   surface: WorkflowIOSurface,
   available: ReadonlySet<string> | null,
+  meta?: { presets?: unknown },
 ): Record<string, unknown> {
   const primary = surface.models.find(model => model.primary === true) ?? surface.models[0]
+  // 预设名列表：面板据此展示"这套模板能套哪几组常用参数"。
+  // 与运行侧共用 normalizedPresets —— 各写一份会出现"面板列着、点了却说没有"。
+  const presets = Object.keys(normalizedPresets(meta?.presets))
   return {
     workflowId: surface.workflowId,
     title: surface.title,
@@ -40,6 +44,7 @@ export function toPanelItem(
     nodes: surface.meta.nodeCount,
     workflowHash: surface.workflowHash,
     enabled: surface.enabled,
+    presets,
     ...(available === null
       ? {}
       : (() => {
@@ -75,7 +80,7 @@ export async function handleWorkflowList(
   sendJson(res, 200, {
     ok: true,
     count: filtered.length,
-    workflows: filtered.map(entry => toPanelItem(entry.surface, available)),
+    workflows: filtered.map(entry => toPanelItem(entry.surface, available, entry.meta)),
     ...(broken.length > 0 ? { broken } : {}),
     ...(wantInput !== '' && filtered.length === 0
       ? { hint: `本机没有需要 ${wantInput} 输入的工作流。` }
@@ -94,7 +99,8 @@ export function handleWorkflowDetail(dir: string, id: string, res: import('node:
     sendJson(res, 404, { ok: false, error: 'no-workflow', message: `没有这个工作流：${id}` })
     return
   }
-  sendJson(res, 200, { ok: true, surface: entry.surface })
+  const presets = Object.keys(normalizedPresets(entry.meta?.presets))
+  sendJson(res, 200, { ok: true, surface: entry.surface, presets })
 }
 
 /** `/workflows` 的后缀是否是"取单份"（`/workflows/{id}`）。 */
@@ -141,11 +147,30 @@ export async function handleWorkflowUpdate(
   }
   const bag = body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : {}
 
+  /**
+   * 删预设：`presets` 与备注同住 `.meta.json`。
+   *
+   * 只做删除、不做新增是刻意的：新增预设需要"一组完整的参数值"，面板上没有那种表单，
+   * 硬做一个只会逼用户手填 JSON。真要加预设，模型用 `comfyui_workflow_edit` 或手改文件更直接。
+   */
+  const removePreset = typeof bag.removePreset === 'string' ? bag.removePreset.trim() : ''
+  let presetsAfterDelete: Record<string, Record<string, unknown>> | undefined
+  if (removePreset !== '') {
+    presetsAfterDelete = normalizedPresets(entry.meta?.presets)
+    // 删一个不存在的预设要报错：回 200 会让面板显示"已删除"，而文件根本没变
+    if (Object.hasOwn(presetsAfterDelete, removePreset) === false) {
+      sendJson(res, 404, { ok: false, error: 'no-preset', message: `没有这个预设：${removePreset}` })
+      return
+    }
+    delete presetsAfterDelete[removePreset]
+  }
+
   const next = {
     ...(entry.meta ?? {}),
     ...(typeof bag.title === 'string' ? { title: bag.title.trim() } : {}),
     ...(typeof bag.description === 'string' ? { description: bag.description.trim() } : {}),
     ...(typeof bag.enabled === 'boolean' ? { enabled: bag.enabled } : {}),
+    ...(presetsAfterDelete === undefined ? {} : { presets: presetsAfterDelete }),
     updatedAt: new Date().toISOString(),
     updatedBy: 'user' as const,
   }
@@ -158,6 +183,9 @@ export async function handleWorkflowUpdate(
     enabled: updated?.surface.enabled ?? true,
     title: updated?.surface.title ?? '',
     description: updated?.surface.description ?? '',
+    // **无条件**给数组（空就是 `[]`）：前端用对象展开合并，缺键的话删掉最后一个预设后
+    // 旧数组会原样留在 state 里，卡片继续显示已经删掉的名字。
+    presets: Object.keys(normalizedPresets(updated?.meta?.presets)),
   })
 }
 
