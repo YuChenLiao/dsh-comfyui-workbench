@@ -13,7 +13,7 @@ There are seven user-facing panels — Assets, Workflows, Tags, Characters, Pose
 ## Contents
 
 - **Getting started**: [Eleven components](#eleven-components) · [Install](#install) · [Configuration](#configuration) · [Model tools](#model-tools)
-- **Features & panels**: [Danbooru tag library](#danbooru-tag-library) · [Assets and media browsing](#assets-and-media-browsing) · [Hiding NSFW](#hiding-nsfw) · [Tag library panel](#tag-library-panel) · [Character library](#character-library) · [Pose library](#pose-library) · [Costume library](#costume-library) · [Terminal panel](#terminal-panel) · [Artifacts and notifications](#artifacts-and-notifications)
+- **Features & panels**: [Danbooru tag library](#danbooru-tag-library) · [Assets and media browsing](#assets-and-media-browsing) · [Hiding NSFW](#hiding-nsfw) · [Workflow admin panel](#workflow-admin-panel) · [Tag library panel](#tag-library-panel) · [Character library](#character-library) · [Pose library](#pose-library) · [Costume library](#costume-library) · [Terminal panel](#terminal-panel) · [Artifacts and notifications](#artifacts-and-notifications)
 - **Architecture & dev**: [Architecture & design](#architecture--design) · [Layout](#layout) · [Development](#development) · [Compatibility](#compatibility) · [Docs](#docs)
 - **More**: [Data sources and credits](#data-sources-and-credits) · [Star History](#star-history) · [License](#license)
 
@@ -25,7 +25,7 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | --- | --- | --- |
 | `comfyui-workbench:core` | server | Initializes the shared runtime (ComfyUI client / process supervision / asset index / output dir) and hosts the browser bundle. **Its `name` must be the package root** — the host only assembles `exports["./client"]` for root specifiers |
 | `comfyui-workbench:gallery` | panel | Assets: listing, structured filters (workflow / checkpoint / aspect), thumbnails, video/audio playback, A/B compare, mask brush, send-to-workflow, soft-delete trash, bulk workflow ZIP export |
-| `comfyui-workbench:workflow` | panel | Workflow admin: listing, the `enabled` toggle, purpose notes, node/model audit, deletion, UI/PNG import, service status strip (VRAM / queue / stop), plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
+| `comfyui-workbench:workflow` | panel | Workflow admin: collapsible base-model groups, search & five-filter pills, expandable detail (IO slots / model substitutes / preset view & delete / send-to-chat), controlled title & note editing, `enabled` toggle, library audit, panel-wide multi-file drag-and-drop import (API / UI / PNG), single-line service strip & active queue drawer, plus `/run`, `/rerun`, `/config` and the service-supervision endpoints |
 | `comfyui-workbench:tags` | panel | Tag library: search four tag categories, filter by semantic category, copy a tag. Browsing is read-only; the "update tags" button refreshes the data from upstream |
 | `comfyui-workbench:poses` | panel + tools | Pose library: 288 poses / 1,439 angles of human reference sketches — search, filter by system and category, save a sketch into uploads as a workflow image input; also registers one `comfyui_pose` tool (give `query` to search, `id` to fetch) |
 | `comfyui-workbench:costumes` | panel + tools | Costume library: **the panel switches between the real-style and anime-style sets** (1,407 photo-style + 1,320 anime-style outfits, no people in frame); on the tool side pass `comfyui_costume { source: "anime" }` to pick the anime set — search and filter by category, **every entry carries English keywords**, save an image into uploads as a style reference; also registers one `comfyui_costume` tool (give `query` to search, `id` to fetch) |
@@ -222,6 +222,15 @@ The judgment is a **heuristic word list**, not a classifier. It scans the file n
 **Negative prompts are not considered.** The officially recommended negatives for Danbooru-family checkpoints (AnimagineXL, Pony) literally contain `nsfw` — judging on that would hide every image from a whole workflow setup, even when the user is in fact excluding adult content.
 
 Filtering happens at render time only: the data stays in memory, so toggling back is instant with no refetch. With the filter on, "select all" selects only what you can see — otherwise one delete would take the hidden items with it.
+
+## Workflow admin panel
+
+The second tab: manages which workflows are exposed to the model and whether the ComfyUI service is healthy — without duplicating ComfyUI's own generation UI.
+
+- **Collapsible base-model groups**: only `checkpoint` and `diffusion` checkpoints form their own groups (`\` and `/` normalized); upscalers, VAEs and model-free utility workflows sit at the bottom under "Post-processing / Utilities". Group headers show enabled counts and missing-model alerts; **all groups start collapsed by default** with saved expansion state, and auto-expand on search, filter, new import, or audit hits.
+- **Single-line status strip + Run settings**: shows a live service indicator (online / starting / failed), VRAM usage, and a clickable `Running N` badge that opens the active queue drawer (queue position and progress percentage); interrupt, free VRAM, confirmed stop-service, and library audit live on the same row, while `progressStream` and `runWait` tuck into a collapsible "Run settings" section.
+- **Expandable card details & quick actions**: collapsed cards take two compact lines; expanding fetches `GET /workflows/{id}` for controlled title/note editing (with dirty indicator), `basic`/`advanced` IO slots, local model substitutes (`modelHint`), viewing/deleting `presets`, one-click "Send to chat" draft insertion, and inline two-step delete confirmation.
+- **Panel-wide multi-file drag & drop**: drop `.json` (API or UI format) or metadata-bearing `.png` images anywhere on the panel without opening the import box first; multi-file drops report per-file results.
 
 ## Tag library panel
 
@@ -448,7 +457,7 @@ node scripts/compat.mjs   # workflow compatibility scan: missing nodes / missing
 
 `node scripts/smoke-workflows.mjs` runs each workflow for real (parameters squeezed to 512 on the long edge, 1 step) to verify only that it submits, generates and retrieves.
 
-Importing a workflow: the import button at the top right of the panel accepts **API-format JSON**, **ComfyUI UI-format workflow JSON** (automatically converted, preferring `/object_info` when online), and **drag-and-dropped PNG images** with embedded `prompt` / `workflow` metadata. For batch CLI imports, `node scripts/import.mjs <workflow.json>` (`--list` shows what's there) also accepts both API and UI JSON formats.
+Importing a workflow: click "Import" at the top right of the Workflow Admin panel or drag files directly anywhere onto the panel (multi-file drop supported) — it accepts **API-format JSON**, **ComfyUI UI-format workflow JSON** (automatically converted, preferring `/object_info` when online), and **PNG images** with embedded `prompt` / `workflow` metadata. For batch CLI imports, `node scripts/import.mjs <workflow.json>` (`--list` shows what's there) also accepts both API and UI JSON formats.
 
 ## Compatibility
 
