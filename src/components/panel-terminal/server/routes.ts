@@ -16,6 +16,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { TerminalBuffer } from '../../../shared/comfy/output-buffer.js'
+import { queueBusy } from '../../../shared/comfy/supervisor.js'
 import type { ServiceStatus } from '../../../shared/comfy/supervisor.js'
 import { sendJson } from '../../../shared/http/respond.js'
 
@@ -41,6 +42,32 @@ export interface TerminalRouteDeps {
    * 那正是用户想避免的被动等待。所以给一条独立的启动路径。
    */
   start: () => void
+  /**
+   * 探测队列忙不忙（面板据此决定「关机」要不要二次确认）。
+   *
+   * 默认走 `queueBusy()`；可替换是为了能测那条选择分支本身 ——
+   * 真去 fetch 一个不存在的端口只会让测试慢 2 秒，还测不出「什么时候才该问」。
+   */
+  queueBusyOf?: ((baseUrl: string) => Promise<boolean>) | undefined
+}
+
+/**
+ * 这一轮要不要去问队列，问了就算忙不忙。
+ *
+ * 只在 `ready && managed` 时问：
+ * - 其余状态问不出意义 —— 没起来、启动中、启动失败都不该有「关机」按钮；
+ * - **外部实例的队列不归我们管**，而 `stop()` 本来也不会碰它；
+ * - `/terminal` 是 1 秒轮询，`queueBusy` 自带 2 秒超时。无条件去问，
+ *   在服务半死（端口不响应）时会把轮询拖成 3 秒一次，面板看起来就是卡住了。
+ */
+async function probeBusy(status: ServiceStatus, ask: (baseUrl: string) => Promise<boolean>): Promise<boolean> {
+  if (status.state !== 'ready' || status.managed !== true) return false
+  try {
+    return await ask(status.baseUrl)
+  } catch {
+    // 探不通当不忙：与 queueBusy 自身的语义一致，且不能因为队列接口出问题就整轮 500
+    return false
+  }
 }
 
 /**
@@ -51,8 +78,9 @@ export interface TerminalRouteDeps {
  * - `POST /terminal?action=start`：拉起服务（不等就绪，进度由轮询的 status 反映）
  */
 export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Route> {
+  const askQueue = deps.queueBusyOf ?? queueBusy
   return {
-    '/terminal': (url, res, req) => {
+    '/terminal': async (url, res, req) => {
       // 这条路径在 router 里走 selfManaged（GET 读、POST 写），方法校验不经过通用层，
       // 所以这里自己挡：PUT/DELETE 之类不该落到"当 GET 处理"上。
       const method = req.method ?? 'GET'
@@ -75,6 +103,7 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Ro
       const since = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
       const slice = deps.buffer.since(since)
       const truncated = slice.lines.length > MAX_PAGE
+      const status = deps.status()
       sendJson(res, 200, {
         ok: true,
         lines: truncated ? slice.lines.slice(-MAX_PAGE) : slice.lines,
@@ -83,7 +112,7 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Ro
         truncated,
         // 缓冲实例代号：变了说明插件热重载过，前端的 cursor 与屏上内容都不再可信。
         epoch: slice.epoch,
-        status: deps.status(),
+        status: { ...status, busy: await probeBusy(status, askQueue) },
       })
     },
   }

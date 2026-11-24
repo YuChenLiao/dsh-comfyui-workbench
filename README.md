@@ -34,7 +34,7 @@
 | `comfyui-workbench:edit` | 工具 | `comfyui_workflow_edit` |
 | `comfyui-workbench:sync-wait` | 工具（能力开关） | 决定三个出图工具是否暴露 `wait` 参数；关掉后一律异步、面板上「同步等结果」开关一并隐藏。本身不注册工具或路由，**只能通过 `disabledComponents` 关**（见下） |
 | `comfyui-workbench:danbooru` | 工具 | `danbooru_lookup`、`danbooru_sync`：角色 / 画师 / 作品 / 通用标签库（含中文名，四类共 99372 条）。不碰 ComfyUI 运行时，可单独关 |
-| `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务 |
+| `comfyui-workbench:terminal` | 面板 | ComfyUI 终端：展示子进程输出或 `user/comfyui.log`，可在面板上直接拉起服务，就绪后也能关机 |
 
 关掉某一条只影响它自己：例如关掉 `gallery`，资产库路由随之 404，工作流管理与工具照常（两个例外：批量导出工作流 ZIP 要读图与 sidecar，依赖相册；关掉 `core` 等于关掉整个插件——HTTP API 与浏览器端都会消失）。
 
@@ -285,6 +285,7 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 
 - **外部启动的实例也能看**：插件拉起的进程直接接 stdout / stderr；外部实例（Desktop 自己起的那些）拿不到 stdout，改读它写的 `user/comfyui.log`。两条路只走一条 —— ComfyUI 的 logger 同时挂 Stream 与 File 两个 handler，两边都读是每行两份。
 - 服务没在跑时，面板上有「启动」按钮，直接拉起，不用先回对话生成一张图。
+- 服务就绪后，「启动」变成「关机」，点一下真的停掉进程、释放显存。**队列里还有任务时会先确认**（停止是硬杀，不等队列）；外部实例的按钮灰着 —— 那不是插件拉起的进程，无权停。
 - 1 秒轮询拉增量（带 cursor，不重复下载整屏）；自动跟随底部，但你往上翻时不会被拽回来。
 - 支持暂停、按关键字过滤、清屏。缓冲保留最近 2000 行，更早的会滚出并提示。
 - ANSI 转义（颜色、进度条的 `\r` 刷新）在入库前剥掉，否则是一屏乱码。

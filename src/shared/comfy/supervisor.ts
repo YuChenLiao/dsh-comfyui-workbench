@@ -47,6 +47,14 @@ export interface ServiceStatus {
   installDir?: string
   /** 最近一次探测/拉起的说明。 */
   detail?: string
+  /**
+   * 队列里还有没有活（正在跑或排队中）。
+   *
+   * 面板的「关机」按钮据此决定要不要二次确认：`stop()` 是硬杀，不等队列 ——
+   * 忙的时候点下去会直接丢掉正在跑的任务。省略/未探测时按「不忙」处理，
+   * 与 `queueBusy()` 的语义一致：拿不到就当作没活。
+   */
+  busy?: boolean
 }
 
 /** 一次轻量探测的结果。 */

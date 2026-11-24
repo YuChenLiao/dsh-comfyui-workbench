@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { stopService } from '../../../client/api.js'
 import type { Translate } from '../../../client/i18n.js'
+import { planStopButton, runStop } from './terminal-stop.js'
 import TERMINAL_CSS from './styles.css'
 
 /** 一条终端输出（与后端 TerminalLine 对应）。 */
@@ -18,6 +20,8 @@ interface Status {
   detail?: string
   baseUrl: string
   pid?: number
+  /** 队列里还有没有活（面板据此决定「关机」要不要二次确认）。 */
+  busy?: boolean
 }
 
 interface Payload {
@@ -75,10 +79,13 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
       if (!res.ok) return
       const data = (await res.json()) as Payload
       if (!data.ok) return
+      // busy 也要参与比较：漏了它，队列从空到忙时对象被判成"没变"、状态不更新，
+      // 于是忙时点关机不弹确认 —— 而那条确认正是唯一挡住丢任务的东西。
       setStatus(prev => (prev !== undefined && prev.state === data.status.state
         && prev.managed === data.status.managed
         && prev.pid === data.status.pid
         && prev.detail === data.status.detail
+        && prev.busy === data.status.busy
         ? prev
         : data.status))
       setDropped(data.dropped)
@@ -151,6 +158,26 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
     void pull()
   }
 
+  /**
+   * 停掉插件拉起的进程。
+   *
+   * 先确认、再停、停完立刻刷新的三步在 `runStop` 里（那里能打表验 —— 组件本体的
+   * 这两条错法用 React 测不出来），这里只把真实依赖接进去。
+   */
+  const stop = async (): Promise<void> => {
+    await runStop({
+      status,
+      message: t('termStopConfirm'),
+      confirm: question => window.confirm(question),
+      // 走 api.ts 而不是裸 fetch：`stopService()` 会看 `ok`/`stopped`，
+      // 后端回 "没有本插件拉起的进程" 时能拿到 message，不至于静默成功。
+      stop: () => stopService(),
+      // 立刻拉一次：supervisor.stop() 会把 state 落回 unknown，按钮随即变回「启动」。
+      // 不主动拉的话要等下一轮 1 秒轮询，点完这一秒里按钮还是「关机」，像没反应。
+      pull: () => { void pull() },
+    })
+  }
+
   const shown = filter.trim() === ''
     ? lines
     : lines.filter(line => line.text.toLowerCase().includes(filter.trim().toLowerCase()))
@@ -175,6 +202,7 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
             : ''
   /** 能拉起的情况：没在跑，且不是外部实例（外部实例不该被我们插手）。 */
   const canStart = status !== undefined && !managed && state !== 'external' && state !== 'starting'
+  const stopPlan = planStopButton(status)
 
   return (
     <div className="cwt-root">
@@ -202,6 +230,21 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
             className="cwt-btn cwt-btn-primary"
             onClick={() => { void start() }}
           >{t('termStart')}</button>
+        ) : null}
+        {stopPlan.kind === 'stop' ? (
+          <button
+            type="button"
+            className="cwt-btn cwt-btn-danger"
+            onClick={() => { void stop() }}
+          >{t('termStop')}</button>
+        ) : null}
+        {/* 外部实例：按钮在但点不动 —— 直接不渲染会让人以为这面板没有关机功能。
+            title 必须挂在外层 span 上：**禁用的按钮不收指针事件**，Chrome/Firefox 都不会
+            在 disabled 的 <button> 上弹原生提示，挂里面等于没有。 */}
+        {stopPlan.kind === 'external' ? (
+          <span className="cwt-tip" title={t(stopPlan.tip)}>
+            <button type="button" className="cwt-btn" disabled>{t('termStop')}</button>
+          </span>
         ) : null}
         <button type="button" className="cwt-btn" onClick={() => { void clear() }}>{t('termClear')}</button>
       </div>

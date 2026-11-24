@@ -34,7 +34,7 @@ Each is mounted in the profile's `cordis.patch.yml` as its own loader entry — 
 | `comfyui-workbench:edit` | tools | `comfyui_workflow_edit` |
 | `comfyui-workbench:sync-wait` | tools (capability switch) | Decides whether the three generation tools expose a `wait` argument; when off they always run async and the panel's "wait for the result" switch disappears. Registers no tools or routes — **it can only be turned off via `disabledComponents`** (see below) |
 | `comfyui-workbench:danbooru` | tools | `danbooru_lookup`, `danbooru_sync`: character / artist / copyright / general tag library with Chinese names (99,372 tags). Does not touch the ComfyUI runtime, so it can be disabled on its own |
-| `comfyui-workbench:terminal` | panel | ComfyUI terminal: shows child-process output or `user/comfyui.log` and can start the service from the panel |
+| `comfyui-workbench:terminal` | panel | ComfyUI terminal: shows child-process output or `user/comfyui.log`, can start the service from the panel and stop it once ready |
 
 Disabling one affects only that one. Turn off `gallery`, for example and its routes 404 while workflow admin and the tools keep working. Two exceptions: bulk workflow ZIP export needs images and sidecars, so it depends on the gallery; and disabling `core` disables the whole plugin — the HTTP API and browser bundle both disappear.
 
@@ -281,6 +281,7 @@ The seventh panel (after Assets, Workflows, Tags, Characters, Poses and Costumes
 
 - **Externally started instances work too**: a process the plugin launched has its stdout/stderr piped in; an external instance (one Desktop started itself) has no accessible stdout, so the panel reads the `user/comfyui.log` it writes. Only one path is active at a time — ComfyUI's logger attaches both a Stream handler and a File handler, so reading both would duplicate every line.
 - When the service isn't running the panel offers a Start button, launching it directly instead of making you go generate an image first.
+- Once the service is ready, Start turns into **Stop**, which genuinely stops the process and frees VRAM. If jobs are still queued you are asked first (stopping is a hard kill and does not drain the queue); for an external instance the button is greyed out — that process was not launched by the plugin, so it has no right to stop it.
 - Polls for increments once a second (with a cursor, so the full screen is not re-downloaded); auto-follows the tail but never yanks you back if you scroll up.
 - Pause, keyword filter and clear are available. The buffer keeps the last 2,000 lines and tells you when earlier output rolled off.
 - ANSI escapes (color, progress-bar `\r` redraws) are stripped before storage — otherwise the panel is a wall of garbage.

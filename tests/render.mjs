@@ -530,4 +530,102 @@ assert.match(rowOpen, /slotsTitle/, '槽位区要有标题（t 是 identity，�
 assert.match(rowOpen, /night/, '预设名要显示出来')
 assert.match(rowOpen, /sendToChat/, '要有「送进对话」入口')
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / TagsPanel）')
+// ── 终端面板：关机按钮的判定表 + 静态结构 ──
+// 判定为什么抽成纯函数、为什么在这里打表而不是挂真 React 渲染：见 terminal-stop.ts 顶部。
+{
+  const { Terminal, planStopButton, needsStopConfirm, runStop } = mod.__test
+  assert.ok(Terminal !== undefined, '应当导出 Terminal')
+  assert.equal(typeof planStopButton, 'function', '应当导出 planStopButton')
+  assert.equal(typeof needsStopConfirm, 'function', '应当导出 needsStopConfirm')
+
+  const st = over => ({ state: 'ready', managed: true, baseUrl: 'http://127.0.0.1:8188', ...over })
+
+  // 就绪且插件拉起：出现可点的「关机」
+  assert.deepEqual(planStopButton(st()), { kind: 'stop' }, '就绪且托管时应当是「关机」')
+
+  // 启动中：什么都不给。拉起是异步的，这期间停会和 start() 抢同一个 child
+  assert.deepEqual(planStopButton(st({ state: 'starting' })), { kind: 'none' }, 'starting 不给停止')
+
+  // 外部实例：按钮在但点不动 + 说明。直接不渲染会让人以为没这功能
+  const externalPlan = planStopButton(st({ state: 'external', managed: false }))
+  assert.deepEqual(externalPlan, { kind: 'external', tip: 'termStopExternal' }, '外部实例要灰着并给说明')
+
+  // ready 但不是我们起的：也按外部实例处理，绝不给可点的关机
+  assert.equal(planStopButton(st({ managed: false })).kind, 'external', 'ready && !managed 不能给可点按钮')
+
+  // 没在跑 / 启动失败且进程已退出：这两个状态该给的是「启动」，不该有关机
+  for (const state of ['unknown', 'failed']) {
+    assert.deepEqual(planStopButton(st({ state, managed: false })), { kind: 'none' }, `${state} 不该有关机按钮`)
+  }
+
+  // failed 但进程还活着：**必须**给停止。
+  // `start()` 就绪超时后直接置 failed 而不 kill 子进程，此时 canStart 因 !managed 为假、
+  // 若这里再不给停止，面板就一个按钮都没有，而进程还占着端口 —— 正是要消灭的那种情形。
+  assert.deepEqual(
+    planStopButton(st({ state: 'failed', managed: true, pid: 37196 })),
+    { kind: 'stop' },
+    'failed && managed 必须给停止（进程可能还活着）',
+  )
+
+  // starting 仍然不给：唯一会与 start() 抢同一 child 的状态
+  assert.deepEqual(planStopButton(st({ state: 'starting', managed: true })), { kind: 'none' }, 'starting 不给停止')
+
+  // 首帧：status 还没有，先别猜（猜哪个都是闪一个错按钮）
+  assert.deepEqual(planStopButton(undefined), { kind: 'none' }, 'status 未知时不渲染')
+
+  // 队列忙才确认；busy 缺失按不忙处理，与 queueBusy 语义一致
+  assert.equal(needsStopConfirm(st({ busy: true })), true, '忙时要点一次确认')
+  assert.equal(needsStopConfirm(st({ busy: false })), false, '空闲直接停')
+  assert.equal(needsStopConfirm(st()), false, 'busy 缺失当不忙')
+  assert.equal(needsStopConfirm(undefined), false, '没有 status 时别拦')
+
+  // SSR 结构：首帧（status 还没拉到）不该出现任何启停按钮
+  const termHtml = renderToStaticMarkup(React.createElement(Terminal, { t, visible: true }))
+  assert.match(termHtml, /cwt-root/, '终端面板要渲染出来')
+  assert.doesNotMatch(termHtml, />termStop</, '首帧还没有 status，不该猜出关机按钮')
+  assert.doesNotMatch(termHtml, />termStart</, '首帧同样不该出现启动按钮（status 未知）')
+}
+
+// ── runStop：点下去之后的完整动作 ──
+// 在 Terminal 本体里验不了（React 组件 + 仓库无 DOM 测试库），所以把"先确认、再停、
+// 停完立刻刷新"抽成 runStop 打表。这两条错法都只靠读代码发现不了：
+// 确认写在 stop 之后 / 忘了 return → "取消"其实已经停了；停完不 pull → 像没反应。
+{
+  const { runStop } = mod.__test
+
+  const harness = (statusIn, confirmAnswer) => {
+    const log = []
+    const flow = {
+      status: statusIn,
+      message: 'termStopConfirm',
+      confirm: question => { log.push(`confirm:${question}`); return confirmAnswer },
+      stop: async () => { log.push('stop') },
+      pull: () => { log.push('pull') },
+    }
+    return { log, flow }
+  }
+  const st = over => ({ state: 'ready', managed: true, busy: false, baseUrl: '', ...over })
+
+  // 忙 + 用户确认：问一次 → 停 → 立刻刷新
+  const busyYes = harness(st({ busy: true }), true)
+  await runStop(busyYes.flow)
+  assert.deepEqual(busyYes.log, ['confirm:termStopConfirm', 'stop', 'pull'], '忙且确认：确认 → 停 → 刷新')
+
+  // 忙 + 用户取消：**一个动作都不能有**（尤其不能停）
+  const busyNo = harness(st({ busy: true }), false)
+  await runStop(busyNo.flow)
+  assert.deepEqual(busyNo.log, ['confirm:termStopConfirm'], '取消之后不能停，也不该 pull')
+
+  // 空闲：不弹确认，直接停
+  const idle = harness(st({ busy: false }), true)
+  await runStop(idle.flow)
+  assert.deepEqual(idle.log, ['stop', 'pull'], '空闲不确认，直接停')
+
+  // 停的时候抛错：吞掉，但仍要 pull（原因靠 status.detail 反映）
+  const errFlow = harness(st({ busy: false }), true)
+  errFlow.flow.stop = async () => { errFlow.log.push('stop'); throw new Error('boom') }
+  await runStop(errFlow.flow)
+  assert.deepEqual(errFlow.log, ['stop', 'pull'], 'stop 抛错也要继续 pull')
+}
+
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / TagsPanel / Terminal 关机按钮与 runStop）')

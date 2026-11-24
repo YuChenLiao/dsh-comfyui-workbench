@@ -107,28 +107,95 @@ test('HTTP 面：清屏与启动都要能走通（走真实路由表）', async 
   const route = routes['/terminal']
   assert.equal(typeof route, 'function')
 
-  const call = (url, method) => {
+  // GET 分支要问一次队列（ready && managed 才问），所以 handler 是 async 的：
+  // 这里必须 await，否则读到的还是 undefined —— 真机由 router 的 `await route(...)` 兜住。
+  const call = async (url, method) => {
     let payload
     const req = { method }
     const res = {
       writeHead: () => {},
       end: (body) => { payload = JSON.parse(body) },
     }
-    route(new URL(url, 'http://x'), res, req)
+    await route(new URL(url, 'http://x'), res, req)
     return payload
   }
 
-  const first = call('http://x/terminal?since=0', 'GET')
+  const first = await call('http://x/terminal?since=0', 'GET')
   assert.equal(first.lines.length, 1)
   assert.equal(first.cursor, 1)
 
-  const cleared = call('http://x/terminal', 'POST')
+  const cleared = await call('http://x/terminal', 'POST')
   assert.equal(cleared.ok, true, 'POST /terminal 应当是清屏')
   assert.equal(buf.size(), 0)
 
-  const started2 = call('http://x/terminal?action=start', 'POST')
+  const started2 = await call('http://x/terminal?action=start', 'POST')
   assert.equal(started2.started, true)
   assert.equal(started, 1, '启动动作要被调到')
+})
+
+test('status.busy：只有插件拉起且已就绪才问队列，其余一律 false', async () => {
+  // 「关机」按钮不能无条件停：child.kill() 是硬杀，队列里正在跑的任务会丢。
+  // 所以面板需要知道队列忙不忙 —— 但 busy 只在 ready && managed 时有意义：
+  // 没起来/启动中问队列毫无意义，外部实例的队列也不归我们管。
+  const { createTerminalRoutes, TerminalBuffer: Buf } = await import('../lib/index.js')
+  const buf = new Buf(10)
+
+  /** 记录被问了几次队列，并给出可控答案。 */
+  const makeRoutes = (status, answer) => {
+    let asked = 0
+    const routes = createTerminalRoutes({
+      buffer: buf,
+      status: () => status,
+      start: () => {},
+      queueBusyOf: async () => {
+        asked += 1
+        return answer
+      },
+    })
+    return { routes, asked: () => asked }
+  }
+
+  const call = async (route, url) => {
+    let payload
+    const res = { writeHead: () => {}, end: body => { payload = JSON.parse(body) } }
+    await route(new URL(url, 'http://x'), res, { method: 'GET' })
+    return payload
+  }
+
+  // 就绪 + 插件拉起：要问，且答案要透传到 status 上
+  const ready = makeRoutes({ state: 'ready', managed: true, baseUrl: 'http://127.0.0.1:8188' }, true)
+  const busyPayload = await call(ready.routes['/terminal'], 'http://x/terminal?since=0')
+  assert.equal(busyPayload.status.busy, true, 'ready && managed 时 busy 要如实透传')
+  assert.equal(ready.asked(), 1, '这种情况必须真的问一次队列')
+
+  // 就绪但不是我们起的：不该问，且是 false（外部实例的队列不归我们管）
+  const external = makeRoutes({ state: 'ready', managed: false, baseUrl: 'http://127.0.0.1:8188' }, true)
+  const externalPayload = await call(external.routes['/terminal'], 'http://x/terminal?since=0')
+  assert.equal(externalPayload.status.busy, false, '外部实例不该被当成忙')
+  assert.equal(external.asked(), 0, '外部实例不该去问队列')
+
+  // 启动中：不问（starting 不给停，busy 也就没用）
+  const starting = makeRoutes({ state: 'starting', managed: true, baseUrl: 'http://127.0.0.1:8188' }, true)
+  const startingPayload = await call(starting.routes['/terminal'], 'http://x/terminal?since=0')
+  assert.equal(startingPayload.status.busy, false)
+  assert.equal(starting.asked(), 0, 'starting 时不该问队列（否则 2 秒超时拖慢 1 秒轮询）')
+
+  // 没在跑：不问
+  const unknown = makeRoutes({ state: 'unknown', managed: false, baseUrl: 'http://127.0.0.1:8188' }, true)
+  const unknownPayload = await call(unknown.routes['/terminal'], 'http://x/terminal?since=0')
+  assert.equal(unknownPayload.status.busy, false)
+  assert.equal(unknown.asked(), 0)
+
+  // 队列探不通（抛错）不能让整轮失效：status 照给，busy 当不忙
+  const failing = createTerminalRoutes({
+    buffer: buf,
+    status: () => ({ state: 'ready', managed: true, baseUrl: 'http://127.0.0.1:8188' }),
+    start: () => {},
+    queueBusyOf: async () => { throw new Error('unreachable') },
+  })
+  const failedPayload = await call(failing['/terminal'], 'http://x/terminal?since=0')
+  assert.equal(failedPayload.ok, true, '队列探不通也要正常回 status')
+  assert.equal(failedPayload.status.busy, false, '拿不到就当不忙（与 queueBusy 的语义一致）')
 })
 
 test('tqdm 多帧：一个 chunk 里多个回车只留最后一帧', () => {

@@ -24,6 +24,8 @@ import { ConfirmBulkRemove, ConfirmRemove } from '../components/panel-gallery/cl
 import { Gallery } from '../components/panel-gallery/client/Gallery.js'
 import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import CSS from '../components/panel-gallery/client/styles.css'
+import { Terminal } from '../components/panel-terminal/client/Terminal.js'
+import { needsStopConfirm, planStopButton, runStop } from '../components/panel-terminal/client/terminal-stop.js'
 import { Workbench } from './components/Workbench.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
 import { shouldAutoFill, shouldLoadMore } from './scroll.js'
@@ -166,6 +168,10 @@ export const __test = {
   POSES_CSS,
   CostumesPanel,
   COSTUMES_CSS,
+  Terminal,
+  planStopButton,
+  needsStopConfirm,
+  runStop,
   metaLine,
   planPage,
   shouldLoadMore,
