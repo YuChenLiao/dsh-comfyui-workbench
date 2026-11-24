@@ -43,6 +43,16 @@ export interface TerminalRouteDeps {
    */
   start: () => void
   /**
+   * 复查外部实例是否还活着（`external` 状态下唯一能改状态的路径）。
+   *
+   * 不接这条，`external` 就是只能进不能出的状态：GET 只读 `status()`，而
+   * `status()` 是纯读；`ensureReady()` 又只有「启动」按钮和出图工具会调，
+   * 面板在 `external` 态下根本不渲染「启动」—— 闭环锁死。
+   *
+   * 可选：手工拼 deps 的调用方（测试、诊断脚本）少传一个依赖不该让整条路由坏掉。
+   */
+  recheck?: (() => Promise<boolean>) | undefined
+  /**
    * 探测队列忙不忙（面板据此决定「关机」要不要二次确认）。
    *
    * 默认走 `queueBusy()`；可替换是为了能测那条选择分支本身 ——
@@ -104,6 +114,23 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Ro
       const slice = deps.buffer.since(since)
       const truncated = slice.lines.length > MAX_PAGE
       const status = deps.status()
+      // 外部实例没了就把状态翻回来（否则面板永久卡在 external，见 recheckExternal 注释）。
+      // **这是唯一能周期跑的路径**：GET 每秒一次，而 ensureReady() 只有「启动」按钮
+      // 和出图工具会调 —— 面板在 external 态下恰好不渲染「启动」。不在这里触发，
+      // 状态机补的那条边永远没人走。
+      //
+      // 只对 external 调（判断在 recheckExternal 里，这里不重复）：探不通按原状态走，
+      // 下一轮再试，不能因为一次探测异常就让整轮 /terminal 500。
+      if (status.state === 'external' && deps.recheck !== undefined) {
+        try {
+          await deps.recheck()
+        } catch {
+          // 按原状态返回，下一轮再来
+        }
+      }
+      // 上面可能已经把 state 翻成 unknown，必须**重读**一次快照 ——
+      // 用翻状态前的 status 返回，面板要等下一轮（1 秒后）才看到「启动」按钮。
+      const now = deps.status()
       sendJson(res, 200, {
         ok: true,
         lines: truncated ? slice.lines.slice(-MAX_PAGE) : slice.lines,
@@ -112,7 +139,7 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Ro
         truncated,
         // 缓冲实例代号：变了说明插件热重载过，前端的 cursor 与屏上内容都不再可信。
         epoch: slice.epoch,
-        status: { ...status, busy: await probeBusy(status, askQueue) },
+        status: { ...now, busy: await probeBusy(now, askQueue) },
       })
     },
   }

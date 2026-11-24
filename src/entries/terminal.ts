@@ -40,6 +40,9 @@ export function apply(ctx: HostContext, config: unknown): void {
     start: () => {
       void rt.supervisor.ensureReady().catch(() => { /* 原因在 status.detail 里，界面会显示 */ })
     },
+    // 外部实例被关掉后靠这条把状态翻回 unknown —— GET 是唯一能周期跑的路径，
+    // 而面板在 external 态下不渲染「启动」，没有别的入口能触发重新探测。
+    recheck: () => rt.supervisor.recheckExternal(),
   })
 
   if (typeof ctx.effect === 'function') {

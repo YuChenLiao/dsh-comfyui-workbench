@@ -277,6 +277,12 @@ export class ComfySupervisor {
     if (await probe(this.options.baseUrl)) {
       if (this.state !== 'starting' && this.state !== 'ready') {
         this.state = this.child === null ? 'external' : 'ready'
+        // 判成 external 时必须**一并写对说明**。不写就留着上一轮的旧话 ——
+        // 实测现场见过 `state:"external"` 配 `detail:"已停止本插件拉起的进程。"`，
+        // 与"外部实例正在跑"完全对不上，翻状态时顺手写清楚。
+        if (this.child === null && this.state === 'external') {
+          this.detail = '复用已在运行的外部实例。'
+        }
       }
       return true
     }
@@ -296,6 +302,38 @@ export class ComfySupervisor {
     } finally {
       this.starting = null
     }
+  }
+
+  /**
+   * 复查外部实例是否还活着；没了就退回 `unknown`，把「启动」按钮放回来。
+   *
+   * `external` 曾经是唯一**只能进不能出**的状态：没有 child 就没有 exit 事件
+   * （第 339 行那条兜底带 `state === 'ready'` 前置），空闲回收定时器在 `child === null`
+   * 时自清，而 `/terminal` 的 GET 只读 `status()` 不探测 —— 三条路全堵死。
+   * 结果用户手动关掉 ComfyUI 之后，面板永久显示灰「关机」，想恢复只能重启 Harness。
+   *
+   * **只在 `external && child === null` 时动手**，别的状态一次都不许探：
+   * - `starting` 期间服务本来就没起来，探一定不通，翻成 `unknown` 会在进程正在启动时
+   *   弹出「启动」按钮，用户点下去就是第二个 ComfyUI（比卡死严重得多）；
+   * - `ready && managed` 有自己的活进程，一次瞬时抖动就会把能用的实例标成"没在跑"；
+   * - `failed` 的文案是给用户看的原因，不能被悄悄抹成 `unknown`。
+   *
+   * 超时 **2 秒**，比 `ensureReady()` 的 3 秒**短**，方向是有意的：这里偏向"容易判死"，
+   * 因为判死的后果只是按钮闪一下（点下去 `ensureReady()` 会先探一次再决定拉不拉，
+   * 见上面第 277 行，探通就复用），而判活的后果是永久卡死。
+   *
+   * @returns 是否真的翻了状态（调用方据此判断要不要重新读 status）。
+   */
+  async recheckExternal(timeoutMs = 2_000): Promise<boolean> {
+    if (this.state !== 'external' || this.child !== null) return false
+    // probe() 自己吃掉异常（连不上/超时都返回 false），不会漏到这里
+    if (await probe(this.options.baseUrl, timeoutMs)) return false
+    // await 之后再复查一次：这 2 秒里 `ensureReady()` 可能已经探通并把状态改成
+    // external/ready，也可能 `start()` 拉起了新进程。不看一眼就会把刚复用的实例判死。
+    if (this.state !== 'external' || this.child !== null) return false
+    this.state = 'unknown'
+    this.detail = '外部实例已不在运行。'
+    return true
   }
 
   /** 拉起进程并等待就绪。 */
