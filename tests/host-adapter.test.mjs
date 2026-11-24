@@ -11,6 +11,8 @@ const {
   onHostDispose,
   registerHostTool,
   registerHostTools,
+  resolveHostRoot,
+  HOST_ROOT_SYMBOL,
 } = await import('../lib/index.js')
 
 const require = createRequire(import.meta.url)
@@ -264,4 +266,32 @@ test('客户端适配层：slots 缺失、betterSidebar 缺席与扩展槽位安
   assert.doesNotThrow(() => navigateToConversation({ get: () => { throw new Error('no layout') } }))
   assert.equal(hostLocale({ get: () => undefined }), 'zh')
   assert.equal(hostLocale({ get: () => ({ getSnapshot: () => ({ active: 'en-US' }) }) }), 'en-US')
+})
+
+test('根上下文取法：新 cordis（symbol）与旧 cordis（ctx.root）都能锚到同一个对象', () => {
+  // 新版 cordis：根上下文挂在 ctx[Context.root]，读 ctx.root 直接抛错。
+  const rootCtx = {}
+  const newStyle = () => new Proxy({}, {
+    get(_target, prop) {
+      if (prop === HOST_ROOT_SYMBOL) return rootCtx
+      if (prop === 'root') throw new Error('cannot get property "root" without inject')
+      return undefined
+    },
+  })
+  assert.equal(resolveHostRoot(newStyle()), rootCtx, '新 cordis 必须走 symbol')
+  assert.equal(resolveHostRoot(newStyle()), rootCtx, '兄弟 entry 取到的是同一个根')
+
+  // 旧版 cordis（如 4.0.2）：没有 root symbol，只有普通属性 root。
+  const legacyRoot = {}
+  const legacy = { root: legacyRoot }
+  assert.equal(resolveHostRoot(legacy), legacyRoot, '旧 cordis 必须走 ctx.root')
+  assert.equal(resolveHostRoot({ root: legacyRoot }), legacyRoot, '旧 cordis 兄弟也共享')
+
+  // 两者都没有：退回自身，不抛错（单测环境）。
+  const bare = { name: 'bare' }
+  assert.equal(resolveHostRoot(bare), bare)
+
+  // symbol 存在时优先于旧属性（迁移期宿主可能两者都有）。
+  const both = { [HOST_ROOT_SYMBOL]: rootCtx, root: legacyRoot }
+  assert.equal(resolveHostRoot(both), rootCtx)
 })

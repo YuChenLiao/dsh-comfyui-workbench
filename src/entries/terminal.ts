@@ -9,6 +9,7 @@
  */
 import { createTerminalRoutes } from '../components/panel-terminal/server/routes.js'
 import { mountHostRoutes, onHostDispose } from '../shared/host/adapter.js'
+import { queueBusy } from '../shared/comfy/supervisor.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { acquire, ensureHttp, mountRoutes, release } from '../runtime.js'
@@ -22,6 +23,24 @@ function warnDisabled(id: string): void {
 
 /** 终端要提供 HTTP 接口，并建共享运行时（工作区探测要等服务就绪）。 */
 export const inject = ['webServer', 'workspaceRegistry']
+
+/**
+ * 队列忙碌探测的记忆化。
+ *
+ * 终端面板每秒轮询一次状态，而队列探测要打一次 ComfyUI；一秒一次纯属浪费，
+ * 而"是否正在出图"这个判断 1.5 秒的滞后完全可以接受。
+ */
+let busyCache: { baseUrl: string; at: number; value: Promise<boolean> } | undefined
+
+function busyOf(baseUrl: string): Promise<boolean> {
+  const now = Date.now()
+  if (busyCache !== undefined && busyCache.baseUrl === baseUrl && now - busyCache.at < 1_500) {
+    return busyCache.value
+  }
+  const value = queueBusy(baseUrl)
+  busyCache = { baseUrl, at: now, value }
+  return value
+}
 
 export function apply(ctx: HostContext, config: unknown): void {
   if (new Set(resolveSettings(config, process.env).disabledComponents).has('panel.terminal')) {
@@ -41,6 +60,11 @@ export function apply(ctx: HostContext, config: unknown): void {
     start: () => {
       void rt.supervisor.ensureReady().catch(() => { /* 原因在 status.detail 里，界面会显示 */ })
     },
+    // 停在终端自己的路由上，不借 panel.workflow 的 /service/stop：
+    // 用户关掉工作流面板后，那条路由不在，点「关机」会 404。
+    stop: () => rt.supervisor.stop(),
+    recheckExternal: () => rt.supervisor.recheckExternal(),
+    busy: busyOf,
   })
 
   mountHostRoutes(ctx, 'terminal: routes', () => mountRoutes(ctx, 'panel.terminal', { exact: table }))

@@ -12,6 +12,7 @@ import type { MaterialSource } from './shared/tools/types.js'
 import { resolveSettings } from './shared/host/config.js'
 import { resolveLogger } from './shared/host/logger.js'
 import { canonical, ensureDir, pluginDataDir, workflowsDir } from './shared/host/paths.js'
+import { resolveHostRoot } from './shared/host/adapter.js'
 import type { HostContext } from './shared/host/types.js'
 import { resolveOutputDir } from './shared/host/workspace.js'
 import { sessionWorkspaceDir } from './shared/host/workspace.js'
@@ -103,7 +104,7 @@ export function componentStateOf(rt: Runtime): Record<string, boolean> {
  * 在多个 bundle 之间**不共享**。曾因此踩坑：gallery 注册的路由在它自己的副本里，
  * workflow 的 prefix handler 看不到，`/config`、`/workflows` 全 404。
  *
- * 共享状态挂在 `ctx.root` 的属性槽上（见 `sharedOf`），不用 globalThis ——
+ * 共享状态挂在**根上下文**的属性槽上（取法见 adapter 的 `resolveHostRoot`），不用 globalThis ——
  * 宿主模块加载器下各 bundle 的 globalThis 同样不共享。
  */
 interface Shared {
@@ -121,16 +122,15 @@ const SHARED_PROP = '__dshComfyuiWorkbench'
 /**
  * 取共享状态。
  *
- * 关键：锚点是 **ctx.root**，不是 entry 自己的 ctx，也不用 globalThis。
+ * 关键：锚点是**根上下文**（见 resolveHostRoot），不是 entry 自己的 ctx，也不用 globalThis。
  * 已由真实 cordis 4.0.5 实测：每条 entry 的 ctx 是 `parent.extend({ fiber })` 出来的
  * 独立对象（兄弟之间不共享自有属性），而 globalThis 在宿主的模块加载器下同样不共享。
- * 只有 `ctx.root` 是所有 entry 共同的原点。
+ * 只有根上下文是所有 entry 共同的原点；具体取法随宿主版本变，见 `resolveHostRoot`。
  */
 function sharedOf(ctx: HostContext): Shared {
-  // cordis 里每条 entry 的 ctx 是 `parent.extend({ fiber })` 出来的**独立对象**，
-  // 兄弟之间不共享自有属性 —— 挂在 ctx 上等于各建一份（已由真实 cordis 实测确认）。
-  // `ctx.root` 是所有 entry 共同的原点，只有它指向同一个对象。
-  const anchor = ((ctx as unknown as { root?: unknown }).root ?? ctx) as Record<string, Shared | undefined>
+  // 根上下文的取法随 cordis 版本变（新版本是 ctx[Context.root] symbol，旧版本是 ctx.root
+  // 普通属性，读错的那个在 Proxy 上会直接抛错），统一交给适配层判断，见 resolveHostRoot。
+  const anchor = resolveHostRoot(ctx) as Record<string, Shared | undefined>
   let slot = anchor[SHARED_PROP]
   if (slot === undefined) {
     slot = { current: undefined, refs: 0, tables: new Map(), httpMounted: false }

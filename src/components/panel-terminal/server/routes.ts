@@ -41,6 +41,27 @@ export interface TerminalRouteDeps {
    * 那正是用户想避免的被动等待。所以给一条独立的启动路径。
    */
   start: () => void
+  /**
+   * 停掉**本插件拉起的**进程（面板上的「关机」按钮）。
+   *
+   * 必须走终端自己的路由，不能借 `/service/stop`：那条路由挂在 `panel.workflow` 上，
+   * 用户关掉工作流面板后点「关机」会直接 404。外部实例永不触碰（由 supervisor 保证）。
+   */
+  stop?: () => boolean
+  /**
+   * 复查「外部实例」是否还在。
+   *
+   * `external` 状态没有天然出口：别人把 ComfyUI 关掉后，插件无从得知，面板会永久
+   * 停在「外部实例」而且启动按钮永远不出现。每次 GET 顺手复查一次就够。
+   */
+  recheckExternal?: () => Promise<boolean>
+  /**
+   * 队列里还有没有活（只在受管实例就绪时问）。
+   *
+   * 用它给「关机」加二次确认：正在出图时一键停进程会丢任务。外部实例不探测 ——
+   * 那个状态本来就没有关机按钮，多一次请求只会拖慢面板。
+   */
+  busy?: (baseUrl: string) => Promise<boolean>
 }
 
 /**
@@ -49,10 +70,11 @@ export interface TerminalRouteDeps {
  * - `GET  /terminal?since=N`：拉增量（`since=0` 要当前全部）
  * - `POST /terminal`：清屏
  * - `POST /terminal?action=start`：拉起服务（不等就绪，进度由轮询的 status 反映）
+ * - `POST /terminal?action=stop`：停掉本插件拉起的进程
  */
 export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Route> {
   return {
-    '/terminal': (url, res, req) => {
+    '/terminal': async (url, res, req) => {
       // 这条路径在 router 里走 selfManaged（GET 读、POST 写），方法校验不经过通用层，
       // 所以这里自己挡：PUT/DELETE 之类不该落到"当 GET 处理"上。
       const method = req.method ?? 'GET'
@@ -61,15 +83,37 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Ro
         return
       }
       if (method === 'POST') {
-        if (url.searchParams.get('action') === 'start') {
+        const action = url.searchParams.get('action')
+        if (action === 'start') {
           deps.start()
           sendJson(res, 200, { ok: true, started: true, status: deps.status() })
+          return
+        }
+        if (action === 'stop') {
+          if (typeof deps.stop !== 'function') {
+            sendJson(res, 501, { ok: false, error: 'not-supported', message: '这条部署没有开放停止服务。' })
+            return
+          }
+          const stopped = deps.stop()
+          sendJson(res, 200, { ok: true, stopped, status: deps.status() })
           return
         }
         deps.buffer.clear()
         sendJson(res, 200, { ok: true })
         return
       }
+
+      let status = deps.status()
+      // 外部实例没有天然出口：每次读状态顺手复查一次，关掉后能自己回到 unknown。
+      if (status.state === 'external' && typeof deps.recheckExternal === 'function') {
+        await deps.recheckExternal()
+        status = deps.status()
+      }
+      // 只有受管实例才值得问队列：外部实例不显示关机，问了也白问。
+      const busy = status.state === 'ready' && status.managed === true && typeof deps.busy === 'function'
+        ? await deps.busy(status.baseUrl)
+        : false
+
       const raw = url.searchParams.get('since')
       const parsed = raw === null ? 0 : Number(raw)
       const since = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
@@ -83,7 +127,8 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): Record<string, Ro
         truncated,
         // 缓冲实例代号：变了说明插件热重载过，前端的 cursor 与屏上内容都不再可信。
         epoch: slice.epoch,
-        status: deps.status(),
+        busy,
+        status,
       })
     },
   }

@@ -9,8 +9,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = 'D:/dsh/dsh-comfyui-workbench'
+// 用本文件位置推仓库根：硬编码绝对路径会让别的机器上 clone 后 npm test 必红。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 test('图片 URL 必须带 source —— 否则切到二次元后图还是写实版的', () => {
   const api = fs.readFileSync(path.join(ROOT, 'src/client/api.ts'), 'utf8')

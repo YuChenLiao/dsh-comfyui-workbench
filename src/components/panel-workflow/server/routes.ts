@@ -252,6 +252,9 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
         // 这里自己筛：只有 running / queued 才算活跃。
         const recent = runs.list({ limit: 20 }) as Array<{ state?: unknown }>
         const active = recent.filter(row => row.state === 'running' || row.state === 'queued').slice(0, 5)
+        // 外部实例关掉后要能自己回到 unknown：这条是面板每 5 秒的轮询入口，
+        // 在这里复查比只在终端页签复查覆盖得更全（supervisor 内部有单飞锁，重复调不贵）。
+        if (supervisor.status().state === 'external') await supervisor.recheckExternal()
         sendJson(res, 200, {
           ok: true,
           service: supervisor.status(),

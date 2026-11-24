@@ -135,3 +135,71 @@ export function createHostToolRegistrar(
     registerHostTool(ctx, spec as HostToolSpec, { ...options, throwOnError: true })
   }
 }
+
+/**
+ * cordis 根上下文的候选 symbol 键（`Symbol.for('cordis.root')`）。
+ *
+ * 用 `Symbol.for` 而不是 `import { Context }`：本包没有 cordis 的运行时依赖，
+ * 硬 import 会把宿主提供的类型变成真实依赖。
+ *
+ * **这不是唯一取法，也不该当成事实断言**：本地打包进 DSH 的 cordis（实测 4.0.2 /
+ * DSH 0.2.2-rc.5）里根本没有这个 symbol，根上下文是普通属性 `this.root = self`；
+ * 只有 issue #3 报告的 0.2.3-alpha.2（cordis 4.2.0-alpha.1）才换成 symbol。
+ * 所以这里只把它当"先试一下"，真正的兜底是下面的 `ctx.root`。
+ */
+export const HOST_ROOT_SYMBOL: symbol = Symbol.for('cordis.root')
+
+/**
+ * 取所有 entry 共同的原点上下文。
+ *
+ * cordis 里每条 entry 的 ctx 是 `parent.extend({ fiber })` 出来的独立对象，
+ * 兄弟之间不共享自有属性；把共享状态挂在 entry 自己的 ctx 上等于各建一份。
+ * 只有根上下文是所有 entry 共同的原点，因此取法必须跟着宿主版本走：
+ *
+ *   1. cordis >= 4.0.0-rc.12（DSH >= 0.2.2-rc.2）：根上下文是 `ctx[Context.root]`。
+ *      直接读 `ctx.root` 会抛 `cannot get property "root" without inject`。
+ *   2. 更早的 cordis：根上下文是普通属性 `ctx.root`，且**没有** root symbol。
+ *   3. 单测或非 cordis 环境：两者都不存在，退回 `ctx` 自身。
+ *
+ * 两条路都必须保留 —— 只认 symbol 会在旧宿主上取到 undefined 并静默退回自身，
+ * 表现为每个 entry 各建一份 Runtime，比启动失败更难排查。
+ *
+ * @param ctx - 任意 entry 的上下文。
+ */
+/** 兜底警告只打一次：它挂在每条 entry 的 apply 路径上，重复刷屏没有额外信息。 */
+let rootFallbackWarned = false
+
+export function resolveHostRoot(ctx: HostContext, warn?: (message: string) => void): unknown {
+  const candidate = ctx as unknown as Record<symbol, unknown> & { root?: unknown }
+
+  try {
+    const viaSymbol = candidate[HOST_ROOT_SYMBOL]
+    if (viaSymbol !== undefined && viaSymbol !== null) return viaSymbol
+  } catch {
+    // 个别宿主会对 symbol 读取也走校验分支：忽略，走下面的兼容路径。
+  }
+
+  try {
+    const viaProperty = candidate.root
+    if (viaProperty !== undefined && viaProperty !== null) return viaProperty
+  } catch {
+    // 新版本 cordis（issue #3 报告的那支）：读 ctx.root 直接抛错。这就是要兜住的那条。
+  }
+
+  // 两条路都没取到：退回 entry 自己的 ctx。这会让每个 entry 各建一份共享运行时
+  // （路由表、refs 计数都不再共享），症状是"某些接口 404 但没报错"——
+  // 必须留下痕迹，否则排查成本远高于一条警告。
+  if (!rootFallbackWarned) {
+    rootFallbackWarned = true
+    const message = '[comfyui-workbench] 取不到 cordis 根上下文（symbol 与 ctx.root 都不可用），'
+      + '共享运行时将退回各 entry 自身：跨组件路由与工具可能互相看不见。'
+    if (warn !== undefined) warn(message)
+    else console.warn(message)
+  }
+  return ctx
+}
+
+/** 仅测试用：重置兜底警告的一次性标记。 */
+export function resetRootFallbackWarning(): void {
+  rootFallbackWarned = false
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Translate } from '../../../client/i18n.js'
+import { terminalActions } from './buttons.js'
 import TERMINAL_CSS from './styles.css'
 
 /** 一条终端输出（与后端 TerminalLine 对应）。 */
@@ -28,6 +29,8 @@ interface Payload {
   truncated: boolean
   /** 缓冲实例代号：变了就说明被重建，旧 cursor 不再可信。 */
   epoch: string
+  /** 受管实例队列里还有没有活（外部实例恒为 false）。 */
+  busy?: boolean
   status: Status
 }
 
@@ -56,6 +59,8 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
   const [following, setFollowing] = useState(true)
   const [filter, setFilter] = useState('')
   const [paused, setPaused] = useState(false)
+  /** 受管实例是否正在出图（决定关机要不要二次确认）。 */
+  const [busy, setBusy] = useState(false)
 
   const cursor = useRef(0)
   /** 记住当前缓冲的代号；变了说明插件热重载过。 */
@@ -81,6 +86,7 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
         && prev.detail === data.status.detail
         ? prev
         : data.status))
+      setBusy(data.busy === true)
       setDropped(data.dropped)
       // 缓冲被重建（插件热重载）：序号与屏上内容都不再可信，丢掉旧屏全量重拉。
       // 靠"序号是否连续"判不出来 —— 新缓冲可能已经输出到旧 cursor 之后，看起来完全连续。
@@ -151,6 +157,18 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
     void pull()
   }
 
+  const stop = async (): Promise<void> => {
+    const actions = terminalActions({ hasStatus: status !== undefined, state, managed, busy })
+    // 正在出图时先说清楚会丢什么：一句话确认比事后解释任务为什么没了便宜得多。
+    if (actions.confirmBeforeStop && !window.confirm(t('termStopBusy'))) return
+    try {
+      await fetch('/comfyui-workbench/api/terminal?action=stop', { method: 'POST' })
+    } catch {
+      // 停不掉的原因会从下一轮 status.detail 里反映出来
+    }
+    void pull()
+  }
+
   const shown = filter.trim() === ''
     ? lines
     : lines.filter(line => line.text.toLowerCase().includes(filter.trim().toLowerCase()))
@@ -173,8 +191,8 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
           : lines.length === 0
             ? t('termEmpty')
             : ''
-  /** 能拉起的情况：没在跑，且不是外部实例（外部实例不该被我们插手）。 */
-  const canStart = status !== undefined && !managed && state !== 'external' && state !== 'starting'
+  // 按钮组合交给纯函数：外部实例不能出现可点的关机，未启动时 managed 也是 false。
+  const actions = terminalActions({ hasStatus: status !== undefined, state, managed, busy })
 
   return (
     <div className="cwt-root">
@@ -196,12 +214,25 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
         <button type="button" className={`cwt-btn${following ? ' on' : ''}`} onClick={() => setFollowing(true)}>
           {t('termFollow')}
         </button>
-        {canStart ? (
+        {actions.canStart ? (
           <button
             type="button"
             className="cwt-btn cwt-btn-primary"
             onClick={() => { void start() }}
           >{t('termStart')}</button>
+        ) : null}
+        {actions.canStop ? (
+          <button
+            type="button"
+            className="cwt-btn cwt-btn-warn"
+            onClick={() => { void stop() }}
+          >{t('termStop')}</button>
+        ) : null}
+        {actions.stopDisabled ? (
+          // 外面包一层 span：disabled 按钮在 Chrome 上不触发 hover，title 写了也看不到。
+          <span className="cwt-tip" title={t('termStopExternal')}>
+            <button type="button" className="cwt-btn" disabled>{t('termStop')}</button>
+          </span>
         ) : null}
         <button type="button" className="cwt-btn" onClick={() => { void clear() }}>{t('termClear')}</button>
       </div>

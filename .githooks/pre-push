@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 set -e
 
 echo "[pre-push] 执行全量检查 (lint + typecheck + build + tests)..."

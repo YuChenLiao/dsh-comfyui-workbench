@@ -382,6 +382,7 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
       maxDepth: settings.maxDepth,
       maxItems: settings.maxItems,
       includeHidden: settings.includeHidden,
+      excludeDirs: settings.excludeDirs,
     })
     index.rewrite(records)
     sendJson(res, 200, { ok: true, rebuilt: records.length, roots: list.length })

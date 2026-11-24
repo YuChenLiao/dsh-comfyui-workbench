@@ -4,6 +4,7 @@ import path from 'node:path'
 import { mimeOfPath } from '../../../../shared/media/constants.js'
 
 import { collectImages, readMeta } from '../scan/index.js'
+import type { ScanOptions } from '../scan/index.js'
 import type { AssetRecord } from './index-file.js'
 
 /**
@@ -17,7 +18,7 @@ import type { AssetRecord } from './index-file.js'
  */
 export function rebuildFromSidecars(
   roots: readonly string[],
-  options: { maxDepth: number; maxItems: number; includeHidden: boolean },
+  options: ScanOptions,
 ): AssetRecord[] {
   const out: AssetRecord[] = []
   const seen = new Set<string>()

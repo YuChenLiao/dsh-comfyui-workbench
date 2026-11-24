@@ -17,6 +17,13 @@ export interface ScanOptions {
   maxDepth: number
   maxItems: number
   includeHidden: boolean
+  /**
+   * 扫描时额外跳过的目录名（与内置 `SKIP_DIRS` 合并使用）。
+   *
+   * 给「工作区里有个几百 GB 的素材/模型目录」这种场景留出口：内置名单不可能
+   * 猜到每个用户的目录名，而让他去改源码不现实。
+   */
+  excludeDirs: readonly string[]
 }
 
 /** 一次根目录扫描的结果。 */

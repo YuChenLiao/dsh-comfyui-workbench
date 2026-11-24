@@ -216,6 +216,8 @@ export class ComfySupervisor {
   private detail = ''
   private lastUsedAt = 0
   private starting: Promise<boolean> | null = null
+  /** 外部实例复查的单飞锁：多个面板同时轮询时只发一次探测。 */
+  private rechecking: Promise<boolean> | null = null
   private idleTimer: NodeJS.Timeout | null = null
 
   constructor(options: SupervisorOptions) {
@@ -268,7 +270,13 @@ export class ComfySupervisor {
 
     if (await probe(this.options.baseUrl)) {
       if (this.state !== 'starting' && this.state !== 'ready') {
-        this.state = this.child === null ? 'external' : 'ready'
+        const next = this.child === null ? 'external' : 'ready'
+        if (next !== this.state) {
+          this.state = next
+          // 外部实例也要写 detail：否则从 failed（"连不上…"）切过来时，
+          // 面板会带着一句过期的错误原因显示"外部实例"。
+          this.detail = next === 'external' ? '复用已在运行的外部实例。' : ''
+        }
       }
       return true
     }
@@ -288,6 +296,44 @@ export class ComfySupervisor {
     } finally {
       this.starting = null
     }
+  }
+
+  /**
+   * 复查"外部实例"是否还在。
+   *
+   * `external` 是 `ensureReady()` 探测到"别人已经在跑"时的状态，但没有任何事件能
+   * 告诉插件那个实例被关掉了 —— 不复查的话，面板会永久停在"外部实例"，启动按钮
+   * 也永远不出现，只能重启 Harness 才能恢复。
+   *
+   * 超时取 **2 秒**（比 `ensureReady` 的 3 秒短）：它挂在一次 GET 上，不能把面板
+   * 拖住；本机回环的 `/system_stats` 远低于这个量级，只有防火墙 DROP 或进程卡死
+   * 才会走到超时。
+   *
+   * @param timeoutMs - 探测超时。
+   * @returns 是否还需要继续当作外部实例。
+   */
+  async recheckExternal(timeoutMs = 2_000): Promise<boolean> {
+    // 多个终端面板可能同时轮询：合并成一次探测，避免打一串请求。
+    if (this.rechecking !== null) return await this.rechecking
+    this.rechecking = this.runRecheck(timeoutMs)
+    try {
+      return await this.rechecking
+    } finally {
+      this.rechecking = null
+    }
+  }
+
+  private async runRecheck(timeoutMs: number): Promise<boolean> {
+    // 不是外部实例（自己拉起的 / 已经失败 / 未知）就没有可复查的东西。
+    if (this.state !== 'external' || this.child !== null) return false
+    const alive = await probe(this.options.baseUrl, timeoutMs)
+    if (alive) return true
+    // 探测期间可能已经被 ensureReady 重新拉起或换成了别的状态，别覆盖新状态。
+    if (this.state === 'external' && this.child === null) {
+      this.state = 'unknown'
+      this.detail = '外部实例已不在运行。'
+    }
+    return false
   }
 
   /** 拉起进程并等待就绪。 */
@@ -329,6 +375,9 @@ export class ComfySupervisor {
         if (this.child === child) {
           this.child = null
           if (this.state === 'ready') this.state = 'unknown'
+          // 进程没了还留着「已拉起：python main.py …」就是在骗人：面板会把这句话
+          // 当成"服务还在"的证据。
+          if (this.state === 'unknown') this.detail = '本插件拉起的进程已退出。'
         }
       })
       this.child = child

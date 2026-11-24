@@ -207,7 +207,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
           if (status.state === 'done') {
             setWatching(null)
             setNotice({ kind: 'ok', text: t('rerunDone') })
-            reloadRef.current(true)
+            reloadRef.current(true, true)
             return
           }
           if (status.state === 'failed') {
@@ -218,7 +218,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
           if (status.state === 'unknown') {
             setWatching(null)
             // 图可能已经在盘上了：不刷新的话用户会以为没出图
-            reloadRef.current(true)
+            reloadRef.current(true, true)
             setNotice({ kind: 'err', text: t('rerunUnknown') })
           }
         })
@@ -510,7 +510,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         onToggleBare={() => setIncludeBare(value => !value)}
         onToggleDuplicates={() => setMergeDuplicates(value => !value)}
         onToggleSelecting={() => (selecting ? exitSelect() : setSelecting(true))}
-        onRefresh={() => gallery.reload(true)}
+        onRefresh={() => gallery.reload(true, true)}
         onTrash={() => setTrashOpen(true)}
         facetWorkflow={facetWorkflow}
         facetCheckpoint={facetCheckpoint}
@@ -609,7 +609,7 @@ export function Gallery({ t, visible, embedded, goToConversation, openSidebar }:
         <TrashModal
           t={t}
           onClose={() => setTrashOpen(false)}
-          onChanged={() => gallery.reload(true)}
+          onChanged={() => gallery.reload(true, true)}
         />
       ) : null}
       {comparePair !== null ? (

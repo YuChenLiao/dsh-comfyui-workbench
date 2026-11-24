@@ -19,8 +19,8 @@ export interface GalleryData {
   scrollRef: React.MutableRefObject<HTMLDivElement | null>
   sentinelRef: (node: HTMLDivElement | null) => void
   setNotice: (notice: Notice | null) => void
-  /** 拉第一页（reset）或追加一页。 */
-  reload: (reset: boolean) => void
+  /** 拉第一页（reset）或追加一页；`force` 会绕过服务端扫描缓存。 */
+  reload: (reset: boolean, force?: boolean) => void
   /** 本地移除若干条目并扣除总数（删除成功后调用，避免整表重拉）。 */
   dropItems: (paths: ReadonlySet<string>, totalDelta: number) => void
 }
@@ -59,10 +59,10 @@ export function useGalleryData(options: {
   const inFlightRef = useRef(false)
   const requestRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const loadRef = useRef<((reset: boolean) => void) | null>(null)
+  const loadRef = useRef<((reset: boolean, force?: boolean) => void) | null>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
 
-  const load = useCallback(async (reset: boolean): Promise<void> => {
+  const load = useCallback(async (reset: boolean, force = false): Promise<void> => {
     // 追加请求同一时刻只允许一个在飞；筛选变化（reset）可以抢占旧的。
     if (!reset && inFlightRef.current) return
     const token = ++requestRef.current
@@ -85,6 +85,9 @@ export function useGalleryData(options: {
       if (workflow !== '') params.workflow = workflow
       if (checkpoint !== '') params.checkpoint = checkpoint
       if (aspect !== '') params.aspect = aspect
+      // 强制重扫：刷新按钮、出图完成、删除/归档之后都要绕过服务端扫描缓存，
+      // 否则新图要等 TTL 过期才出现（TTL 是给滚动分页用的，不是给"我刚生成完"）。
+      if (force) params.refresh = '1'
 
       const data = await apiJson('/items', params)
       if (token !== requestRef.current) return
@@ -181,7 +184,7 @@ export function useGalleryData(options: {
     scrollRef,
     sentinelRef,
     setNotice,
-    reload: (reset: boolean) => { void load(reset) },
+    reload: (reset: boolean, force = false) => { void load(reset, force) },
     dropItems,
   }
 }

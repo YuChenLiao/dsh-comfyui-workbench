@@ -13,6 +13,7 @@ import { trashOne } from './trash.js'
 import { isInsideTrash } from './trash.js'
 import type { RootEntry } from './roots.js'
 import { scanRoot } from './scan-cache.js'
+import type { ScanSettings } from './scan-cache.js'
 
 /** 列表查询参数（由 HTTP 层解析后传入，service 不认 URL）。 */
 export interface ItemQuery {
@@ -81,7 +82,7 @@ export class UnknownRootError extends Error {
  */
 export function queryItems(
   roots: readonly RootEntry[],
-  settings: { maxDepth: number; maxItems: number; includeHidden: boolean; cacheMs: number },
+  settings: ScanSettings,
   query: ItemQuery,
 ): ItemPage {
   if (roots.length === 0) {

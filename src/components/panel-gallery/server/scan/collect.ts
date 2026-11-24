@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { foldPathCase } from '../../../../shared/host/paths.js'
 import { MEDIA_EXTS, SKIP_DIRS } from './constants.js'
 import { hasEmbeddedPromptHint } from './embedded.js'
 import type { ImageRecord, ScanOptions, ScanResult } from './types.js'
@@ -12,6 +13,10 @@ import type { ImageRecord, ScanOptions, ScanResult } from './types.js'
  * 带 sidecar 的（生成物）与普通图片分开计数，保证上限先吃掉普通图片 ——
  * 一个塞满截图的目录不该把真正的生成图挤出列表。
  *
+ * 性能上有一条硬规则：**任何能靠内存判断的，就不要碰磁盘**。
+ * 曾经在一个塞满语音素材的目录上把整次扫描拖到 27 秒，原因就是
+ * 每个媒体文件都先 `statSync` 再 `existsSync`，而其中绝大多数最后都被上限丢掉。
+ *
  * @param root - 根目录绝对路径。
  * @param options - 扫描上限。
  */
@@ -21,19 +26,39 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
   let truncatedGenerated = false
   let truncatedBare = false
 
+  const generatedFull = (): boolean => generated.length >= options.maxItems
+  const bareFull = (): boolean => bare.length >= options.maxItems
+  const skipDirs = new Set((options.excludeDirs ?? []).map(item => foldPathCase(item)))
+
   const walk = (dir: string, depth: number): void => {
+    // 两类都满了就没有任何还能收进来的东西，整棵子树直接跳过。
+    if (generatedFull() && bareFull()) {
+      truncatedGenerated = true
+      truncatedBare = true
+      return
+    }
+
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true })
     } catch {
       return
     }
+
+    // 同目录的文件名集合：sidecar 判定从 existsSync 降成 O(1) 内存查询。
+    // 一次 readdirSync 已经把这些名字全拿到了，再问文件系统一遍纯属浪费。
+    // 键按平台折叠大小写：旧的 existsSync 在 Windows 上本就不区分，
+    // 不折叠会让改名过大小写的 sidecar 突然认不出来。
+    const names = new Set<string>()
+    for (const entry of entries) names.add(foldPathCase(entry.name))
+
     for (const entry of entries) {
       const name = entry.name
       if (!options.includeHidden && name.startsWith('.')) continue
       const full = path.join(dir, name)
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(name)) continue
+        if (skipDirs.has(foldPathCase(name))) continue
         if (depth + 1 > options.maxDepth) continue
         walk(full, depth + 1)
         continue
@@ -42,6 +67,22 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
       // 视频/音频也算资产：工作流会顺带产出它们，排掉就是"生成了却看不见"
       if (!MEDIA_EXTS.has(path.extname(name).toLowerCase())) continue
 
+      // 先判"收不收得下"，再决定要不要 stat —— 顺序反过来就是那 27 秒。
+      const hasSidecar = names.has(foldPathCase(`${name}.json`))
+      if (hasSidecar) {
+        if (generatedFull()) {
+          truncatedGenerated = true
+          continue
+        }
+      } else if (bareFull()) {
+        // 没有 sidecar 的只有 PNG 还可能靠内嵌 prompt 翻成生成图；
+        // 其余（wav / mp3 / mp4 …）必定进 bare，bare 满了就没必要碰磁盘。
+        if (path.extname(name).toLowerCase() !== '.png') {
+          truncatedBare = true
+          continue
+        }
+      }
+
       let stat: fs.Stats
       try {
         stat = fs.statSync(full)
@@ -49,7 +90,8 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
         continue
       }
 
-      const generatedFlag = fs.existsSync(`${full}.json`) || hasEmbeddedPromptHint(full)
+      // 有 sidecar 就不必再读文件头；没有的才探测 PNG 内嵌 prompt。
+      const generatedFlag = hasSidecar || hasEmbeddedPromptHint(full)
       const record: ImageRecord = {
         path: full,
         name,

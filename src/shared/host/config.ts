@@ -1,5 +1,5 @@
 /** 列表缓存默认时长：点一次刷新能看到新图，又不至于每滚一屏就重扫。 */
-export const DEFAULT_CACHE_MS = 4000
+export const DEFAULT_CACHE_MS = 30_000
 
 /** ComfyUI 默认地址（与 dsh-comfyui-image 一致）。 */
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:8188'
@@ -18,6 +18,8 @@ export interface Settings {
   maxItems: number
   /** 列表缓存毫秒数。 */
   cacheMs: number
+  /** 扫描时额外跳过的目录名（与内置 SKIP_DIRS 合并）。 */
+  excludeDirs: string[]
   /** 是否进入 `.` 开头的目录。 */
   includeHidden: boolean
 
@@ -158,6 +160,7 @@ export function resolveSettings(input: unknown, env: NodeJS.ProcessEnv = process
     maxDepth: int(raw.maxDepth, 3, 0, 8),
     maxItems: int(raw.maxItems, 4000, 50, 20000),
     cacheMs: int(raw.cacheMs, DEFAULT_CACHE_MS, 0, 60000),
+    excludeDirs: listOf(raw.excludeDirs),
     includeHidden: raw.includeHidden === true,
 
     baseUrl: str(pick('baseUrl'), DEFAULT_BASE_URL).replace(/\/+$/, ''),
