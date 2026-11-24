@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { createWorkflowRoutes } from '../components/panel-workflow/server/routes.js'
+import { mountHostRoutes, onHostDispose } from '../shared/host/adapter.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { readToggles } from '../shared/host/toggles.js'
@@ -55,7 +56,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
 
   const rt = acquire(ctx, config)
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'workflow: runtime')
+  onHostDispose(ctx, 'workflow: runtime', () => release(ctx))
   ensureHttp(ctx, rt)
 
   const routes = createWorkflowRoutes({
@@ -80,10 +81,6 @@ function applyInner(ctx: HostContext, config: unknown): void {
     prefix: [{ base: '/workflows/', handle: routes.byId }],
   }
 
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => mountRoutes(ctx, 'panel.workflow', table), 'workflow: routes')
-  } else {
-    mountRoutes(ctx, 'panel.workflow', table)
-  }
+  mountHostRoutes(ctx, 'workflow: routes', () => mountRoutes(ctx, 'panel.workflow', table))
   rt.info('[comfyui-workbench] 工作流管理已上线')
 }

@@ -374,7 +374,7 @@ flowchart LR
 ```mermaid
 flowchart BT
     subgraph Bottom["shared base layer (no upward imports)"]
-        Host["shared/host\n(config / paths / prefs / skill / toggles)"]
+        Host["shared/host\n(config / paths / adapter / session / skill / toggles)"]
         HTTP["shared/http\n(respond / readRawBody)"]
         Media["shared/media\n(MIME / media kinds / PNG text chunks)"]
     end
@@ -393,6 +393,7 @@ flowchart BT
     end
 
     subgraph Shell["Browser shell (src/client/)"]
+        ClientHost["client/host\n(slots / runtime / types)"]
         ShellCore["api / i18n / icons / types / actions"]
         Assembly["Workbench.tsx & client/index.tsx\n(only allowed SHELL_ASSEMBLY)"]
     end
@@ -413,6 +414,7 @@ flowchart BT
     Server --> Bottom
     ClientPanel --> ShellCore
     Assembly --> ClientPanel
+    Assembly --> ClientHost
     Assembly --> ShellCore
 ```
 
@@ -434,15 +436,16 @@ src/components/panel-terminal/     terminal: server/(log tail) + client/
 src/components/tool-generate/      generation tools
 src/components/tool-workflow-edit/ workflow editing tool
 src/components/tool-danbooru/      Danbooru tag lookup tools
-src/shared/                        shared logic: host / comfy / workflow / run / tools / http / authz / media
+src/shared/                        shared logic: host(with DSH server adapter) / comfy / workflow / run / tools / http / authz / media
 src/http/                          HTTP prefix and dispatch (router)
 src/client/                        UI shell: tabs, api, i18n, icons
+src/client/host/                   DSH Web host adapter: slots / runtime / types
 src/index.ts                       package-root entry (browser bundle + shared runtime init)
 src/entries/                       eleven component entries (core is src/index.ts)
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 
-The first step of `npm test` (`node tests/arch.mjs`) enforces three boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client` and shell modules never import a specific component. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a real-dispatch + `fetch` case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. `KNOWN_UNTESTED` is now empty: coverage is **19/19**.
+The first step of `npm test` (`node tests/arch.mjs`) enforces four boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client`, shell modules never import a specific component, and raw DSH host APIs are isolated to `shared/host` and `client/host`. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a real-dispatch + `fetch` case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. `KNOWN_UNTESTED` is now empty: coverage is **19/19**.
 
 ## Development
 

@@ -25,6 +25,7 @@ import { createPosesRoutes } from '../components/panel-poses/server/routes.js'
 import { poseTool } from '../components/panel-poses/server/tools.js'
 import type { PosesIndex } from '../components/panel-poses/server/catalog.js'
 import type { PoseImages } from '../components/panel-poses/server/images.js'
+import { mountHostRoutes, onHostDispose, registerHostTools } from '../shared/host/adapter.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext } from '../shared/host/types.js'
@@ -91,7 +92,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
 
   // 面板走共享 runtime（HTTP 前缀由它注册一次）
   const rt = acquire(ctx, config)
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'poses: runtime')
+  onHostDispose(ctx, 'poses: runtime', () => release(ctx))
 
   // 素材面的一半：compose 工具要把姿势线稿塞进工作流，而它不该 import 本组件。
   rt.materials = {
@@ -108,30 +109,14 @@ function applyInner(ctx: HostContext, config: unknown): void {
     },
   }
   ensureHttp(ctx, rt)
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => mountRoutes(ctx, COMPONENT, { exact: routes.exact }), 'poses: routes')
-  } else {
-    mountRoutes(ctx, COMPONENT, { exact: routes.exact })
-  }
+  mountHostRoutes(ctx, 'poses: routes', () => mountRoutes(ctx, COMPONENT, { exact: routes.exact }))
 
   // 工具不经过 runtime：它们只读索引，与 ComfyUI 无关
-  const tools = ctx.get?.('tools') as { register: (spec: unknown) => (() => void) | void } | undefined
-  if (tools === undefined || typeof tools.register !== 'function') {
-    console.warn('[comfyui-workbench] 拿不到 tools 服务，姿势工具未注册。')
-  } else {
-    const deps = { index, images, uploadsDir }
-    for (const spec of [poseTool(deps)]) {
-      try {
-        const dispose = tools.register(spec)
-        if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
-          ctx.effect(() => () => dispose(), `poses: tool ${spec.name}`)
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.warn(`[comfyui-workbench] 工具 ${spec.name} 未注册：${message}`)
-      }
-    }
-  }
+  const deps = { index, images, uploadsDir }
+  registerHostTools(ctx, [poseTool(deps)], {
+    label: 'poses',
+    missingMessage: '[comfyui-workbench] 拿不到 tools 服务，姿势工具未注册。',
+  })
 
   const stats = index.stats()
   rt.info(`[comfyui-workbench] 姿势库已上线：${stats.poseCount} 组 / ${stats.viewCount} 个角度`)

@@ -378,7 +378,7 @@ flowchart LR
 ```mermaid
 flowchart BT
     subgraph Bottom["shared 最底层 (无内部上行依赖)"]
-        Host["shared/host\n(配置 / 路径 / prefs / skill / toggles)"]
+        Host["shared/host\n(配置 / 路径 / adapter / session / skill / toggles)"]
         HTTP["shared/http\n(respond / readRawBody)"]
         Media["shared/media\n(MIME / 媒体类型 / PNG 文本块)"]
     end
@@ -397,6 +397,7 @@ flowchart BT
     end
 
     subgraph Shell["浏览器外壳 (src/client/)"]
+        ClientHost["client/host\n(slots / runtime / types)"]
         ShellCore["api / i18n / icons / types / actions"]
         Assembly["Workbench.tsx & client/index.tsx\n(唯一允许的 SHELL_ASSEMBLY)"]
     end
@@ -417,6 +418,7 @@ flowchart BT
     Server --> Bottom
     ClientPanel --> ShellCore
     Assembly --> ClientPanel
+    Assembly --> ClientHost
     Assembly --> ShellCore
 ```
 
@@ -438,15 +440,16 @@ src/components/panel-terminal/    终端面板：server/(日志抓取) + client/
 src/components/tool-generate/     生图工具
 src/components/tool-workflow-edit/ 工作流编辑工具
 src/components/tool-danbooru/     Danbooru 标签查询工具
-src/shared/                       公用逻辑：host / comfy / workflow / run / tools / http / authz / media
+src/shared/                       公用逻辑：host(含 DSH 服务端适配) / comfy / workflow / run / tools / http / authz / media
 src/http/                         HTTP 前缀与分派（router）
 src/client/                       UI 外壳：页签、api、i18n、图标
+src/client/host/                  DSH Web 宿主适配层：slots / runtime / types
 src/index.ts                      包根入口（承载浏览器端 + 初始化共享运行时）
 src/entries/                      十一个组件 entry 的入口（core 即 src/index.ts）
 src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ctx.root 上）
 ```
 
-`npm test` 的首项（`node tests/arch.mjs`）会强制三条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条走真实分派层与 `fetch` 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。`KNOWN_UNTESTED` 已清零，目前 **19/19** 全覆盖。
+`npm test` 的首项（`node tests/arch.mjs`）会强制四条边界：`shared` 内部单向（host 最底）、组件 `server` 不依赖任何 `client`、外壳公共模块不依赖具体组件、原始 DSH 宿主 API 只允许出现在 `shared/host` 与 `client/host` 等适配层。紧跟着的 `tests/arch-write-routes.mjs` 走 `router.ts` 的三张表，要求每个写接口都有一条走真实分派层与 `fetch` 的用例 —— 直接调组件 handler 的单测反复出现「全绿但真机 405」，这道检查就是为此设的。`KNOWN_UNTESTED` 已清零，目前 **19/19** 全覆盖。
 
 ## 开发
 

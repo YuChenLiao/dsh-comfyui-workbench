@@ -26,11 +26,14 @@ import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import CSS from '../components/panel-gallery/client/styles.css'
 import { Workbench } from './components/Workbench.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
+import { hostLocale, navigateToConversation } from './host/runtime.js'
+import { mountComposerSlot, mountInputDock, mountToolView, mountWorkbenchEntries } from './host/slots.js'
+import type { ClientHostContext } from './host/types.js'
 import { shouldAutoFill, shouldLoadMore } from './scroll.js'
 import { metaLine, planPage } from './format.js'
 import { Icon } from './icons.js'
 import { DICT } from './i18n-data.js'
-import { activeLocaleOf, makeTranslate } from './i18n.js'
+import { makeTranslate } from './i18n.js'
 import WORKBENCH_CSS from './styles.css'
 
 export const name = 'dsh-comfyui-workbench'
@@ -38,60 +41,17 @@ export const name = 'dsh-comfyui-workbench'
 /** 只需要槽位注册；betterSidebar 走可选注入，所以不写进必需依赖。 */
 export const inject = ['slots']
 
-/** 主面板 id（`sidebar.panellist` 与 `main` 的 key 必须一致，否则点图标切不过去）。 */
-const PANEL_ID = 'comfyui-workbench'
-
-/**
- * better-sidebar 页签 id。
- *
- * better-sidebar 在 localStorage 的 prefs.tabsEnabled 里按这个 id 记"启用/禁用"
- * （`isTabEnabled = prefs.tabsEnabled[id] !== false`）。历史 id（`:assets`）可能
- * 被写成 false 过，那样无论怎么注册都不会出现 —— 换一个干净的 id，默认即启用。
- * 代价：需要在侧栏的「+」菜单里重新添加一次（它本来就不是常驻入口）。
- */
-const TAB_ID = 'comfyui-workbench:workbench'
-
-/** 客户端上下文的最小面。 */
-interface ClientContext {
-  get: (name: string) => any
-  inject: (names: string[], run: (scope: any) => void) => void
-}
-
-interface SlotRegistry {
-  inject: (name: string, register: () => () => void) => void
-  register: (options: Record<string, unknown>, component: unknown) => () => void
-}
-
 /**
  * 客户端插件主体。
  *
  * @param ctx - Web Client 根上下文。
  */
-export function apply(ctx: ClientContext): void {
-  const t = makeTranslate(activeLocaleOf(ctx.get('locale')))
+export function apply(ctx: ClientHostContext): void {
+  const t = makeTranslate(hostLocale(ctx))
+  const goToConversation = (): void => navigateToConversation(ctx)
 
-  /** 跳到会话面板（相册里的"加入当前对话"依赖它）。 */
-  const goToConversation = (): void => {
-    try {
-      const layout = ctx.get('layout')
-      if (layout !== null && typeof layout?.selectPanel === 'function') layout.selectPanel('conversation')
-    } catch {
-      // 面板服务缺席时由粘贴路径自行兜底
-    }
-  }
-
-  // better-sidebar 是可选依赖：未安装时 inject 永远不 resolve，这里也就不会注册任何东西。
-  let sidebar: { openTab: (seed: { type: string }) => void } | null = null
-
-  const openSidebar = (): boolean => {
-    if (sidebar === null) return false
-    try {
-      sidebar.openTab({ type: TAB_ID })
-      return true
-    } catch {
-      return false
-    }
-  }
+  let openSidebarFn = (): boolean => false
+  const openSidebar = (): boolean => openSidebarFn()
 
   const Tab = (tabProps?: { visible?: boolean }): React.ReactElement => (
     <Workbench
@@ -103,51 +63,21 @@ export function apply(ctx: ClientContext): void {
     />
   )
 
-  ctx.inject(['betterSidebar'], (scope: any) => {
-    scope.effect(() => {
-      const service = scope.betterSidebar
-      const dispose: () => void = service.registerTab({
-        id: TAB_ID,
-        title: () => t('title'),
-        description: () => t('sidebarDescription'),
-        icon: (size?: number) => <Icon name="album" size={size ?? 16} />,
-        order: 40,
-        single: true,
-        component: Tab,
-      })
-      sidebar = service
-      return () => {
-        sidebar = null
-        dispose()
-      }
-    }, 'comfyui-workbench: better-sidebar tab')
+  const mounted = mountWorkbenchEntries(ctx, {
+    title: () => t('title'),
+    description: () => t('sidebarDescription'),
+    renderTabIcon: (size?: number) => <Icon name="album" size={size ?? 16} />,
+    renderPanelIcon: (props?: { size?: number }) => (
+      <span style={{ display: 'grid', placeItems: 'center' }}>
+        <Icon name="album" size={props?.size ?? 18} />
+      </span>
+    ),
+    renderTab: Tab,
+    renderMain: () => (
+      <Workbench t={t} visible goToConversation={goToConversation} openSidebar={openSidebar} />
+    ),
   })
-
-  const slots = ctx.get('slots') as SlotRegistry | undefined
-  if (slots === undefined) {
-    console.warn('[comfyui-workbench] 拿不到 slots 服务，工作流管理界面未注册。')
-    return
-  }
-
-  slots.inject('sidebar.panellist', () => slots.register({
-    name: 'sidebar.panellist',
-    id: PANEL_ID,
-    order: 40,
-    label: () => t('title'),
-  }, (props: { size?: number }) => (
-    <span style={{ display: 'grid', placeItems: 'center' }}>
-      <Icon name="album" size={props?.size ?? 18} />
-    </span>
-  )))
-
-  slots.inject('main', () => slots.register({
-    name: 'main',
-    key: PANEL_ID,
-  }, () => (
-    <Workbench t={t} visible goToConversation={goToConversation} openSidebar={openSidebar} />
-  )))
-
-  console.info('[comfyui-workbench] 工作流管理界面已注册（侧边栏入口 + 主面板）')
+  openSidebarFn = mounted.openSidebar
 }
 
 /** 自检导出：`tests/render.mjs` 靠它把组件挂起来渲染。 */
@@ -187,4 +117,11 @@ export const __test = {
   modelGroupOf,
   resolveExpanded,
   TAIL_LABEL,
+  // 客户端 DSH 适配层：供 host-adapter.test.mjs 验证降级与槽位挂载
+  mountWorkbenchEntries,
+  mountToolView,
+  mountComposerSlot,
+  mountInputDock,
+  navigateToConversation,
+  hostLocale,
 }
