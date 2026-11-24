@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Unreleased（v0.9 前置）
+
+### DSH 双向适配层与宿主隔离
+
+在进入 v0.9 对话流新槽位前，把原先分散在 `src/index.ts`、11 条 `src/entries/*.ts`、`src/shared/run/notify.ts` 与 `src/client/index.tsx` 里的原始 DSH 宿主调用收拢进双向适配层；对外工具名、HTTP 路由、面板 UI 与 `cordis.patch.yml` 保持不变：
+
+- **服务端适配层**：
+  - 新增 [src/shared/host/adapter.ts](src/shared/host/adapter.ts)：统一封装 `onHostDispose`、`mountHostRoutes`、`resolveHostTools`、`registerHostTool`、`registerHostTools` 与 `createHostToolRegistrar`，集中处理 `ctx.get('tools')` 判空降级、`ctx.effect` 生命周期与 `disposer` 追踪，并预留 `onRegistered` 扩展钩子。
+  - 新增 [src/shared/host/session.ts](src/shared/host/session.ts)：收口 DSH 会话格式 v4 要求的 `NOTICE_SOURCE_KIND = 'plugin:dsh-comfyui-workbench'`、`noticeMessage` 信封与 `deliverSessionNotice` 双层异常兜底，[notify.ts](src/shared/run/notify.ts)、[run-batch.ts](src/components/tool-generate/tools/run-batch.ts) 与 [skill.ts](src/shared/host/skill.ts) 统一复用。
+  - 收敛 [src/index.ts](src/index.ts) 及全部 `src/entries/*.ts`，保留顶层静态 `export const inject` 供 Cordis Loader 读取，运行时宿主注册全部经由 `adapter.ts` 中转。
+- **客户端适配层**：
+  - 新增 [src/client/host/types.ts](src/client/host/types.ts)、[src/client/host/slots.ts](src/client/host/slots.ts) 与 [src/client/host/runtime.ts](src/client/host/runtime.ts)：统一封装 `mountWorkbenchEntries`（`betterSidebar.registerTab` 可选注入与降级、`sidebar.panellist`、`main`）、`navigateToConversation` 与 `hostLocale`，并预留 `mountToolView` / `mountComposerSlot` / `mountInputDock` 槽位挂载入口，瘦身 [src/client/index.tsx](src/client/index.tsx)。
+
+### 编码期与提交期契约门禁
+
+- **架构门禁加固**：[tests/arch.mjs](tests/arch.mjs) 新增第 4 条宿主耦合边界，扫描 `src/components/`、`src/entries/`、`src/shared/run/` 及非 `src/client/host/` 的前端源码，阻断直调 `ctx.get` / `ctx.effect` / `slots.register` / `betterSidebar` 或硬编码 `plugin:dsh-comfyui-workbench`。
+- **产物级契约单测**：新增 [tests/host-adapter.test.mjs](tests/host-adapter.test.mjs)，面向真实构建产物 `lib/index.js` 与 `lib/client.js` 验证服务缺席降级、`disposer` 回收、会话信封与双层异常兜底。
+- **ESLint + 原生 Git Hooks**：新增 [eslint.config.mjs](eslint.config.mjs)（`workbench/module-boundaries` 分层与零依赖检查 + AST 级 `no-restricted-syntax` 宿主耦合规则）与零依赖原生 [.githooks/pre-commit](.githooks/pre-commit) / [.githooks/pre-push](.githooks/pre-push)；`package.json` 新增 `lint`、`prepare` 并将 `lint` 并入 `npm run check`。
+
+### 文档与演进路线图
+
+- **README 架构图重绘**：同步更新 [README.md](README.md) 与 [README.en.md](README.en.md) 的三张 Mermaid 架构图（装配拓扑显性化 DSH 双向适配层、数据流标注 `shared/host/session` 投递、模块依赖边界补齐入口层与宿主隔离门禁）以及目录结构与边界说明。
+- **产品演进企划书**：归档 [docs/roadmap-v0.9-v1.x.md](docs/roadmap-v0.9-v1.x.md)（v0.9 → v1.x 路线图与里程碑）。
+
 ## 0.8.0 — 2026-11-22
 
 ### 文档与知识层同步
