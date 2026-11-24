@@ -226,7 +226,7 @@ export function Terminal({ t, visible }: TerminalProps): React.ReactElement {
             type="button"
             className="cwt-btn cwt-btn-warn"
             onClick={() => { void stop() }}
-          >{t('termStop')}</button>
+          >{actions.canceling ? t('termCancelStart') : t('termStop')}</button>
         ) : null}
         {actions.stopDisabled ? (
           // 外面包一层 span：disabled 按钮在 Chrome 上不触发 hover，title 写了也看不到。

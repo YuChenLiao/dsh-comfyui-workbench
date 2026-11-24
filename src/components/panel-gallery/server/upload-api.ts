@@ -51,6 +51,7 @@ function safeName(filename: string, ext: string): string {
  */
 export function createUploadHandler(
   uploadsDir: string,
+  onUploaded?: () => void,
 ): (url: URL, res: ServerResponse, req: IncomingMessage) => Promise<void> {
   return async (url, res, req) => {
     const filename = url.searchParams.get('filename') ?? ''
@@ -101,6 +102,7 @@ export function createUploadHandler(
       sendJson(res, 500, { ok: false, error: 'write-failed', message: error instanceof Error ? error.message : String(error) })
       return
     }
+    onUploaded?.()
 
     const result: Record<string, unknown> = { ok: true, path: target, bytes: bytes.length, mime, name: path.basename(target) }
     // PNG 顺手给尺寸：界面要按比例占位，避免加载时跳动。

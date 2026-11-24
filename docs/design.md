@@ -666,7 +666,7 @@ ctx.inject(['betterSidebar'], (scope) => {
     roots: []                 # 额外扫描根（绝对路径）
     maxDepth: 3
     maxItems: 4000
-    cacheMs: 30000            # 扫描结果缓存；刷新/出图完成/增删会 force=1 绕过
+    cacheMs: 30000            # 扫描结果缓存；刷新/出图完成/增删会 refresh=1 绕过或主动失效
     excludeDirs: []           # 额外跳过的目录名（与内置跳过名单合并）
     includeHidden: false
     # —— 新增 ——

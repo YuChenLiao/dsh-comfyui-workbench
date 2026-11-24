@@ -54,7 +54,7 @@ export interface TerminalRouteDeps {
    * `external` 状态没有天然出口：别人把 ComfyUI 关掉后，插件无从得知，面板会永久
    * 停在「外部实例」而且启动按钮永远不出现。每次 GET 顺手复查一次就够。
    */
-  recheckExternal?: () => Promise<boolean>
+  recheckExternal?: () => Promise<unknown>
   /**
    * 队列里还有没有活（只在受管实例就绪时问）。
    *

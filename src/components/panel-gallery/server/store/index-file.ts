@@ -56,9 +56,33 @@ export class AssetIndex {
   private dirty = false
   /** 自上次压实以来的追加次数。 */
   private appends = 0
+  /** 索引变更监听（跨 bundle 共享同一个 AssetIndex 实例时，用来通知相册清扫描缓存）。 */
+  private readonly listeners = new Set<() => void>()
 
   constructor(file = indexPath()) {
     this.file = file
+  }
+
+  /**
+   * 订阅索引写入（`add` / `remove` / `rewrite`）。
+   *
+   * 为什么放这里而不是直接调 `clearScanCache()`：工具 entry 与相册 entry 是独立 bundle，
+   * `scanCache` 是相册 bundle 内的模块级 Map，工具侧直接清的是自己那份空 Map；
+   * 而 `rt.index` 挂在共享运行时上，全插件共用同一个实例。
+   */
+  onMutate(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener()
+      } catch {
+        // 监听方异常不能打断索引写入
+      }
+    }
   }
 
   /** 从磁盘加载（带 2 秒缓存）。 */
@@ -94,6 +118,7 @@ export class AssetIndex {
     fs.appendFileSync(this.file, `${JSON.stringify(record)}\n`, 'utf8')
     this.dirty = true
     this.loadedAt = Date.now()
+    this.notify()
   }
 
   /** 批量登记。 */
@@ -164,6 +189,7 @@ export class AssetIndex {
     this.rows = new Map(list.map(record => [record.path, record]))
     this.loadedAt = Date.now()
     this.dirty = false
+    this.notify()
   }
 
   /** 现有行数（用于是否需要压实的判断）。 */

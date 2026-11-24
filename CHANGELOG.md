@@ -4,15 +4,15 @@
 
 ### 修复（对应 issue #3 / #4 / #5）
 
-- **`ctx.root` 在 DSH ≥ 0.2.2-rc.2 上导致 10/12 entry 启动失败（issue #3）**：cordis `4.0.0-rc.12` 起把根上下文换成 `ctx[Context.root]`（即 `Symbol.for('cordis.root')`），直接读 `ctx.root` 会抛 `cannot get property "root" without inject`。新增 [adapter 的 `resolveHostRoot`](src/shared/host/adapter.ts)：symbol 优先、普通属性兜底、最后退回自身 —— 三条路都必须保留，只认 symbol 会在仍用 `ctx.root` 的旧宿主上静默退回自身，表现为每个 entry 各建一份 Runtime。
+- **`ctx.root` 在新版 cordis 上导致 10/12 entry 启动失败（issue #3）**：升级指南标注 cordis `4.0.0-rc.12` 起把根上下文换成 `ctx[Context.root]`（实测 DSH `0.2.3-alpha.2` / cordis `4.2.0-alpha.1` 抛 `cannot get property "root" without inject`，而本机 `0.2.2-rc.5` / `4.0.2` 仍保留 `ctx.root`）。新增 [adapter 的 `resolveHostRoot`](src/shared/host/adapter.ts)：symbol 优先、普通属性兜底、最后退回自身并留警告 —— 三条路都必须保留，只认 symbol 会在仍用 `ctx.root` 的宿主上静默退回自身，表现为每个 entry 各建一份 Runtime。
 - **资产库 `/items` 在超大 workspace 里要 27 秒（issue #4）**：
-  - [collect.ts](src/components/panel-gallery/server/scan/collect.ts) 改为「先判收不收得下，再决定碰不碰磁盘」：sidecar 判定从 `existsSync` 降成同目录文件名集合的 O(1) 查询；`bare` 满额后，非 PNG 的媒体文件直接跳过 `statSync`。19 万文件 / 11 万媒体的目录从 22 万次 syscall 降到千级。
+  - [collect.ts](src/components/panel-gallery/server/scan/collect.ts) 改为「先判收不收得下，再决定碰不碰磁盘」：sidecar 判定从 `existsSync` 降成同目录文件名集合的 O(1) 查询；`bare` 满额后非 PNG 直接跳过 `statSync`，普通 PNG 也先判内嵌头再决定是否 `statSync`，双满时在当前目录循环内立即 `break`。19 万文件 / 11 万媒体的目录从 22 万次 syscall 降到千级。
   - [scan-cache.ts](src/components/panel-gallery/server/assets/scan-cache.ts) 的缓存时间戳从**扫描开始**改为**扫描结束**：大目录一次扫描本身要十几秒，按开始时刻记等于刚存进去就已过期，这是"连测三次都没有缓存效果"的真正原因。
-  - `cacheMs` 默认 4s → 30s；新增 `excludeDirs` 配置项（与内置跳过名单合并），让用户能把几百 GB 的素材目录排除掉。
+  - `cacheMs` 默认 4s → 30s；新增 `excludeDirs` 配置项（与内置跳过名单合并），让用户能把几百 GB 的素材目录排除掉；同时通过共享 `AssetIndex.onMutate` 与 `/upload` 回调跨 bundle 主动清扫描缓存，避免模型工具出图后 30 秒内切到相册看不到新图。
 - **终端面板无法关机、外部实例卡死（issue #5）**：
-  - [supervisor.ts](src/shared/comfy/supervisor.ts) 进入 `external` 时补写 `detail`（此前会带着上一次的"连不上…"显示外部实例），并新增 `recheckExternal()`：外部实例被关掉后自己回到 `unknown`，启动按钮得以重新出现。超时取 2s（比 `ensureReady` 的 3s 短），并加单飞锁避免多个面板并发探测。
+  - [supervisor.ts](src/shared/comfy/supervisor.ts) 进入 `external` 时补写 `detail`，新增 `recheckExternal()`（返回 `'alive' | 'gone' | 'not-external'`、2s 超时 + 单飞锁）；修复 `starting` 期间被 `stop()` 取消时 `start()` 轮询覆写为 `failed` 或幽灵 `ready` 的竞态。
   - 终端新增 `POST /terminal?action=stop`，走自己的路由而不是 `panel.workflow` 的 `/service/stop` —— 用户关掉工作流面板后那条路由不在，点「关机」会 404。
-  - 按钮组合抽成纯函数 [buttons.ts](src/components/panel-terminal/client/buttons.ts)：外部实例只显示灰掉的关机（杀别人的进程是越界）、受管实例就绪才给可点的关机、队列还有活时二次确认。
+  - 按钮组合抽成纯函数 [buttons.ts](src/components/panel-terminal/client/buttons.ts)：外部实例只显示灰掉的关机（杀别人的进程是越界）、受管实例启动中可点「取消启动」、就绪后可点「关机」（队列有活时二次确认）。
 - **测试硬编码路径**：[tests/costume-panel-image-source.test.mjs](tests/costume-panel-image-source.test.mjs) 写死了 `D:/dsh/dsh-comfyui-workbench`，导致别人 clone 后 `npm test` 必红；改为按本文件位置推仓库根。
 
 ### DSH 双向适配层与宿主隔离

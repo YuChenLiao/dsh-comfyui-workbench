@@ -40,49 +40,79 @@ test('按钮决策：外部实例只有灰掉的关机，且不算「未启动�
 
   assert.deepEqual(
     terminalActions({ hasStatus: true, state: 'external', managed: false, busy: false }),
-    { canStart: false, canStop: false, stopDisabled: true, confirmBeforeStop: false },
+    { canStart: false, canStop: false, canceling: false, stopDisabled: true, confirmBeforeStop: false },
     '外部实例不能给启动（会拉起第二个），也不能给可点的关机',
   )
 
   assert.deepEqual(
     terminalActions({ hasStatus: true, state: 'unknown', managed: false, busy: false }),
-    { canStart: true, canStop: false, stopDisabled: false, confirmBeforeStop: false },
+    { canStart: true, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
     '未启动时 managed 也是 false，但必须给启动而不是灰关机',
   )
 
   assert.deepEqual(
     terminalActions({ hasStatus: false, state: 'unknown', managed: false, busy: false }),
-    { canStart: false, canStop: false, stopDisabled: false, confirmBeforeStop: false },
+    { canStart: false, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
     '还没拿到状态时不显示任何动作',
   )
 
   assert.deepEqual(
+    terminalActions({ hasStatus: false, state: 'ready', managed: true, busy: false }),
+    { canStart: false, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
+    'hasStatus=false 时所有分支均不暴露按钮',
+  )
+
+  assert.deepEqual(
+    terminalActions({ hasStatus: false, state: 'external', managed: false, busy: false }),
+    { canStart: false, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
+    'hasStatus=false 时即使 state=external 也不显示灰按钮',
+  )
+
+  assert.deepEqual(
     terminalActions({ hasStatus: true, state: 'starting', managed: false, busy: false }),
-    { canStart: false, canStop: false, stopDisabled: false, confirmBeforeStop: false },
-    '拉起中两个按钮都不给',
+    { canStart: false, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
+    '尚未拉起子进程前两个按钮都不给',
+  )
+
+  assert.deepEqual(
+    terminalActions({ hasStatus: true, state: 'starting', managed: true, busy: false }),
+    { canStart: false, canStop: true, canceling: true, stopDisabled: false, confirmBeforeStop: false },
+    '冷启中已有受管子进程：应给「取消启动」，卡死时不用干等 180 秒',
+  )
+
+  assert.deepEqual(
+    terminalActions({ hasStatus: true, state: 'failed', managed: true, busy: false }),
+    { canStart: false, canStop: true, canceling: false, stopDisabled: false, confirmBeforeStop: false },
+    '超时失败但旧子进程仍活着：给「关机」清掉旧进程，不能再起第二个撞端口',
+  )
+
+  assert.deepEqual(
+    terminalActions({ hasStatus: true, state: 'failed', managed: false, busy: false }),
+    { canStart: true, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
+    '失败且无受管进程：可以重新启动',
   )
 
   assert.deepEqual(
     terminalActions({ hasStatus: true, state: 'ready', managed: true, busy: false }),
-    { canStart: false, canStop: true, stopDisabled: false, confirmBeforeStop: false },
+    { canStart: false, canStop: true, canceling: false, stopDisabled: false, confirmBeforeStop: false },
     '受管且就绪：可以关机，空闲时不弹确认',
   )
 
   assert.deepEqual(
     terminalActions({ hasStatus: true, state: 'ready', managed: true, busy: true }),
-    { canStart: false, canStop: true, stopDisabled: false, confirmBeforeStop: true },
+    { canStart: false, canStop: true, canceling: false, stopDisabled: false, confirmBeforeStop: true },
     '正在出图：关机前必须二次确认',
   )
 
   assert.deepEqual(
     terminalActions({ hasStatus: true, state: 'ready', managed: false, busy: false }),
-    { canStart: false, canStop: false, stopDisabled: false, confirmBeforeStop: false },
+    { canStart: false, canStop: false, canceling: false, stopDisabled: false, confirmBeforeStop: false },
     '就绪但不是我们拉起的：不给关机',
   )
 })
 
-// ── 2. supervisor 的 external 出口 ──────────────────────────────
-test('supervisor：外部实例关掉后能自己回到 unknown，且不留旧 detail', async () => {
+// ── 2. supervisor 的 external 出口与 starting/stop 竞态 ──────────
+test('supervisor：外部实例关掉后能自己回到 unknown，且区分 alive/gone/not-external', async () => {
   const original = globalThis.fetch
   let alive = true
   globalThis.fetch = async () => (alive
@@ -97,21 +127,160 @@ test('supervisor：外部实例关掉后能自己回到 unknown，且不留旧 d
     assert.equal(first.managed, false)
     assert.match(String(first.detail), /外部实例/, '切到 external 时要写原因，别留着上一次的报错')
 
-    // 外部实例真的还在：复查返回 true，状态不变
-    assert.equal(await sup.recheckExternal(50), true)
+    // 外部实例真的还在：复查返回 'alive'，状态不变
+    assert.equal(await sup.recheckExternal(50), 'alive')
     assert.equal(sup.status().state, 'external')
 
-    // 别人把它关了：一次复查就该回到 unknown
+    // 别人把它关了：一次复查就该回到 unknown 并返回 'gone'
     alive = false
-    assert.equal(await sup.recheckExternal(50), false)
+    assert.equal(await sup.recheckExternal(50), 'gone')
     const after = sup.status()
     assert.equal(after.state, 'unknown', '外部实例消失后必须回到 unknown，否则启动按钮永远不出现')
     assert.match(String(after.detail), /不在运行/)
 
-    // 非 external 状态没有可复查的东西
-    assert.equal(await sup.recheckExternal(50), false)
+    // 非 external 状态返回 'not-external'（与 'gone' 明确区分）
+    assert.equal(await sup.recheckExternal(50), 'not-external')
   } finally {
     globalThis.fetch = original
+  }
+})
+
+test('supervisor：starting 期间被 stop() 取消，不能被 start() 轮询覆写成 failed 或幽灵 ready', async () => {
+  const original = globalThis.fetch
+
+  // 场景 A：probe 一直失败时人为 stop()，必须保留 unknown +「已停止」，不能覆写成 failed
+  {
+    let probeCalls = 0
+    let sup
+    globalThis.fetch = async () => {
+      probeCalls += 1
+      // 第 1 次是 ensureReady 进 start() 前的探活，第 2 次在 start() 循环内：此时触发 stop()
+      if (probeCalls === 2) sup.stop()
+      return Promise.reject(new Error('ECONNREFUSED'))
+    }
+    try {
+      sup = new ComfySupervisor({
+        baseUrl: 'http://127.0.0.1:9',
+        autoDetect: true,
+        autoStart: true,
+        startCommand: [process.execPath, '-e', 'setTimeout(() => {}, 10000)'],
+        readyTimeoutMs: 5_000,
+        idleShutdownMs: 0,
+      })
+      const ok = await sup.ensureReady()
+      assert.equal(ok, false)
+      assert.equal(sup.status().state, 'unknown', '主动取消启动后不能被覆写成 failed')
+      assert.match(String(sup.status().detail), /已停止/)
+      assert.equal(sup.status().managed, false)
+    } finally {
+      sup?.stop()
+      globalThis.fetch = original
+    }
+  }
+
+  // 场景 B：probe 恰好返回 ok 的同一窗口内用户点了 stop()，绝不能产出一个 ready + managed:false 的幽灵态
+  {
+    let probeCalls = 0
+    let sup
+    globalThis.fetch = async () => {
+      probeCalls += 1
+      if (probeCalls === 1) return Promise.reject(new Error('ECONNREFUSED'))
+      // start() 内部的 probe：返回成功前先模拟用户点了 stop()
+      sup.stop()
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      sup = new ComfySupervisor({
+        baseUrl: 'http://127.0.0.1:9',
+        autoDetect: true,
+        autoStart: true,
+        startCommand: [process.execPath, '-e', 'setTimeout(() => {}, 10000)'],
+        readyTimeoutMs: 5_000,
+        idleShutdownMs: 0,
+      })
+      const ok = await sup.ensureReady()
+      assert.equal(ok, false, '已被 stop() 取消的启动绝不能返回 ready')
+      assert.equal(sup.status().state, 'unknown', '绝不能落进 ready + managed:false 幽灵态')
+      assert.equal(sup.status().managed, false)
+    } finally {
+      sup?.stop()
+      globalThis.fetch = original
+    }
+  }
+
+  // 场景 C：取消启动后立刻再次启动（即使旧 probe 还在途），新启动不能被旧 starting 吞掉或被覆写
+  {
+    let sup
+    let resolveStuckProbe
+    let probeIndex = 0
+    globalThis.fetch = async () => {
+      probeIndex += 1
+      // 第 1 次：ensureReady 进 start() 前的探活（立即失败）
+      if (probeIndex === 1) return Promise.reject(new Error('ECONNREFUSED'))
+      // 第 2 次：child1 拉起后的在途 probe（模拟慢响应，在 stop() 之后才返回）
+      if (probeIndex === 2) {
+        await new Promise(resolve => { resolveStuckProbe = resolve })
+        return Promise.reject(new Error('ECONNREFUSED'))
+      }
+      // 第 3 次：第二次 ensureReady 进 start() 前的探活（失败，触发拉起 child2）
+      if (probeIndex === 3) return Promise.reject(new Error('ECONNREFUSED'))
+      // 第 4 次：child2 的 probe（成功就绪）
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      sup = new ComfySupervisor({
+        baseUrl: 'http://127.0.0.1:9',
+        autoDetect: true,
+        autoStart: true,
+        startCommand: [process.execPath, '-e', 'setTimeout(() => {}, 10000)'],
+        readyTimeoutMs: 5_000,
+        idleShutdownMs: 0,
+      })
+      const firstRun = sup.ensureReady()
+      for (let i = 0; i < 40 && resolveStuckProbe === undefined; i += 1) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      assert.equal(sup.status().state, 'starting')
+      assert.equal(sup.stop(), true)
+
+      // 立刻再次启动（此时旧 probe 还没返回，如果 stop() 没释放 this.starting 就会搭上旧启动被吞掉）
+      const secondRun = sup.ensureReady()
+      // 30ms 后再放行旧 probe：若 secondRun 误搭旧 starting 会拿到 false（不会卡死），
+      // 正常情况下 secondRun 已独立拉起 child2，且旧 probe 回来不能覆写新状态。
+      setTimeout(() => { resolveStuckProbe?.() }, 30)
+      const [firstOk, secondOk] = await Promise.all([firstRun, secondRun])
+      assert.equal(firstOk, false, '第一次被取消的启动应返回 false')
+      assert.equal(secondOk, true, '取消后立刻重点启动必须真正拉起并就绪，不能被旧 starting 吞掉')
+      assert.equal(sup.status().state, 'ready')
+      assert.equal(sup.status().managed, true)
+    } finally {
+      resolveStuckProbe?.()
+      sup?.stop()
+      globalThis.fetch = original
+    }
+  }
+
+  // 场景 D：子进程在 starting 期间自行异常退出（非 stop()），仍必须落到 failed
+  {
+    let sup
+    globalThis.fetch = async () => Promise.reject(new Error('ECONNREFUSED'))
+    try {
+      sup = new ComfySupervisor({
+        baseUrl: 'http://127.0.0.1:9',
+        autoDetect: true,
+        autoStart: true,
+        startCommand: [process.execPath, '-e', 'process.exit(1)'],
+        readyTimeoutMs: 5_000,
+        idleShutdownMs: 0,
+      })
+      const ok = await sup.ensureReady()
+      assert.equal(ok, false)
+      assert.equal(sup.status().state, 'failed', '子进程异常退出必须判成 failed')
+      assert.match(String(sup.status().detail), /进程已退出/)
+    } finally {
+      sup?.stop()
+      globalThis.fetch = original
+    }
   }
 })
 
@@ -124,7 +293,7 @@ function makeDeps(overrides = {}) {
     status: () => state.status,
     start: () => {},
     stop: () => { calls.stopped += 1; state.status = { ...state.status, state: 'unknown', managed: false }; return true },
-    recheckExternal: async () => { calls.rechecked += 1; return true },
+    recheckExternal: async () => { calls.rechecked += 1; return 'alive' },
     busy: async () => { calls.busy += 1; return true },
     ...overrides,
   }
@@ -176,7 +345,7 @@ test('终端路由：只有受管实例就绪时才探测队列，外部实例�
 
   // 复查后状态可能已经变了（外部实例被关掉）
   const gone = makeDeps({
-    recheckExternal: async () => { goneState.status = { state: 'unknown', managed: false, baseUrl: 'http://x' }; return false },
+    recheckExternal: async () => { goneState.status = { state: 'unknown', managed: false, baseUrl: 'http://x' }; return 'gone' },
   })
   const goneState = { status: { state: 'external', managed: false, baseUrl: 'http://x' } }
   gone.deps.status = () => goneState.status

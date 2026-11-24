@@ -402,7 +402,7 @@ export function createGalleryRoutes(deps: GalleryRouteDeps): Record<string, Rout
     '/trash': handleTrashList,
     '/trash/restore': handleTrashRestore,
     '/trash/empty': handleTrashEmpty,
-    '/upload': createUploadHandler(uploadsDir),
+    '/upload': createUploadHandler(uploadsDir, clearScanCache),
     // 导出的实现在相册这边（要读图、sidecar、打包），但**不挂在相册的路由表里**：
     // 同一路径的 GET（列表）属于工作流组件，两边都注册会互相覆盖。
     // 相册 entry 取出它交给 runtime，工作流组件的 POST /workflows 转发过来。

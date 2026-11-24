@@ -7,6 +7,9 @@ import { homeDir } from '../host/paths.js'
 import type { LoggerLike } from '../host/types.js'
 import { isQueueBusy } from './queue.js'
 
+/** `recheckExternal()` 的明确结果，避免把"本来就不是外部实例"和"外部实例已退出"混成一个布尔值。 */
+export type RecheckExternalResult = 'alive' | 'gone' | 'not-external'
+
 /** 服务当前状态。 */
 export type ServiceState = 'unknown' | 'external' | 'starting' | 'ready' | 'failed'
 
@@ -49,14 +52,38 @@ export interface ServiceStatus {
   detail?: string
 }
 
-/** 一次轻量探测的结果。 */
-async function probe(baseUrl: string, timeoutMs = 3_000): Promise<boolean> {
+/** 一次轻量探测的结果（支持外部取消信号，避免 stop() 后还要干等超时）。 */
+async function probe(baseUrl: string, timeoutMs = 3_000, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted === true) return false
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const onAbort = (): void => controller.abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
   try {
-    const res = await fetch(`${baseUrl}/system_stats`, { signal: AbortSignal.timeout(timeoutMs) })
+    const res = await fetch(`${baseUrl}/system_stats`, { signal: controller.signal })
     return res.ok
   } catch {
     return false
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
   }
+}
+
+/** 可被 AbortSignal 立刻唤醒的延时，避免取消启动后 sleep 残留 1 秒。 */
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise(resolve => {
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /**
@@ -216,8 +243,10 @@ export class ComfySupervisor {
   private detail = ''
   private lastUsedAt = 0
   private starting: Promise<boolean> | null = null
+  /** 当前 `start()` 轮询的取消信号：`stop()` 触发它立刻唤醒 sleep/中断 probe。 */
+  private startAbort: AbortController | null = null
   /** 外部实例复查的单飞锁：多个面板同时轮询时只发一次探测。 */
-  private rechecking: Promise<boolean> | null = null
+  private rechecking: Promise<RecheckExternalResult> | null = null
   private idleTimer: NodeJS.Timeout | null = null
 
   constructor(options: SupervisorOptions) {
@@ -290,11 +319,15 @@ export class ComfySupervisor {
       return false
     }
 
-    this.starting = this.start()
+    const abort = new AbortController()
+    this.startAbort = abort
+    const run = this.start(abort.signal)
+    this.starting = run
     try {
-      return await this.starting
+      return await run
     } finally {
-      this.starting = null
+      if (this.starting === run) this.starting = null
+      if (this.startAbort === abort) this.startAbort = null
     }
   }
 
@@ -310,9 +343,9 @@ export class ComfySupervisor {
    * 才会走到超时。
    *
    * @param timeoutMs - 探测超时。
-   * @returns 是否还需要继续当作外部实例。
+   * @returns `'alive'`（仍在运行）| `'gone'`（已退出并切回 `unknown`）| `'not-external'`（当前不是外部实例）。
    */
-  async recheckExternal(timeoutMs = 2_000): Promise<boolean> {
+  async recheckExternal(timeoutMs = 2_000): Promise<RecheckExternalResult> {
     // 多个终端面板可能同时轮询：合并成一次探测，避免打一串请求。
     if (this.rechecking !== null) return await this.rechecking
     this.rechecking = this.runRecheck(timeoutMs)
@@ -323,21 +356,22 @@ export class ComfySupervisor {
     }
   }
 
-  private async runRecheck(timeoutMs: number): Promise<boolean> {
+  private async runRecheck(timeoutMs: number): Promise<RecheckExternalResult> {
     // 不是外部实例（自己拉起的 / 已经失败 / 未知）就没有可复查的东西。
-    if (this.state !== 'external' || this.child !== null) return false
+    if (this.state !== 'external' || this.child !== null) return 'not-external'
     const alive = await probe(this.options.baseUrl, timeoutMs)
-    if (alive) return true
+    if (alive) return 'alive'
     // 探测期间可能已经被 ensureReady 重新拉起或换成了别的状态，别覆盖新状态。
     if (this.state === 'external' && this.child === null) {
       this.state = 'unknown'
       this.detail = '外部实例已不在运行。'
+      return 'gone'
     }
-    return false
+    return 'not-external'
   }
 
   /** 拉起进程并等待就绪。 */
-  private async start(): Promise<boolean> {
+  private async start(signal: AbortSignal): Promise<boolean> {
     if (!this.options.autoStart && this.options.startCommand === undefined) {
       this.state = 'failed'
       this.detail = `连不上 ${this.options.baseUrl}，且 autoStart 已关闭。`
@@ -356,6 +390,7 @@ export class ComfySupervisor {
     const argv = this.options.startCommand ?? [interpreterOf(install as string), 'main.py', '--port', portOf(this.options.baseUrl)]
     const cwd = install ?? undefined
 
+    let spawned: ChildProcess
     try {
       const child = spawn(argv[0] as string, argv.slice(1), {
         cwd,
@@ -374,12 +409,14 @@ export class ComfySupervisor {
       child.on('exit', () => {
         if (this.child === child) {
           this.child = null
+          this.clearIdleTimer()
           if (this.state === 'ready') this.state = 'unknown'
           // 进程没了还留着「已拉起：python main.py …」就是在骗人：面板会把这句话
           // 当成"服务还在"的证据。
           if (this.state === 'unknown') this.detail = '本插件拉起的进程已退出。'
         }
       })
+      spawned = child
       this.child = child
       this.detail = `已拉起：${argv.join(' ')}`
       this.options.logger?.info?.(`[comfy] 拉起服务：${argv.join(' ')}（cwd=${cwd ?? '默认'}）`)
@@ -389,21 +426,33 @@ export class ComfySupervisor {
       return false
     }
 
+    const abortIfGone = (): boolean => {
+      // 本轮已被 stop() 主动取消：直接退出，绝不触碰（可能已被新一轮 start() 占用的）状态。
+      if (signal.aborted) return true
+      if (this.child === spawned) return false
+      // 只有仍在 starting 且无新子进程时才算本轮异常退出；
+      // 若已被用户 stop() 切回 unknown，决不能覆盖成 failed 或把已停进程标成 ready。
+      if (this.state === 'starting' && this.child === null) {
+        this.state = 'failed'
+        this.detail = '进程已退出（可能缺少依赖或端口被占用）。'
+      }
+      return true
+    }
+
     const deadline = Date.now() + this.options.readyTimeoutMs
     while (Date.now() < deadline) {
-      if (await probe(this.options.baseUrl, 2_000)) {
+      if (abortIfGone()) return false
+      const ready = await probe(this.options.baseUrl, 2_000, signal)
+      if (abortIfGone()) return false
+      if (ready) {
         this.state = 'ready'
         this.armIdleTimer()
         return true
       }
-      if (this.child === null) {
-        this.state = 'failed'
-        this.detail = '进程已退出（可能缺少依赖或端口被占用）。'
-        return false
-      }
-      await new Promise(resolve => setTimeout(resolve, 1_000))
+      await sleepAbortable(1_000, signal)
     }
 
+    if (abortIfGone()) return false
     this.state = 'failed'
     this.detail = `等待 ${Math.round(this.options.readyTimeoutMs / 1000)} 秒仍未就绪。`
     return false
@@ -491,6 +540,12 @@ export class ComfySupervisor {
   /** 停掉自己拉起的进程。外部实例永不触碰。 */
   stop(): boolean {
     this.clearIdleTimer()
+    // 立刻取消在飞的启动轮询并释放 starting 槽：
+    // 用户点「取消启动」后紧接着再点「启动」，不能被旧启动的 sleep/probe 静默吞掉。
+    const activeAbort = this.startAbort
+    this.startAbort = null
+    this.starting = null
+    activeAbort?.abort()
     const child = this.child
     if (child === null) {
       this.detail = '没有本插件拉起的进程，未停止任何东西。'

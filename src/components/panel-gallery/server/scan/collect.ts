@@ -50,7 +50,9 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
     // 键按平台折叠大小写：旧的 existsSync 在 Windows 上本就不区分，
     // 不折叠会让改名过大小写的 sidecar 突然认不出来。
     const names = new Set<string>()
-    for (const entry of entries) names.add(foldPathCase(entry.name))
+    for (const entry of entries) {
+      if (entry.isFile()) names.add(foldPathCase(entry.name))
+    }
 
     for (const entry of entries) {
       const name = entry.name
@@ -65,20 +67,43 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
       }
       if (!entry.isFile()) continue
       // 视频/音频也算资产：工作流会顺带产出它们，排掉就是"生成了却看不见"
-      if (!MEDIA_EXTS.has(path.extname(name).toLowerCase())) continue
+      const ext = path.extname(name).toLowerCase()
+      if (!MEDIA_EXTS.has(ext)) continue
 
-      // 先判"收不收得下"，再决定要不要 stat —— 顺序反过来就是那 27 秒。
+      // 先判"收不收得下"，再决定要不要碰磁盘（statSync / 读 PNG 头）—— 顺序反过来就是那 27 秒。
       const hasSidecar = names.has(foldPathCase(`${name}.json`))
+      let generatedFlag: boolean
       if (hasSidecar) {
         if (generatedFull()) {
           truncatedGenerated = true
+          if (bareFull()) {
+            truncatedBare = true
+            break
+          }
           continue
         }
+        generatedFlag = true
       } else if (bareFull()) {
-        // 没有 sidecar 的只有 PNG 还可能靠内嵌 prompt 翻成生成图；
-        // 其余（wav / mp3 / mp4 …）必定进 bare，bare 满了就没必要碰磁盘。
-        if (path.extname(name).toLowerCase() !== '.png') {
+        // 没有 sidecar 且 bare 已满：
+        // - 若 generated 也满了，连 PNG 文件头都不必读，整层直接结束；
+        // - 若不是 PNG，必定进 bare，直接跳过；
+        // - 若是 PNG 且 generated 未满，先探测 256 字节头再决定是否 statSync，避免给普通 PNG 白做 stat。
+        if (generatedFull()) {
+          truncatedGenerated = true
           truncatedBare = true
+          break
+        }
+        if (ext !== '.png' || !hasEmbeddedPromptHint(full)) {
+          truncatedBare = true
+          continue
+        }
+        generatedFlag = true
+      } else {
+        // bare 未满：只有 PNG 才可能靠内嵌 prompt 翻成生成图；
+        // 若确实是生成图但 generated 已满，直接跳过，不白做 statSync。
+        generatedFlag = ext === '.png' && hasEmbeddedPromptHint(full)
+        if (generatedFlag && generatedFull()) {
+          truncatedGenerated = true
           continue
         }
       }
@@ -90,8 +115,6 @@ export function collectImages(root: string, options: ScanOptions): ScanResult {
         continue
       }
 
-      // 有 sidecar 就不必再读文件头；没有的才探测 PNG 内嵌 prompt。
-      const generatedFlag = hasSidecar || hasEmbeddedPromptHint(full)
       const record: ImageRecord = {
         path: full,
         name,

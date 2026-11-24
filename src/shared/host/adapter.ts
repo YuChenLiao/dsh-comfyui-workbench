@@ -156,17 +156,19 @@ export const HOST_ROOT_SYMBOL: symbol = Symbol.for('cordis.root')
  * 兄弟之间不共享自有属性；把共享状态挂在 entry 自己的 ctx 上等于各建一份。
  * 只有根上下文是所有 entry 共同的原点，因此取法必须跟着宿主版本走：
  *
- *   1. cordis >= 4.0.0-rc.12（DSH >= 0.2.2-rc.2）：根上下文是 `ctx[Context.root]`。
+ *   1. 新版 cordis（如 issue #3 实测的 DSH 0.2.3-alpha.2 / cordis 4.2.0-alpha.1；
+ *      升级指南标注变更始于 cordis 4.0.0-rc.12）：根上下文是 `ctx[Context.root]`，
  *      直接读 `ctx.root` 会抛 `cannot get property "root" without inject`。
- *   2. 更早的 cordis：根上下文是普通属性 `ctx.root`，且**没有** root symbol。
+ *   2. 仍保留普通属性的 cordis（实测含本机 DSH 0.2.2-rc.5 / cordis 4.0.2）：
+ *      根上下文是普通属性 `ctx.root`，且**没有** root symbol。
  *   3. 单测或非 cordis 环境：两者都不存在，退回 `ctx` 自身。
  *
- * 两条路都必须保留 —— 只认 symbol 会在旧宿主上取到 undefined 并静默退回自身，
+ * 两条路都必须保留 —— 只认 symbol 会在仍用 `ctx.root` 的宿主上取到 undefined 并静默退回自身，
  * 表现为每个 entry 各建一份 Runtime，比启动失败更难排查。
  *
  * @param ctx - 任意 entry 的上下文。
  */
-/** 兜底警告只打一次：它挂在每条 entry 的 apply 路径上，重复刷屏没有额外信息。 */
+/** 本 bundle 内的兜底警告只打一次，避免同一 entry 反复调用 `sharedOf` 时刷屏。 */
 let rootFallbackWarned = false
 
 export function resolveHostRoot(ctx: HostContext, warn?: (message: string) => void): unknown {

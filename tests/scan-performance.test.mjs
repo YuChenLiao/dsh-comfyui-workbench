@@ -20,6 +20,7 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const { collectImages, scanRoot, clearScanCache } = await import('../lib/index.js')
+const { AssetIndex } = await import('../lib/store.js')
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -176,4 +177,116 @@ test('客户端的「刷新」与「出图完成」必须带 refresh=1，否则�
   const gallery = fs.readFileSync(path.join(ROOT, 'src/components/panel-gallery/client/Gallery.tsx'), 'utf8')
   assert.match(gallery, /onRefresh=\{\(\) => gallery\.reload\(true, true\)\}/, '刷新按钮要强制重扫')
   assert.match(gallery, /reloadRef\.current\(true, true\)/, '出图完成后的刷新也要强制重扫')
+})
+
+test('单层目录海量普通 PNG：bare 满额后跳过 statSync，双满后立刻跳出循环', () => {
+  // 1) bare 满但 generated 未满：普通 PNG 经 256 字节头判定不是生成图后，不该再做 statSync
+  const bareOnlySpec = {}
+  for (let i = 0; i < 30; i += 1) bareOnlySpec[`shots/shot-${String(i).padStart(2, '0')}.png`] = 'not-comfy-png'
+  const bareRoot = makeTree(bareOnlySpec)
+  const bareRes = countingStats(() => collectImages(bareRoot, { ...OPTS, maxItems: 5 }))
+  assert.equal(bareRes.value.files.length, 5)
+  assert.equal(bareRes.value.truncatedBare, true)
+  assert.equal(bareRes.calls.filter(p => p.endsWith('.png')).length, 5, 'bare 满额后普通 PNG 不应再 statSync')
+
+  // 2) 单层目录里 generated 和 bare 都满后：必须立刻 break，不再 openSync 读后面 PNG 的文件头。
+  // 包装 readdirSync 按字典序返回：Linux ext4/tmpfs 不保证目录项顺序，排序保证跨平台确定性。
+  const bothSpec = {}
+  for (let i = 0; i < 5; i += 1) {
+    bothSpec[`mix/00-gen-${i}.png`] = 'x'
+    bothSpec[`mix/00-gen-${i}.png.json`] = '{}'
+  }
+  for (let i = 0; i < 40; i += 1) bothSpec[`mix/01-bare-${String(i).padStart(2, '0')}.png`] = 'not-comfy-png'
+  const bothRoot = makeTree(bothSpec)
+
+  const origReaddir = fs.readdirSync
+  const origOpen = fs.openSync
+  let openCalls = 0
+  fs.readdirSync = (...args) => {
+    const list = origReaddir.apply(fs, args)
+    return Array.isArray(list)
+      ? list.sort((a, b) => String(typeof a === 'string' ? a : a.name).localeCompare(String(typeof b === 'string' ? b : b.name)))
+      : list
+  }
+  fs.openSync = (...args) => {
+    openCalls += 1
+    return origOpen.apply(fs, args)
+  }
+  try {
+    const bothRes = countingStats(() => collectImages(bothRoot, { ...OPTS, maxItems: 5 }))
+    assert.equal(bothRes.value.files.length, 10, '5 张生成图 + 5 张普通图')
+    assert.equal(bothRes.calls.filter(p => p.endsWith('.png')).length, 10, '双满后不应继续 statSync')
+    assert.equal(openCalls, 5, `双满后必须立刻 break，不再读后面 35 张 PNG 头（实际 openSync ${openCalls} 次）`)
+  } finally {
+    fs.readdirSync = origReaddir
+    fs.openSync = origOpen
+  }
+})
+
+test('跨 bundle 缓存失效：共享 AssetIndex 写入/删除/重写均清缓存、退订后不再触发', () => {
+  clearScanCache()
+  const root = makeTree({ 'out/first.png': 'x', 'out/first.png.json': '{}' })
+  const indexFile = path.join(root, 'assets.jsonl')
+  const index = new AssetIndex(indexFile)
+  const off = index.onMutate(clearScanCache)
+  const settings = { maxDepth: 2, maxItems: 100, includeHidden: false, cacheMs: 60_000, excludeDirs: [] }
+  const secondPath = path.join(root, 'out/second.png')
+  try {
+    const before = scanRoot(root, settings, false)
+    assert.equal(before.files.length, 1)
+
+    // 1) add：模拟工具侧出图落盘并写入共享 rt.index，不传 force 也必须立刻看到新图
+    fs.writeFileSync(secondPath, 'x')
+    fs.writeFileSync(`${secondPath}.json`, '{}')
+    index.add({
+      digest: 'abc123',
+      path: secondPath,
+      bytes: 1,
+      mime: 'image/png',
+      workflowId: 'wf',
+      workflowHash: 'h',
+      promptId: 'p1',
+      createdAt: new Date().toISOString(),
+      tags: [],
+      status: 'present',
+    })
+
+    const afterAdd = scanRoot(root, settings, false)
+    assert.notEqual(afterAdd, before, 'AssetIndex.add 必须触发扫描缓存失效')
+    assert.equal(afterAdd.files.length, 2, '30 秒 TTL 内切回相册必须能立刻看到刚出的新图')
+
+    // 2) remove：移除索引也触发失效
+    index.remove(secondPath)
+    const afterRemove = scanRoot(root, settings, false)
+    assert.notEqual(afterRemove, afterAdd, 'AssetIndex.remove 必须触发扫描缓存失效')
+
+    // 3) rewrite：重建索引同样触发失效
+    index.rewrite([])
+    const afterRewrite = scanRoot(root, settings, false)
+    assert.notEqual(afterRewrite, afterRemove, 'AssetIndex.rewrite 必须触发扫描缓存失效')
+  } finally {
+    off()
+  }
+
+  // 4) 退订后再次 add 不应再清缓存（防止组件卸载后残留监听）
+  const cached = scanRoot(root, settings, false)
+  index.add({
+    digest: 'def456',
+    path: path.join(root, 'out/third.png'),
+    bytes: 1,
+    mime: 'image/png',
+    workflowId: 'wf',
+    workflowHash: 'h',
+    promptId: 'p2',
+    createdAt: new Date().toISOString(),
+    tags: [],
+    status: 'present',
+  })
+  assert.equal(scanRoot(root, settings, false), cached, '退订后不应再触发 clearScanCache')
+
+  // 接线断言：确认 gallery entry 真的订阅了 rt.index.onMutate 且 /upload 也清缓存
+  const entry = fs.readFileSync(path.join(ROOT, 'src/entries/gallery.ts'), 'utf8')
+  assert.match(entry, /rt\.index\.onMutate\(clearScanCache\)/, 'gallery entry 必须订阅共享索引的变更')
+  const routes = fs.readFileSync(path.join(ROOT, 'src/components/panel-gallery/server/routes.ts'), 'utf8')
+  assert.match(routes, /createUploadHandler\(uploadsDir,\s*clearScanCache\)/, '/upload 落盘后也要清扫描缓存')
 })
