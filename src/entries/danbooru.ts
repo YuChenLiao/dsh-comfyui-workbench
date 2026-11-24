@@ -11,6 +11,7 @@
  * 可以在宿主「设置 → 插件」里单独关掉，也能用 `disabledComponents: ['tool.danbooru']`。
  */
 import { DANBOORU_COMPONENT, DEFAULT_SYNC, createTagCache, danbooruLookupTool, danbooruSyncTool } from '../components/tool-danbooru/index.js'
+import { registerHostTools } from '../shared/host/adapter.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext, LoggerLike } from '../shared/host/types.js'
@@ -25,12 +26,6 @@ export function apply(ctx: HostContext, config: unknown): void {
     return
   }
 
-  const tools = ctx.get?.('tools') as { register: (spec: unknown) => (() => void) | void } | undefined
-  if (tools === undefined || typeof tools.register !== 'function') {
-    console.warn('[comfyui-workbench] 拿不到 tools 服务，Danbooru 工具未注册。')
-    return
-  }
-
   const dataDir = pluginDataDir()
   const cache = createTagCache(dataDir)
   const logger: LoggerLike = {
@@ -40,20 +35,11 @@ export function apply(ctx: HostContext, config: unknown): void {
   }
   const deps = { dataDir, logger, cache }
 
-  let registered = 0
-  for (const spec of [danbooruLookupTool(deps), danbooruSyncTool(deps, DEFAULT_SYNC)]) {
-    try {
-      const dispose = tools.register(spec)
-      // 卸载时注销：这是 entry 自己的 effect，不经过共享 runtime。
-      if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
-        ctx.effect(() => () => dispose(), `danbooru: tool ${spec.name}`)
-      }
-      registered += 1
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.warn(`[comfyui-workbench] 工具 ${spec.name} 未注册：${message}`)
-    }
-  }
+  const registered = registerHostTools(ctx, [danbooruLookupTool(deps), danbooruSyncTool(deps, DEFAULT_SYNC)], {
+    label: 'danbooru',
+    missingMessage: '[comfyui-workbench] 拿不到 tools 服务，Danbooru 工具未注册。',
+  })
+  if (registered === 0) return
 
   console.log(`[comfyui-workbench] Danbooru 工具已注册 ${registered} 个（数据目录 ${dataDir}）`)
 }

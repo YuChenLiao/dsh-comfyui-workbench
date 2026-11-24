@@ -5,6 +5,7 @@
  * 与生图分开：它只写本地元数据，不碰 ComfyUI。
  */
 import { registerTools, TOOL_GROUPS } from '../components/tool-generate/index.js'
+import { createHostToolRegistrar, onHostDispose } from '../shared/host/adapter.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { acquire, release } from '../runtime.js'
@@ -27,10 +28,14 @@ export function apply(ctx: HostContext, config: unknown): void {
 
   const rt = acquire(ctx, config)
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'edit: runtime')
+  onHostDispose(ctx, 'edit: runtime', () => release(ctx))
 
-  const tools = ctx.get?.('tools') as { register: (spec: unknown) => (() => void) | void } | undefined
-  if (tools === undefined || typeof tools.register !== 'function') {
+  const registerHost = createHostToolRegistrar(ctx, {
+    label: 'edit',
+    track: dispose => rt.track(dispose),
+    warn: rt.warn,
+  })
+  if (registerHost === undefined) {
     rt.warn('[comfyui-workbench] 拿不到 tools 服务，工作流编辑工具未注册。')
     return
   }
@@ -51,7 +56,7 @@ export function apply(ctx: HostContext, config: unknown): void {
     logger: rt.logger,
   }, {
     enabled: TOOL_GROUPS.filter(group => group.component === 'tool.workflow-edit').map(group => group.name),
-    register: spec => rt.track(tools.register(spec)),
+    register: registerHost,
     warn: rt.warn,
   })
 

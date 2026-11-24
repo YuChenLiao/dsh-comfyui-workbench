@@ -1,11 +1,13 @@
-import crypto from 'node:crypto'
-
 import { watchProgress } from '../comfy/progress.js'
 import type { ComfyClient } from '../comfy/index.js'
+import { deliverSessionNotice } from '../host/session.js'
+import type { NotifyTarget } from '../host/session.js'
 import type { LoggerLike } from '../host/types.js'
 import { codeOf, finalStateOf, giveUpMessage, isFatalRunError, TRANSIENT_LIMIT } from './policy.js'
 import { checkRun, collectArtifacts, recallRun } from './runner.js'
 import type { PendingContext, RunOutcome } from './runner.js'
+
+export type { NotifyTarget } from '../host/session.js'
 
 /**
  * 产物收完后的回调。
@@ -31,32 +33,6 @@ function notifyCollected(callback: CollectedCallback | undefined, outcome: RunOu
   }
 }
 
-/**
- * 插件通知的 source kind。
- *
- * 会话格式 v4 拒绝 `kind: 'plugin'`：`message-sources.ts` 要求每条消息带 producer
- * 自己的 kind，插件消息的统一形状是 `plugin:<包名>`（正是 v3→v4 迁移把
- * `{ kind: 'plugin', plugin: ... }` 改写成的东西）。写成 `kind: 'plugin'` 会让
- * `followup` 在落事件时抛 `SessionFormatError`，通知永远发不出去，而且异常发生在
- * agent 的 inbox 写入路径上，会把发起会话的驱动留在异常态。
- */
-const NOTICE_SOURCE_KIND = 'plugin:dsh-comfyui-workbench'
-
-/**
- * 能给会话塞消息的对象（宿主 Agent 上只用到这一个方法）。
- *
- * 宿主 `Agent.followup(message)` 会排一轮普通回合并唤醒驱动 —— 子代理就是这样
- * 把结果送回父对话的。插件走同一条路，所以出图完成后对话能自己收到结果。
- */
-export interface NotifyTarget {
-  followup: (message: {
-    id: string
-    role: 'user'
-    content: Array<{ type: 'text'; text: string }>
-    source: { kind: string }
-  }) => void
-}
-
 /** 正在等待的运行。 */
 interface Watcher {
   timer: NodeJS.Timeout
@@ -65,39 +41,6 @@ interface Watcher {
 
 /** 活跃的等待者：promptId → watcher。插件卸载时统一清掉。 */
 const watchers = new Map<string, Watcher>()
-
-/** 构造一条插件通知消息。 */
-function noticeMessage(text: string): Parameters<NotifyTarget['followup']>[0] {
-  return {
-    id: crypto.randomUUID(),
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: NOTICE_SOURCE_KIND },
-  }
-}
-
-/**
- * 投递一条通知：失败只记日志。
- *
- * 会话可能已经被关闭、被压缩替换，或宿主拒绝了这次写入；通知是尽力而为的旁路，
- * 不能让它把插件的定时器或宿主的驱动带崩。
- * @param target - 会话 Agent。
- * @param text - 通知正文。
- * @param logger - 可选日志。
- */
-function deliver(target: NotifyTarget, text: string, logger?: LoggerLike | undefined): void {
-  try {
-    target.followup(noticeMessage(text))
-  } catch (error) {
-    // 日志同样要兜住：这是 catch 分支里的最后一句话，它自己抛错就会逃逸成
-    // unhandledRejection（Node 默认因此结束进程），比"没送达"严重得多。
-    try {
-      logger?.warn?.(`[notify] 通知未送达：${error instanceof Error ? error.message : String(error)}`)
-    } catch {
-      // 连日志都写不了，只能放弃
-    }
-  }
-}
 
 /**
  * 注册表里这段代码用到的两个方法。
@@ -242,7 +185,7 @@ export function watchRun(options: {
       }
       return
     }
-    deliver(target, payload.text, options.logger)
+    deliverSessionNotice(target, payload.text, { logger: options.logger, tag: 'notify' })
   }
 
   let inflight = false

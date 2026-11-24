@@ -113,7 +113,7 @@ for (const file of files) {
       continue
     }
 
-    // 3. 外壳公共模块不得依赖具体组件
+    // 3. 外壳公共模块不得依赖具体组件（含 src/client/host/**）
     if (from === 'client' && to.startsWith('components/') && !SHELL_ASSEMBLY.has(rel)) {
       violations.push(`${rel}：外壳模块不该依赖 ${to}（只有装配层可以）`)
     }
@@ -121,6 +121,35 @@ for (const file of files) {
 }
 
 assert.deepEqual(violations, [], `组件边界被打破：\n  ${violations.join('\n  ')}`)
+
+// ── 宿主耦合边界：原始宿主 API 只允许出现在适配层 ──
+// 业务组件、entry、run 域与前端装配/业务不得直接碰 ctx.get / ctx.effect /
+// slots.register / betterSidebar 或硬编码 plugin:dsh-comfyui-workbench，
+// 否则宿主协议升级要同时改十几个文件。
+const HOST_COUPLED_PATTERNS = [
+  { label: 'ctx.get(', re: /\bctx\.get(?:\?\.)?\(/ },
+  { label: 'ctx.effect(', re: /\bctx\.effect(?:\?\.)?\(/ },
+  { label: 'slots.register(', re: /\bslots\.register\(/ },
+  { label: 'betterSidebar', re: /\bbetterSidebar\b/ },
+  { label: 'plugin:dsh-comfyui-workbench', re: /['"]plugin:dsh-comfyui-workbench['"]/ },
+]
+const hostViolations = []
+for (const file of files) {
+  const rel = path.relative(root, file).split(path.sep).join('/')
+  const inScopedArea = rel.startsWith('src/components/')
+    || rel.startsWith('src/entries/')
+    || rel.startsWith('src/shared/run/')
+    || (rel.startsWith('src/client/') && !rel.startsWith('src/client/host/'))
+  if (!inScopedArea) continue
+
+  const source = stripComments(fs.readFileSync(file, 'utf8'))
+  for (const { label, re } of HOST_COUPLED_PATTERNS) {
+    if (re.test(source)) {
+      hostViolations.push(`${rel} 直接使用了宿主原始接口/常量 ${label}（应收口到 shared/host 或 client/host）`)
+    }
+  }
+}
+assert.deepEqual(hostViolations, [], `宿主耦合边界被打破：\n  ${hostViolations.join('\n  ')}`)
 
 // ── patch 文件与 Settings 字段一致 ──
 // 加了配置项却忘了写进 cordis.patch.yml，用户就不知道有这个开关。

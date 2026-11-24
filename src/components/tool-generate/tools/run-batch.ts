@@ -19,7 +19,8 @@ import { codeOf, finalStateOf } from '../../../shared/run/policy.js'
 import { asString, resolveWait, waitSchema } from '../../../shared/tools/types.js'
 import type { ToolDeps } from '../../../shared/tools/types.js'
 import type { ToolSpec } from '../../../shared/tools/types.js'
-import type { NotifyTarget } from '../../../shared/run/notify.js'
+import { deliverSessionNotice } from '../../../shared/host/session.js'
+import type { NotifyTarget } from '../../../shared/host/session.js'
 import { watchRun } from '../../../shared/run/notify.js'
 
 /** 一次最多提交几个。 */
@@ -188,16 +189,7 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
         ? new BatchCollector({
           total: raw.length,
           deliver: text => {
-            try {
-              agent.followup({
-                id: batchId,
-                role: 'user',
-                content: [{ type: 'text', text }],
-                source: { kind: 'plugin:dsh-comfyui-workbench' },
-              })
-            } catch (error) {
-              deps.logger?.warn?.(`[batch] 汇总未送达：${error instanceof Error ? error.message : String(error)}`)
-            }
+            deliverSessionNotice(agent, text, { id: batchId, logger: deps.logger, tag: 'batch' })
           },
           ...(deps.logger === undefined ? {} : { logger: deps.logger }),
         })

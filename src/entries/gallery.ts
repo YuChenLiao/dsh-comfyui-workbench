@@ -5,6 +5,7 @@
  * 关掉后相册的路由随之下线（404），工作流与工具不受影响。
  */
 import { createGalleryRoutes } from '../components/panel-gallery/server/routes.js'
+import { mountHostRoutes, onHostDispose } from '../shared/host/adapter.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { acquire, ensureHttp, mountRoutes, release } from '../runtime.js'
@@ -27,7 +28,7 @@ export function apply(ctx: HostContext, config: unknown): void {
 
   const rt = acquire(ctx, config)
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'gallery: runtime')
+  onHostDispose(ctx, 'gallery: runtime', () => release(ctx))
   ensureHttp(ctx, rt)
 
   const table = createGalleryRoutes({
@@ -44,16 +45,12 @@ export function apply(ctx: HostContext, config: unknown): void {
   const { ['/workflows']: exporter, ...exact } = table
   rt.exportWorkflows = exporter
 
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => {
-      const unmount = mountRoutes(ctx, 'panel.gallery', { exact })
-      return () => {
-        rt.exportWorkflows = undefined
-        unmount()
-      }
-    }, 'gallery: routes')
-  } else {
-    mountRoutes(ctx, 'panel.gallery', { exact })
-  }
+  mountHostRoutes(ctx, 'gallery: routes', () => {
+    const unmount = mountRoutes(ctx, 'panel.gallery', { exact })
+    return () => {
+      rt.exportWorkflows = undefined
+      unmount()
+    }
+  })
   rt.info('[comfyui-workbench] 相册已上线')
 }

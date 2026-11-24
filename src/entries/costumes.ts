@@ -24,6 +24,7 @@ import { costumeTool } from '../components/panel-costumes/server/tools.js'
 import type { CostumesIndex } from '../components/panel-costumes/server/catalog.js'
 import { createImageCache } from '../components/panel-poses/server/images.js'
 import type { PoseImages } from '../components/panel-poses/server/images.js'
+import { mountHostRoutes, onHostDispose, registerHostTools } from '../shared/host/adapter.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext } from '../shared/host/types.js'
@@ -139,7 +140,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   const routes = createCostumeRoutes({ index, images, uploadsDir, ...(anime === undefined ? {} : { anime }) })
 
   const rt = acquire(ctx, config)
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'costumes: runtime')
+  onHostDispose(ctx, 'costumes: runtime', () => release(ctx))
 
   // 素材面的另一半（与姿势库各占一半，工具侧惰性取）。
   // 动画版是独立的一对：两库 id 同格式（SPR-xxxx），共用一个函数就会静默取错库。
@@ -173,29 +174,13 @@ function applyInner(ctx: HostContext, config: unknown): void {
       }),
   }
   ensureHttp(ctx, rt)
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => mountRoutes(ctx, COMPONENT, { exact: routes.exact }), 'costumes: routes')
-  } else {
-    mountRoutes(ctx, COMPONENT, { exact: routes.exact })
-  }
+  mountHostRoutes(ctx, 'costumes: routes', () => mountRoutes(ctx, COMPONENT, { exact: routes.exact }))
 
-  const tools = ctx.get?.('tools') as { register: (spec: unknown) => (() => void) | void } | undefined
-  if (tools === undefined || typeof tools.register !== 'function') {
-    console.warn('[comfyui-workbench] 拿不到 tools 服务，服装工具未注册。')
-  } else {
-    const deps = { index, images, uploadsDir, ...(anime === undefined ? {} : { anime }) }
-    for (const spec of [costumeTool(deps)]) {
-      try {
-        const dispose = tools.register(spec)
-        if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
-          ctx.effect(() => () => dispose(), `costumes: tool ${spec.name}`)
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.warn(`[comfyui-workbench] 工具 ${spec.name} 未注册：${message}`)
-      }
-    }
-  }
+  const deps = { index, images, uploadsDir, ...(anime === undefined ? {} : { anime }) }
+  registerHostTools(ctx, [costumeTool(deps)], {
+    label: 'costumes',
+    missingMessage: '[comfyui-workbench] 拿不到 tools 服务，服装工具未注册。',
+  })
 
   const stats = index.stats()
   rt.info(`[comfyui-workbench] 服装库已上线：${stats.total} 套 / ${Object.keys(stats.categories).length} 类`)

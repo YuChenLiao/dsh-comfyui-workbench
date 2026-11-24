@@ -26,6 +26,7 @@ import { characterTool } from '../components/panel-characters/server/tools.js'
 import { createImageCache } from '../components/panel-poses/server/images.js'
 import type { CharactersIndex } from '../components/panel-characters/server/catalog.js'
 import type { PoseImages } from '../components/panel-poses/server/images.js'
+import { mountHostRoutes, onHostDispose, registerHostTools } from '../shared/host/adapter.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext } from '../shared/host/types.js'
@@ -154,7 +155,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   const routes = createCharacterRoutes({ index, images, uploadsDir })
 
   const rt = acquire(ctx, config)
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'characters: runtime')
+  onHostDispose(ctx, 'characters: runtime', () => release(ctx))
 
   // 素材面的第三半（姿势库与衣装库各占一半，工具侧惰性取）：
   // 让 `comfyui_compose` 能直接吃角色设定板，不必让模型自己落盘再传路径。
@@ -180,28 +181,12 @@ function applyInner(ctx: HostContext, config: unknown): void {
   }
 
   ensureHttp(ctx, rt)
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => mountRoutes(ctx, COMPONENT, { exact: routes.exact }), 'characters: routes')
-  } else {
-    mountRoutes(ctx, COMPONENT, { exact: routes.exact })
-  }
+  mountHostRoutes(ctx, 'characters: routes', () => mountRoutes(ctx, COMPONENT, { exact: routes.exact }))
 
-  const tools = ctx.get?.('tools') as { register: (spec: unknown) => (() => void) | void } | undefined
-  if (tools === undefined || typeof tools.register !== 'function') {
-    console.warn('[comfyui-workbench] 拿不到 tools 服务，角色工具未注册。')
-  } else {
-    for (const spec of [characterTool({ index, images, uploadsDir })]) {
-      try {
-        const dispose = tools.register(spec)
-        if (typeof dispose === 'function' && typeof ctx.effect === 'function') {
-          ctx.effect(() => () => dispose(), `characters: tool ${spec.name}`)
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.warn(`[comfyui-workbench] 工具 ${spec.name} 未注册：${message}`)
-      }
-    }
-  }
+  registerHostTools(ctx, [characterTool({ index, images, uploadsDir })], {
+    label: 'characters',
+    missingMessage: '[comfyui-workbench] 拿不到 tools 服务，角色工具未注册。',
+  })
 
   const stats = index.stats()
   rt.info(`[comfyui-workbench] 角色库已上线：${stats.characterCount} 个角色 / ${Object.keys(stats.brands).length} 个品牌`)

@@ -10,6 +10,7 @@
  * 不是工具手册 —— 每个工具的参数在它们的 description 里，这里只讲**取舍与顺序**。
  * 正文放在 `workbench.skill.md`，构建时按文本内联（与样式表同一套 loader）。
  */
+import { NOTICE_SOURCE_KIND } from './session.js'
 import type { HostContext } from './types.js'
 import skillBody from './workbench.skill.md'
 
@@ -52,7 +53,7 @@ export function mountWorkbenchSkill(ctx: HostContext): void {
       name: WORKBENCH_SKILL_NAME,
       description: WORKBENCH_SKILL_DESCRIPTION,
       content: skillBody,
-      source: 'plugin:dsh-comfyui-workbench',
+      source: NOTICE_SOURCE_KIND,
     })
   } catch {
     // 宿主版本不认这个形状（或同名冲突）时，别让它带崩整条 entry

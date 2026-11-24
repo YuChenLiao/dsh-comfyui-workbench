@@ -11,6 +11,7 @@ import path from 'node:path'
 import { createTagsIndex } from '../components/panel-tags/server/api.js'
 import { createTagsRoutes } from '../components/panel-tags/server/routes.js'
 import { createSyncJob } from '../components/panel-tags/server/sync-job.js'
+import { mountHostRoutes, onHostDispose } from '../shared/host/adapter.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { pluginDataDir } from '../shared/host/paths.js'
 import type { HostContext } from '../shared/host/types.js'
@@ -70,7 +71,7 @@ function applyInner(ctx: HostContext, config: unknown): void {
   }
 
   const rt = acquire(ctx, config)
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'tags: runtime')
+  onHostDispose(ctx, 'tags: runtime', () => release(ctx))
   ensureHttp(ctx, rt)
 
   // 索引只建一次，路由与统计共享它；数据文件变了由 mtime 指纹或 invalidate() 触发重建
@@ -79,10 +80,6 @@ function applyInner(ctx: HostContext, config: unknown): void {
   const job = sharedJob(dataDir, () => index.invalidate())
   const routes = createTagsRoutes(index, job)
 
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => mountRoutes(ctx, 'panel.tags', { exact: routes.exact }), 'tags: routes')
-  } else {
-    mountRoutes(ctx, 'panel.tags', { exact: routes.exact })
-  }
+  mountHostRoutes(ctx, 'tags: routes', () => mountRoutes(ctx, 'panel.tags', { exact: routes.exact }))
   rt.info('[comfyui-workbench] 标签库面板已上线')
 }

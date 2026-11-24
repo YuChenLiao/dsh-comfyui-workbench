@@ -21,6 +21,7 @@ import { apply as applyCostumes } from './entries/costumes.js'
 import { apply as applyCharacters } from './entries/characters.js'
 import { apply as applyWorkflow } from './entries/workflow.js'
 import type { HostContext } from './shared/host/types.js'
+import { mountHostRoutes, onHostDispose } from './shared/host/adapter.js'
 import { mountWorkbenchSkill } from './shared/host/skill.js'
 import { readToggles, writeToggles } from './shared/host/toggles.js'
 import { acquire, componentStateOf, ensureHttp, mountRoutes, release } from './runtime.js'
@@ -74,21 +75,14 @@ function mountConfig(ctx: HostContext, rt: ReturnType<typeof acquire>): void {
       }),
     },
   }
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => {
-      const unmount = mountRoutes(ctx, 'core.config', table)
-      return () => { unmount() }
-    }, 'core: config')
-  } else {
-    mountRoutes(ctx, 'core.config', table)
-  }
+  mountHostRoutes(ctx, 'core: config', () => mountRoutes(ctx, 'core.config', table))
 }
 
 export function apply(ctx: HostContext, config: unknown): void {
   const rt = acquire(ctx, config)
   // 必须配对：只 acquire 不 release 会让 refs 永不到 0，旧 Runtime 带着失效的 ctx 存活，
   // 重载时注册 effect 会抛 INACTIVE_EFFECT（相册整块消失，要等第二次重载才自愈）。
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'core: runtime')
+  onHostDispose(ctx, 'core: runtime', () => release(ctx))
 
   // 前缀也由 core 兜一次：核心 entry 不会被单独关掉，重载后它能把 API 重新挂上。
   ensureHttp(ctx, rt)
@@ -133,6 +127,8 @@ export { fileRefsOf, pickArtifacts } from './shared/run/runner.js'
 export { parseWait, resolveWait, waitSchema, WAIT_MAX_MS, WAIT_MIN_MS } from './shared/tools/types.js'
 export { isFillerTail, searchWithPrefixFallback } from './shared/search/fallback.js'
 export { readPref, writePref } from './shared/host/prefs.js'
+export { createHostToolRegistrar, mountHostRoutes, onHostDispose, registerHostTool, registerHostTools, resolveHostTools } from './shared/host/adapter.js'
+export { deliverSessionNotice, NOTICE_SOURCE_KIND, noticeMessage } from './shared/host/session.js'
 export { mountWorkbenchSkill, WORKBENCH_SKILL_DESCRIPTION, WORKBENCH_SKILL_NAME } from './shared/host/skill.js'
 export { dedupeItems, looseKey } from './components/panel-gallery/server/assets/dedupe.js'
 export { adviceFor, classifyFailure, modelNameIn } from './shared/comfy/failure-kind.js'

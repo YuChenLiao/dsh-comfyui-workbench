@@ -304,9 +304,18 @@ The plugin consists of **1 package-root `core` entry + 11 toggleable subpath ent
 ```mermaid
 flowchart LR
     subgraph Host["DSH Host"]
-        UI["Browser Shell\n(Workbench.tsx: 7 tabs)"]
-        Loader["Cordis Loader\n(12 entries)"]
+        HostWeb["Web host slots & services\n(slots / betterSidebar / layout / locale)"]
+        Loader["Cordis Loader\n(12 entries / webServer / tools)"]
         Agent["Conversation Agent"]
+    end
+
+    subgraph Adapter["DSH Bidirectional Adapter Layer (sole host boundary)"]
+        ClientHost["client/host\n(slots / runtime / types)"]
+        ServerHost["shared/host\n(adapter / session / skill)"]
+    end
+
+    subgraph WebUI["Browser Workbench"]
+        UI["Workbench.tsx\n(7-tab UI shell)"]
     end
 
     subgraph Core["core entry (src/index.ts)"]
@@ -323,11 +332,15 @@ flowchart LR
         T_Dan["Tools: danbooru\n(standalone, no Runtime)"]
     end
 
+    HostWeb <--> ClientHost --> UI
     UI -- "fetch" --> Router
     UI -. "hide disabled tabs" .-> Config
-    Loader --> Core
-    Loader --> Entries
-    Agent --> T_Gen & T_Dan & P_Mat
+
+    Loader -- "ctx / tools / effect" --> ServerHost
+    Agent <-- "tool calls / Agent.followup" --> ServerHost
+    ServerHost -- "routes & lifecycle" --> Core
+    ServerHost -- "unified tool & route registration" --> P_Main & P_Mat & T_Gen & T_Dan
+    T_Gen -- "session completion notice" --> ServerHost
 
     Router -- "lookup mergedRoutes" --> RT
     P_Main & P_Mat -- "acquire() mount" --> RT
@@ -363,7 +376,7 @@ flowchart LR
     Run --> Watch --> Collect
     Collect -- "write media + sidecar" --> Disk
     Collect -- "onCollected" --> Record --> Disk
-    Watch -- "Agent.followup" --> ToolRun
+    Watch -- "shared/host/session\n(deliverSessionNotice -> Agent.followup)" --> ToolRun
 
     GalleryUI -- "/items /file(Range) /trash /meta" --> Disk
     P_Proxy["Characters / Poses / Costumes proxy"] --> Upstream
@@ -374,8 +387,10 @@ flowchart LR
 
 ```mermaid
 flowchart BT
+    DSH["Raw DSH Host APIs\n(ctx.get / ctx.effect / slots / betterSidebar / followup)\n* Adapters only; all other layers blocked by arch.mjs"]
+
     subgraph Bottom["shared base layer (no upward imports)"]
-        Host["shared/host\n(config / paths / prefs / skill / toggles)"]
+        Host["shared/host [Server Adapter]\n(adapter / session / config / paths / prefs / skill / toggles)"]
         HTTP["shared/http\n(respond / readRawBody)"]
         Media["shared/media\n(MIME / media kinds / PNG text chunks)"]
     end
@@ -388,33 +403,31 @@ flowchart BT
         Run["shared/run\n(submit / watch / sweep / sidecar / record)"]
     end
 
-    subgraph Comp["Component layer (no cross-component imports)"]
+    subgraph Comp["Components & Entries (no cross-component imports; server never imports client)"]
+        Entry["src/index.ts & src/entries/*\n(12 Cordis entries)"]
         Server["components/*/server & tools"]
         ClientPanel["components/*/client"]
     end
 
     subgraph Shell["Browser shell (src/client/)"]
+        ClientHost["client/host [Client Adapter]\n(slots / runtime / types)"]
         ShellCore["api / i18n / icons / types / actions"]
         Assembly["Workbench.tsx & client/index.tsx\n(only allowed SHELL_ASSEMBLY)"]
     end
 
+    Host -- "sole server host entry" --> DSH
+    ClientHost -- "sole client host entry" --> DSH
+
     Authz --> Host
     Workflow --> Host
-    Comfy --> Host
-    Comfy --> Workflow
-    Tools --> Host
-    Tools --> Comfy
-    Tools --> Workflow
-    Run --> Host
-    Run --> Comfy
-    Run --> Workflow
-    Run --> Media
+    Comfy --> Host & Workflow
+    Tools --> Host & Comfy & Workflow
+    Run --> Host & Comfy & Workflow & Media
 
-    Server --> Mid
-    Server --> Bottom
+    Entry --> Server & Host
+    Server --> Mid & Bottom
     ClientPanel --> ShellCore
-    Assembly --> ClientPanel
-    Assembly --> ShellCore
+    Assembly --> ClientPanel & ClientHost & ShellCore
 ```
 
 - **Cross-bundle idempotency via `Runtime` and disk sidecars**: `RunRegistry` lives on `Runtime` so entries share run state; final collection idempotency relies on `comfy.promptId` in the on-disk sidecar, and `assets.jsonl` can be rebuilt cleanly from sidecars.
@@ -435,15 +448,16 @@ src/components/panel-terminal/     terminal: server/(log tail) + client/
 src/components/tool-generate/      generation tools
 src/components/tool-workflow-edit/ workflow editing tool
 src/components/tool-danbooru/      Danbooru tag lookup tools
-src/shared/                        shared logic: host / comfy / workflow / run / tools / http / authz / media
+src/shared/                        shared logic: host(with DSH server adapter) / comfy / workflow / run / tools / http / authz / media
 src/http/                          HTTP prefix and dispatch (router)
 src/client/                        UI shell: tabs, api, i18n, icons
+src/client/host/                   DSH Web host adapter: slots / runtime / types
 src/index.ts                       package-root entry (browser bundle + shared runtime init)
 src/entries/                       eleven component entries (core is src/index.ts)
 src/runtime.ts                     cross-entry shared runtime (anchored on ctx.root)
 ```
 
-The first step of `npm test` (`node tests/arch.mjs`) enforces three boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client` and shell modules never import a specific component. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a real-dispatch + `fetch` case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. `KNOWN_UNTESTED` is now empty: coverage is **19/19**.
+The first step of `npm test` (`node tests/arch.mjs`) enforces four boundaries: `shared` is one-directional internally (host at the bottom), a component's `server` never imports its `client`, shell modules never import a specific component, and raw DSH host APIs are isolated to `shared/host` and `client/host`. `tests/arch-write-routes.mjs` right after it walks the router's three tables and demands a real-dispatch + `fetch` case for every write endpoint — unit tests that call a component handler directly have repeatedly passed while the real assembly returned 405. `KNOWN_UNTESTED` is now empty: coverage is **19/19**.
 
 ## Development
 

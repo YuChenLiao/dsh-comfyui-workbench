@@ -8,6 +8,7 @@
  * 这个 entry 只负责把读取接口挂出去。
  */
 import { createTerminalRoutes } from '../components/panel-terminal/server/routes.js'
+import { mountHostRoutes, onHostDispose } from '../shared/host/adapter.js'
 import type { HostContext } from '../shared/host/types.js'
 import { resolveSettings } from '../shared/host/config.js'
 import { acquire, ensureHttp, mountRoutes, release } from '../runtime.js'
@@ -30,7 +31,7 @@ export function apply(ctx: HostContext, config: unknown): void {
 
   const rt = acquire(ctx, config)
 
-  if (typeof ctx.effect === 'function') ctx.effect(() => () => release(ctx), 'terminal: runtime')
+  onHostDispose(ctx, 'terminal: runtime', () => release(ctx))
   ensureHttp(ctx, rt)
 
   const table = createTerminalRoutes({
@@ -45,13 +46,6 @@ export function apply(ctx: HostContext, config: unknown): void {
     recheck: () => rt.supervisor.recheckExternal(),
   })
 
-  if (typeof ctx.effect === 'function') {
-    ctx.effect(() => {
-      const unmount = mountRoutes(ctx, 'panel.terminal', { exact: table })
-      return () => { unmount() }
-    }, 'terminal: routes')
-  } else {
-    mountRoutes(ctx, 'panel.terminal', { exact: table })
-  }
+  mountHostRoutes(ctx, 'terminal: routes', () => mountRoutes(ctx, 'panel.terminal', { exact: table }))
   rt.info('[comfyui-workbench] 终端面板已上线')
 }
