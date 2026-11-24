@@ -85,7 +85,7 @@ export function MaskEditor({ src, t, onCancel, onDone }: MaskEditorProps): React
     image.onerror = () => { if (alive) setError(t('maskLoadFailed')) }
     image.src = src
     return () => { alive = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 仅在 src 变化时重新加载并重置画布，不因 t 引用变化触发重绘
   }, [src])
 
   /** 指针坐标 → 原图像素坐标（canvas 被 CSS 缩放过，必须换算）。 */

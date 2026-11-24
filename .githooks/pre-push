@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -e
+
+echo "[pre-push] 执行全量检查 (lint + typecheck + build + tests)..."
+npm run check
