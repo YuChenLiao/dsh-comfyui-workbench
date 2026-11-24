@@ -307,9 +307,18 @@ echo '{"tag":"mika_(blue_archive)","kind":"character","postCount":16024,"names":
 ```mermaid
 flowchart LR
     subgraph Host["DSH 宿主"]
-        UI["浏览器 Shell\n(Workbench.tsx: 7 页签)"]
-        Loader["Cordis Loader\n(12 条 entry)"]
+        HostWeb["Web 宿主槽位与服务\n(slots / betterSidebar / layout / locale)"]
+        Loader["Cordis Loader\n(12 条 entry / webServer / tools)"]
         Agent["对话模型 / Agent"]
+    end
+
+    subgraph Adapter["DSH 双向适配层（唯一宿主接触面）"]
+        ClientHost["client/host\n(slots / runtime / types)"]
+        ServerHost["shared/host\n(adapter / session / skill)"]
+    end
+
+    subgraph WebUI["浏览器工作台"]
+        UI["Workbench.tsx\n(7 页签外壳)"]
     end
 
     subgraph Core["core 入口 (src/index.ts)"]
@@ -326,11 +335,15 @@ flowchart LR
         T_Dan["工具: danbooru\n(独立，不碰 Runtime)"]
     end
 
+    HostWeb <--> ClientHost --> UI
     UI -- "fetch" --> Router
     UI -. "隐藏已关页签" .-> Config
-    Loader --> Core
-    Loader --> Entries
-    Agent --> T_Gen & T_Dan & P_Mat
+
+    Loader -- "ctx / tools / effect" --> ServerHost
+    Agent <-- "工具调用 / Agent.followup" --> ServerHost
+    ServerHost -- "路由与生命周期" --> Core
+    ServerHost -- "统一注册工具与路由" --> P_Main & P_Mat & T_Gen & T_Dan
+    T_Gen -- "session 完结通知" --> ServerHost
 
     Router -- "查 mergedRoutes" --> RT
     P_Main & P_Mat -- "acquire() 挂载" --> RT
@@ -366,7 +379,7 @@ flowchart LR
     Run --> Watch --> Collect
     Collect -- "写图/音视频 + sidecar" --> Disk
     Collect -- "onCollected" --> Record --> Disk
-    Watch -- "Agent.followup" --> ToolRun
+    Watch -- "shared/host/session\n(deliverSessionNotice -> Agent.followup)" --> ToolRun
 
     GalleryUI -- "/items /file(Range) /trash /meta" --> Disk
     P_Proxy["角色 / 姿势 / 衣装代理"] --> Upstream
@@ -377,8 +390,10 @@ flowchart LR
 
 ```mermaid
 flowchart BT
+    DSH["DSH 宿主原始 API\n(ctx.get / ctx.effect / slots / betterSidebar / followup)\n※ 仅适配层可直调，其余层由 arch.mjs 阻断"]
+
     subgraph Bottom["shared 最底层 (无内部上行依赖)"]
-        Host["shared/host\n(配置 / 路径 / adapter / session / skill / toggles)"]
+        Host["shared/host【服务端适配层】\n(adapter / session / config / paths / prefs / skill / toggles)"]
         HTTP["shared/http\n(respond / readRawBody)"]
         Media["shared/media\n(MIME / 媒体类型 / PNG 文本块)"]
     end
@@ -391,35 +406,31 @@ flowchart BT
         Run["shared/run\n(submit / watch / sweep / sidecar / record)"]
     end
 
-    subgraph Comp["组件层 (组件之间禁止互相 import)"]
+    subgraph Comp["组件与入口层 (组件之间禁止互相 import；server 不得依赖 client)"]
+        Entry["src/index.ts & src/entries/*\n(12 条 Cordis 入口)"]
         Server["components/*/server & tools"]
         ClientPanel["components/*/client"]
     end
 
     subgraph Shell["浏览器外壳 (src/client/)"]
-        ClientHost["client/host\n(slots / runtime / types)"]
+        ClientHost["client/host【客户端适配层】\n(slots / runtime / types)"]
         ShellCore["api / i18n / icons / types / actions"]
         Assembly["Workbench.tsx & client/index.tsx\n(唯一允许的 SHELL_ASSEMBLY)"]
     end
 
+    Host -- "唯一服务端宿主入口" --> DSH
+    ClientHost -- "唯一客户端宿主入口" --> DSH
+
     Authz --> Host
     Workflow --> Host
-    Comfy --> Host
-    Comfy --> Workflow
-    Tools --> Host
-    Tools --> Comfy
-    Tools --> Workflow
-    Run --> Host
-    Run --> Comfy
-    Run --> Workflow
-    Run --> Media
+    Comfy --> Host & Workflow
+    Tools --> Host & Comfy & Workflow
+    Run --> Host & Comfy & Workflow & Media
 
-    Server --> Mid
-    Server --> Bottom
+    Entry --> Server & Host
+    Server --> Mid & Bottom
     ClientPanel --> ShellCore
-    Assembly --> ClientPanel
-    Assembly --> ClientHost
-    Assembly --> ShellCore
+    Assembly --> ClientPanel & ClientHost & ShellCore
 ```
 
 - **跨 bundle 幂等靠 `Runtime` 与磁盘 sidecar**：`RunRegistry` 挂在 `Runtime` 上供各 entry 共享；重复收集产物的最终幂等判据落在磁盘 sidecar 的 `comfy.promptId`，索引 `assets.jsonl` 也可从 sidecar 完整重建。
