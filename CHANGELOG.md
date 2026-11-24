@@ -2,6 +2,29 @@
 
 ## Unreleased（v0.9 前置）
 
+### 终端面板：服务就绪后给出「关机」，并修掉 `external` 状态卡死
+
+- **「启动」变「关机」**：服务就绪后原来的「启动」按钮消失，面板上没有任何停机入口。
+  现在 `ready && managed` 给出「关机」，点下去真的停掉插件拉起的进程；
+  `ready && !managed`（外部实例）给出**置灰**的「关机」并附悬停说明 —— 不直接隐藏，
+  否则用户会以为这个面板没有关机功能。忙队列时才二次确认，空闲直接停。
+  `busy` 经 `GET /terminal` 下发，且只在 `ready && managed` 时探测（面板是 1 秒轮询，
+  无条件问队列会把半死状态拖成 3 秒一轮）。
+- **修 `external` 只能进不能出**：外部启动的 ComfyUI 被关掉之后，面板永久停在 `external` ——
+  「启动」不渲染、灰「关机」点不动，想恢复只能重启 Harness。
+  根因是状态机缺一条边，四条证据互相印证：11 处 `state` 赋值无一回落（`exit` 兜底带
+  `state === 'ready'` 前置，`stop()` 在 `child === null` 时提前返回）；`/terminal` 的 GET
+  只读 `status()` 不探测；`external` 意味着 `child === null`，没有 `exit` 事件；
+  `armIdleTimer()` 只在 `start()` 就绪后调用，而 `reclaimIdle()` 在 `child === null` 时自清。
+  新增 `ComfySupervisor.recheckExternal()`（2 秒超时）由 `GET /terminal` 在 `external` 时触发。
+  **这个缺陷 0.7.0 就有，不是本次引入**（`canStart` 自 v0.7.0 起逐字未变）；
+  但新增的灰按钮把它从「空白，像没这功能」放大成「灰按钮，像坏了」。
+- **两处超时方向相反是刻意的**：复查 2 秒偏向「容易判死」（代价只是按钮闪一下），
+  就绪判定 3 秒偏向「容易判活」（才能复用已有实例）。误判后点「启动」不会双开 ——
+  `ensureReady()` 会先探一次再决定拉不拉。
+- 顺带修一条错位文案：`ensureReady()` 判成 `external` 时没更新 `detail`，
+  会留着上一轮的「已停止本插件拉起的进程。」（实测现场见过）。
+
 ### DSH 双向适配层与宿主隔离
 
 在进入 v0.9 对话流新槽位前，把原先分散在 `src/index.ts`、11 条 `src/entries/*.ts`、`src/shared/run/notify.ts` 与 `src/client/index.tsx` 里的原始 DSH 宿主调用收拢进双向适配层；对外工具名、HTTP 路由、面板 UI 与 `cordis.patch.yml` 保持不变：
