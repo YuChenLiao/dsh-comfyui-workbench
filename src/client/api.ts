@@ -933,3 +933,62 @@ export async function fetchCostumeFile(id: string, size: 'thumb' | 'preview' | '
   const keywords = bag.costume !== undefined && typeof bag.costume.keywords === 'string' ? bag.costume.keywords : ''
   return { file: bag.file, keywords }
 }
+
+/** 一条环境自检结论（与服务端 `DoctorItem` 同形）。 */
+export interface DoctorItem {
+  id: string
+  title: string
+  level: 'ok' | 'warn' | 'fail'
+  detail: string
+  fix?: string
+}
+
+/** 一次自检的结论。 */
+export interface DoctorReport {
+  ok: boolean
+  items: DoctorItem[]
+}
+
+/** 跑一次环境自检。 */
+export async function fetchDoctor(): Promise<DoctorReport> {
+  const data = await apiJson('/doctor')
+  const report = data.report
+  if (report === null || typeof report !== 'object') throw new Error('自检没有返回结论')
+  const bag = report as { ok?: unknown; items?: unknown }
+  return {
+    ok: bag.ok === true,
+    items: Array.isArray(bag.items) ? (bag.items as DoctorItem[]) : [],
+  }
+}
+
+/** 一键生成结果。 */
+export interface BootstrapResult {
+  created: string[]
+  skipped: string[]
+  blocked?: string
+}
+
+/**
+ * 按本机模型生成基础模板。
+ *
+ * @param kinds - 只生成这几类；省略则全部。
+ */
+export async function bootstrapWorkflowTemplates(kinds?: readonly string[]): Promise<BootstrapResult> {
+  const qs = kinds === undefined || kinds.length === 0 ? '' : `?kinds=${encodeURIComponent(kinds.join(','))}`
+  const res = await fetch(`${API}/workflows/bootstrap${qs}`, { method: 'POST' })
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  const bag = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  if (!res.ok || bag === null || bag.ok !== true) {
+    throw new Error(typeof bag?.message === 'string' ? bag.message : `生成模板失败：HTTP ${res.status}`)
+  }
+  return {
+    created: Array.isArray(bag.created) ? (bag.created as string[]) : [],
+    skipped: Array.isArray(bag.skipped) ? (bag.skipped as string[]) : [],
+    ...(typeof bag.blocked === 'string' ? { blocked: bag.blocked } : {}),
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { fetchConfig, fetchServiceStats, fetchWorkflowAudit, fetchWorkflowDetail, fetchWorkflowList, freeMemory, importWorkflow, importWorkflowPng, interruptRun, removeWorkflow, setProgressStream, setRunWait, stopService, updateWorkflow, WorkflowExistsError } from '../../../client/api.js'
+import type { DoctorItem } from '../../../client/api.js'
+import { fetchConfig, fetchServiceStats, fetchWorkflowAudit, fetchWorkflowDetail, fetchWorkflowList, freeMemory, importWorkflow, importWorkflowPng, interruptRun, removeWorkflow, setProgressStream, setRunWait, stopService, updateWorkflow, WorkflowExistsError, bootstrapWorkflowTemplates, fetchDoctor } from '../../../client/api.js'
 import type { ServiceStats, TogglesView, WorkflowAudit } from '../../../client/api.js'
 import { sendTextToComposer } from '../../../client/conversation.js'
 import type { WorkflowListItem, WorkflowSurface } from '../../../client/types.js'
@@ -93,6 +94,10 @@ export function WorkflowAdmin({ t, visible, goToConversation }: WorkflowAdminPro
   const [settingsOpen, setSettingsOpen] = useState(false)
   /** 「活跃任务」抽屉是否展开。 */
   const [queueOpen, setQueueOpen] = useState(false)
+  /** 环境自检弹窗：`null` = 关闭。 */
+  const [doctor, setDoctor] = useState<{ busy: boolean; items: DoctorItem[]; ok: boolean; error: string } | null>(null)
+  /** 一键生成模板的结果提示。 */
+  const [bootstrapNote, setBootstrapNote] = useState('')
   /** 正在拖文件：给整面拖放加高亮。 */
   const [dropActive, setDropActive] = useState(false)
   /** 多文件导入的逐条结果（`load()` 会清 error，所以单独放一个不会被清的地方）。 */
@@ -305,6 +310,36 @@ export function WorkflowAdmin({ t, visible, goToConversation }: WorkflowAdminPro
     } finally {
       setStripBusy('')
       refreshStrip()
+    }
+  }
+
+  /** 环境自检：把"点了没反应"的原因一次性列清。 */
+  const runDoctorCheck = async (): Promise<void> => {
+    setDoctor({ busy: true, items: [], ok: true, error: '' })
+    try {
+      const report = await fetchDoctor()
+      setDoctor({ busy: false, items: report.items, ok: report.ok, error: '' })
+    } catch (error) {
+      setDoctor({
+        busy: false, items: [], ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  /** 一键生成基础模板（按本机模型）。 */
+  const runBootstrap = async (): Promise<void> => {
+    try {
+      const result = await bootstrapWorkflowTemplates()
+      if (result.blocked !== undefined) {
+        setBootstrapNote(t('bootstrapBlocked').replace('{message}', result.blocked))
+        return
+      }
+      const skipped = result.skipped.length > 0 ? t('bootstrapSkipped').replace('{n}', String(result.skipped.length)) : ''
+      setBootstrapNote(t('bootstrapDone').replace('{n}', String(result.created.length)) + skipped)
+      await load()
+    } catch (error) {
+      setBootstrapNote(t('bootstrapBlocked').replace('{message}', error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -595,12 +630,48 @@ export function WorkflowAdmin({ t, visible, goToConversation }: WorkflowAdminPro
           <button type="button" className="cwf-ghost" disabled={stripBusy !== ''} onClick={() => { void runAudit() }}>
             {t('auditTemplates')}
           </button>
+          <button type="button" className="cwf-ghost" onClick={() => { void runDoctorCheck() }}>
+            {t('doctorRun')}
+          </button>
           {/* 停止服务是唯一不可逆的一个，放到最后并和别的隔开 */}
           <button type="button" className="cwf-ghost cfa-danger" disabled={stripBusy !== ''} onClick={() => { void stripAction('stop') }}>
             {t('stopService')}
           </button>
         </div>
       </article>
+
+      {doctor !== null ? (
+        <article className="cwa-panel cwa-doctor">
+          <div className="cwa-doctor-head">
+            <strong>{t('doctorTitle')}</strong>
+            <button type="button" className="cwf-ghost" onClick={() => setDoctor(null)}>{t('doctorClose')}</button>
+          </div>
+          {doctor.busy ? <div className="cwa-list-empty">{t('doctorRunning')}</div> : null}
+          {doctor.error !== '' ? <div className="cwa-doctor-err">{t('doctorError').replace('{message}', doctor.error)}</div> : null}
+          {!doctor.busy && doctor.error === '' ? (
+            <ul className="cwa-doctor-list">
+              {doctor.items.map(item => (
+                <li key={item.id} className={`cwa-doctor-item lv-${item.level}`}>
+                  <span className="cwa-badge">
+                    {item.level === 'ok' ? t('doctorLevelOk') : item.level === 'warn' ? t('doctorLevelWarn') : t('doctorLevelFail')}
+                  </span>
+                  <span className="cwa-doctor-title">{item.title}</span>
+                  <span className="cwa-fact">{item.detail}</span>
+                  {item.fix !== undefined ? <span className="cwa-doctor-fix">{item.fix}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {!doctor.busy && doctor.error === '' ? (
+            <div className={`cwa-doctor-sum${doctor.ok ? '' : ' bad'}`}>
+              {doctor.ok ? t('doctorPass') : t('doctorBlocked')}
+            </div>
+          ) : null}
+          {items.length === 0 ? (
+            <button type="button" className="cwf-ghost" onClick={() => { void runBootstrap() }}>{t('bootstrap')}</button>
+          ) : null}
+        </article>
+      ) : null}
 
       {queueOpen ? (
         <article className="cwa-panel cwa-queue">
@@ -775,6 +846,13 @@ export function WorkflowAdmin({ t, visible, goToConversation }: WorkflowAdminPro
           <Icon name="workflow" size={26} />
           <div className="cwf-empty-title">{t('emptyWorkflows')}</div>
           <div>{t('emptyWorkflowsHint')}</div>
+          {/* 空库是最常见的冷启动状态：给一条"按本机模型直接生成"的出路 */}
+          <div className="cwa-empty-actions">
+            <button type="button" className="cwf-ghost" onClick={() => { void runBootstrap() }}>
+              {t('bootstrap')}
+            </button>
+            {bootstrapNote !== '' ? <span className="cwa-fact">{bootstrapNote}</span> : null}
+          </div>
         </div>
       ) : groups.length === 0 ? (
         <div className="cwf-empty">

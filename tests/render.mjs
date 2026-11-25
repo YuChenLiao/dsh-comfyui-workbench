@@ -637,3 +637,20 @@ const dockHtml = renderToStaticMarkup(React.createElement(QuickRunDock, { sessio
 assert.match(dockHtml, /class="cqd-root"/)
 assert.match(dockHtml, /快速生图/)
 assert.doesNotMatch(dockHtml, /class="cqd-body"/, '默认收起，展开才拉工作流列表')
+
+// ── WorkflowAdmin：环境自检入口与空态一键生成 ──
+// 空库是最常见的冷启动状态：空态里必须有"一键生成基础模板"这条出路，
+// 否则用户只能自己去 ComfyUI 导出，等于没解决"点了没反应"。
+const adminHtml = renderToStaticMarkup(React.createElement(WorkflowAdmin, {
+  t,
+  visible: true,
+  goToConversation() {},
+}))
+// SSR 首帧停在"加载中"，所以这里只能断言外壳还在、自检弹窗默认关闭；
+// 入口按钮本身靠下面的源码断言守（渲染态需要真实数据）
+assert.match(adminHtml, /loadingWorkflows/, '首帧仍应是加载中')
+assert.doesNotMatch(adminHtml, /class="cwa-doctor"/, '自检弹窗默认关闭')
+const adminSource = fs.readFileSync(path.join(here, '..', 'src/components/panel-workflow/client/WorkflowAdmin.tsx'), 'utf8')
+assert.match(adminSource, /doctorRun/, '状态条要有环境自检入口')
+assert.match(adminSource, /runBootstrap/, '空态要有一键生成模板入口')
+assert.match(adminSource, /bootstrapWorkflowTemplates/, '生成动作要真的调接口')
