@@ -76,7 +76,7 @@ assert.deepEqual(mod.inject, ['slots'])
 assert.equal(typeof mod.apply, 'function')
 assert.ok(mod.__test, '应当导出 __test 便于自检')
 
-const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow } = mod.__test
+const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow, ToolRunCard, parseToolResult, artifactPathsOf, isVideoPath } = mod.__test
 const t = key => key
 
 // ── Card：缩略图 + 四个悬浮动作 ──
@@ -530,4 +530,68 @@ assert.match(rowOpen, /slotsTitle/, '槽位区要有标题（t 是 identity，�
 assert.match(rowOpen, /night/, '预设名要显示出来')
 assert.match(rowOpen, /sendToChat/, '要有「送进对话」入口')
 
-console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / TagsPanel）')
+
+// ── ToolRunCard：对话流里的出图卡片 ──
+// 纯函数先钉住：结果文本不是 JSON 时不能抛，产物路径两种形状都要认
+assert.equal(parseToolResult('not json'), undefined)
+assert.equal(parseToolResult(''), undefined)
+assert.deepEqual(artifactPathsOf({ artifacts: ['a.png', { path: 'b.mp4' }] }), ['a.png', 'b.mp4'])
+assert.deepEqual(artifactPathsOf(undefined), [])
+assert.equal(isVideoPath('clip.MP4'), true)
+assert.equal(isVideoPath('shot.png'), false)
+
+// preparing：只有工具名与阶段，不显示产物区
+const preparingHtml = renderToStaticMarkup(React.createElement(ToolRunCard, {
+  callId: 'call-abc12345',
+  toolName: 'comfyui_run',
+  phase: 'preparing',
+  text: '',
+  isError: false,
+  argsRaw: '{"workflow":"sdxl"}',
+}))
+assert.match(preparingHtml, /class="ctv-card"/)
+assert.match(preparingHtml, /comfyui_run/)
+assert.match(preparingHtml, /准备中/)
+// 注意：整份 CSS 会内联进 <style>，所以只能断言"没有产物容器元素"，不能断言类名文本不出现
+assert.doesNotMatch(preparingHtml, /<div class="ctv-shots"/, '还没结果时不该有产物区')
+
+// result + artifacts：直接渲染缩略图，视频用 <video>
+const doneHtml = renderToStaticMarkup(React.createElement(ToolRunCard, {
+  callId: 'call-done0001',
+  toolName: 'comfyui_run',
+  phase: 'result',
+  text: JSON.stringify({ ok: true, artifacts: ['D:/out/a.png', 'D:/out/b.mp4'] }),
+  isError: false,
+  argsRaw: '',
+}))
+assert.match(doneHtml, /class="ctv-shots"/)
+assert.match(doneHtml, /<img[^>]+class="ctv-media"/, '图片产物要渲染成 <img>')
+assert.match(doneHtml, /<video[^>]+class="ctv-media"/, '视频产物要渲染成 <video>')
+assert.match(doneHtml, /已完成/)
+
+// result + pending：显示"出图中"，并挂上潜空间预览图的地址
+const pendingHtml = renderToStaticMarkup(React.createElement(ToolRunCard, {
+  callId: 'call-pend0001',
+  toolName: 'comfyui_run',
+  phase: 'result',
+  text: JSON.stringify({ ok: true, pending: true, promptId: 'p-123' }),
+  isError: false,
+  argsRaw: '',
+}))
+assert.match(pendingHtml, /出图中/)
+assert.match(pendingHtml, /run-preview\?promptId=p-123/, '异步运行要挂预览帧地址')
+
+// 失败：错误文案要出现，不能只显示一个状态标签
+const failHtml = renderToStaticMarkup(React.createElement(ToolRunCard, {
+  callId: 'call-fail0001',
+  toolName: 'comfyui_run',
+  phase: 'result',
+  text: JSON.stringify({ ok: false, error: 'ComfyUI 没启动' }),
+  isError: true,
+  errorCode: 'E_DOWN',
+  argsRaw: '',
+}))
+assert.match(failHtml, /E_DOWN/)
+assert.match(failHtml, /ComfyUI 没启动/)
+
+console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / ToolRunCard / TagsPanel）')

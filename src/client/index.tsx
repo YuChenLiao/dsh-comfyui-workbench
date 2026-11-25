@@ -25,6 +25,7 @@ import { Gallery } from '../components/panel-gallery/client/Gallery.js'
 import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import CSS from '../components/panel-gallery/client/styles.css'
 import { Workbench } from './components/Workbench.js'
+import { ToolRunCard, artifactPathsOf, isVideoPath, parseToolResult } from './components/ToolRunCard.js'
 import { terminalActions } from '../components/panel-terminal/client/buttons.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
 import { hostLocale, navigateToConversation } from './host/runtime.js'
@@ -39,6 +40,14 @@ import { makeTranslate } from './i18n.js'
 import WORKBENCH_CSS from './styles.css'
 
 export const name = 'dsh-comfyui-workbench'
+
+/**
+ * 需要挂出图卡片的三个工具（与 `tool.generate` 组件注册的工具一致）。
+ *
+ * 三张共用一个视图组件，按 wire name 各注册一次 —— `tool.call.toolview` 是 keyed 槽位，
+ * key 必须与工具名逐字一致，写错就永远不渲染。
+ */
+const TOOL_VIEW_TOOLS = ['comfyui_run', 'comfyui_run_batch', 'comfyui_rerun'] as const
 
 /** 只需要槽位注册；betterSidebar 走可选注入，所以不写进必需依赖。 */
 export const inject = ['slots']
@@ -64,6 +73,10 @@ export function apply(ctx: ClientHostContext): void {
       openSidebar={openSidebar}
     />
   )
+
+  // 出图卡片：三个工具共用一个视图，按 wire name 各挂一次。
+  // `tool.call.images` 是 single 且已被内置 read_image 占用，所以这里只能挂 toolview。
+  for (const toolName of TOOL_VIEW_TOOLS) mountToolView(ctx, toolName, ToolRunCard)
 
   const mounted = mountWorkbenchEntries(ctx, {
     title: () => t('title'),
@@ -123,6 +136,10 @@ export const __test = {
   // 客户端 DSH 适配层：供 host-adapter.test.mjs 验证降级与槽位挂载
   mountWorkbenchEntries,
   mountToolView,
+  ToolRunCard,
+  parseToolResult,
+  artifactPathsOf,
+  isVideoPath,
   mountComposerStatus,
   mountInputDock,
   toolViewPropsFrom,

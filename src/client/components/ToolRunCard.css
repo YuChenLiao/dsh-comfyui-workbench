@@ -1,0 +1,17 @@
+/* 对话流里的出图卡片（`.ctv-` 前缀）。颜色跟工作台一致，深浅两套都由宿主主题决定。 */
+
+.ctv-card{border:1px solid rgba(127,127,127,.28);border-radius:8px;padding:8px 10px;background:rgba(127,127,127,.06);display:flex;flex-direction:column;gap:6px;max-width:520px}
+.ctv-head{display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.4}
+.ctv-tool{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;opacity:.75}
+.ctv-state{font-size:11px;padding:1px 6px;border-radius:999px;border:1px solid rgba(127,127,127,.35)}
+.ctv-state.err{border-color:rgba(220,90,90,.6);color:#d97575}
+.ctv-meta{font-size:11px;opacity:.7}
+.ctv-id{margin-left:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;opacity:.45}
+.ctv-bar{height:3px;border-radius:999px;background:rgba(127,127,127,.22);overflow:hidden}
+.ctv-bar>span{display:block;height:100%;background:#79b8e0;transition:width .3s ease}
+.ctv-preview{width:100%;max-width:320px;border-radius:6px;image-rendering:auto;opacity:.9}
+.ctv-shots{display:flex;flex-wrap:wrap;gap:6px}
+.ctv-shot{display:block;line-height:0}
+.ctv-media{width:132px;height:132px;object-fit:cover;border-radius:6px;border:1px solid rgba(127,127,127,.25)}
+.ctv-err{font-size:12px;color:#d97575;white-space:pre-wrap;word-break:break-word}
+.ctv-note{font-size:11px;opacity:.65;white-space:pre-wrap;word-break:break-word}
