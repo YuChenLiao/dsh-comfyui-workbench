@@ -299,5 +299,28 @@ for (const [rel, key] of PERSISTED_SWITCHES) {
   assert.match(text, new RegExp(`writePref\\('${escaped}'`), `${rel}：${key} 变化时必须 writePref，否则读得到旧值`)
 }
 
+// ── package.json 不得引入会触发 git 源安装构建的生命周期钩子，且脚本必须兼容 Windows cmd ──
+// 教训（issue #6）：本包 `lib/` 已预编译入仓，一旦在 scripts 里声明 `prepare` / `prepack` / `prepublish`，
+// `pnpm add github:...` 就会在无 `.git` 的临时目录里强行跑 `npm install` 拉全量 `devDependencies`；
+// 更糟的是 `|| true` 在 Windows 默认的 `cmd.exe` 里不存在，导致所有 Windows 用户安装/更新必然失败。
+{
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  const scripts = pkg.scripts ?? {}
+  for (const forbidden of ['prepare', 'prepack', 'prepublish']) {
+    assert.equal(
+      Object.hasOwn(scripts, forbidden),
+      false,
+      `package.json scripts 不得定义 ${forbidden}（lib/ 已入仓，声明它会迫使 git 源安装跑 npm install 并可能在无 .git 临时目录失败）`,
+    )
+  }
+  for (const [name, cmd] of Object.entries(scripts)) {
+    assert.equal(
+      /(?:\|\||;|&&)\s*true(?:\s|$)/.test(String(cmd)),
+      false,
+      `package.json scripts.${name} 包含 POSIX 专用的 true（Windows cmd.exe 下会报错）：${cmd}`,
+    )
+  }
+}
+
 console.log(`arch: 全部通过（${files.length} 个文件，${units.size} 个单元，组件边界与配置一致，${entryFiles.length + 2} 条 entry 注入齐备，${tabComponents.length} 个页签与诊断表对齐，${WHITELIST_PAIRS.length} 组白名单与导入脚本一致，${PERSISTED_SWITCHES.length} 个隐私开关读写成对）`)
 

@@ -466,6 +466,7 @@ src/runtime.ts                    跨 entry 共享的运行时（锚点挂在 ct
 
 ```sh
 npm install
+npm run hooks:install  # 可选：启用仓库原生 .githooks（pre-commit / pre-push 门禁）
 npm run build      # src → lib/index.js（宿主）+ lib/client.js（浏览器）+ lib/entries/*.js + lib/{workflow,store,run,comfy}.js（测试用）
 npm test           # 架构边界 + 写接口覆盖 + 类名 + 宿主接口 + 客户端渲染 + 各组件功能
 npm run typecheck

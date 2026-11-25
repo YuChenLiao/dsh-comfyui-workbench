@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.8.2 — 2026-11-25
+
+### 修复（对应 issue #6）
+
+- **修复 Windows 下从 git 源安装/更新必然失败（issue #6，感谢 @Euryale076）**：
+  - `0.8.1` 在 [package.json](package.json) 加入 `"prepare": "git config core.hooksPath .githooks || true"` 后，一方面 `pnpm add github:...` 会在无 `.git` 的临时目录触发 `npm install`（白白拉取全量 `devDependencies`），另一方面 Windows `cmd.exe` 不认识 POSIX 的 `true` 导致退出码 1、整次安装回滚。
+  - 彻底移除 `prepare` 生命周期钩子，改为显式开发脚本 `npm run hooks:install`（[scripts/setup-git-hooks.mjs](scripts/setup-git-hooks.mjs)，无 `.git` 时安全退出 0、纯 Node 实现跨平台零依赖），并在中英文 README 开发章节补上说明。
+  - [tests/arch.mjs](tests/arch.mjs) 新增永久门禁：禁止在 `package.json` 的 `scripts` 中声明 `prepare` / `prepack` / `prepublish` 或包含 Windows `cmd.exe` 不支持的 `|| true` 写法。
+
 ## 0.8.1 — 2026-11-25
 
 ### 修复（对应 issue #3 / #4 / #5 及面板文案）

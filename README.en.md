@@ -462,6 +462,7 @@ The first step of `npm test` (`node tests/arch.mjs`) enforces four boundaries: `
 
 ```sh
 npm install
+npm run hooks:install  # optional: enable native .githooks (pre-commit / pre-push gates)
 npm run build      # src → lib/index.js (host) + lib/client.js (browser) + lib/entries/*.js + lib/{workflow,store,run,comfy}.js (for tests)
 npm test           # architecture boundaries + write-endpoint coverage + class names + host API + client render + per-component behaviour
 npm run typecheck
