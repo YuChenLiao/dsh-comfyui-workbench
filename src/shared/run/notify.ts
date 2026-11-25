@@ -51,6 +51,8 @@ const watchers = new Map<string, Watcher>()
 interface QueueRegistry {
   update: (promptId: string, patch: object) => void
   get: (promptId: string) => { state?: string; startedAt?: number } | undefined
+  /** 存一帧潜空间预览（可选：裁剪过的部署可能不提供）。 */
+  setPreview?: (promptId: string, mime: string, bytes: Uint8Array) => void
 }
 
 /**
@@ -139,6 +141,13 @@ export function watchRun(options: {
    * 只声明形状，装配层把 `recordArtifacts` 包进来。
    */
   onCollected?: CollectedCallback
+  /**
+   * 是否订阅 `/ws` 进度与潜空间预览（面板开关 > 配置 `progressStream`）。
+   *
+   * 开了之后记录里会多出 `progress`，并把最新一帧预览存进注册表的内存缓存
+   * （`/run-preview` 直读）。与 `sweepRun` 的同名字段语义一致。
+   */
+  progressStream?: boolean
 }): () => void {
   const { client, target, promptId, outputDir } = options
   // 与 sweepRun 对称：调用方传超小值时不该把 ComfyUI 打爆
@@ -441,6 +450,15 @@ export function sweepRun(options: {
       // 自己另造一个 id 连上去，握手成功、status 能收，但永远收不到本任务的 progress。
       // 注意同 sid 再连会互踢（`server.py:341-345`），同一 client 只能有一条订阅活着。
       clientId: client.clientId,
+      // 潜空间预览帧：只留最新一帧在内存里，供 `/run-preview` 直读。
+      // 面板与工具走的是同一条 `watchRun`，这里接一次就全覆盖。
+      onPreview: frame => {
+        try {
+          options.registry?.setPreview?.(promptId, frame.mime, frame.bytes)
+        } catch {
+          // 存不进去不影响出图
+        }
+      },
       ...(options.logger === undefined ? {} : { logger: options.logger }),
     })
     progressStops.add(stopProgress)

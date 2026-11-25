@@ -79,6 +79,7 @@ function sweepFallback(
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    progressStream: deps.progressStream?.() === true,
     // 这条路径是"没有 agent 可通知"时的兜底，产物仍要进索引 ——
     // 否则用户会发现"图出来了，但相册里按标签搜不到"。
     onCollected: outcome => recordArtifacts(outcome, {
@@ -359,6 +360,7 @@ export function runTool(deps: ToolDeps): ToolSpec {
               outputDir,
               intervalMs: deps.pollIntervalMs,
               registry: deps.runs,
+              progressStream: deps.progressStream?.() === true,
               // 默认模式（async）的产物就是从这里进索引的：watcher 收完产物回调一次，
               // 与同步分支共用同一份登记逻辑，字段不会两边漂。
               onCollected: outcome => recordArtifacts(outcome, {

@@ -294,6 +294,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
                   outputDir,
                   intervalMs: deps.pollIntervalMs,
                   registry: deps.runs,
+                  progressStream: deps.progressStream?.() === true,
                   onCollected,
                   ...(deps.logger === undefined ? {} : { logger: deps.logger }),
                 })
@@ -305,6 +306,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
                   outputDir,
                   intervalMs: deps.pollIntervalMs,
                   registry: deps.runs,
+                  progressStream: deps.progressStream?.() === true,
                   onCollected,
                   ...(deps.logger === undefined ? {} : { logger: deps.logger }),
                 })
@@ -344,6 +346,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
               outputDir,
               intervalMs: deps.pollIntervalMs,
               registry: deps.runs,
+              progressStream: deps.progressStream?.() === true,
               onCollected,
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })
@@ -355,6 +358,7 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
               outputDir,
               intervalMs: deps.pollIntervalMs,
               registry: deps.runs,
+              progressStream: deps.progressStream?.() === true,
               onCollected,
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })

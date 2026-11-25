@@ -22,6 +22,9 @@
  * - Node 20 没有全局 `WebSocket`（engines 写的是 >=20），那时会静默不生效。
  */
 
+import { bytesOfMessage, parsePreviewFrame } from './preview-frame.js'
+import type { PreviewFrame } from './preview-frame.js'
+
 /** 进度回调。 */
 export interface ProgressTick {
   /** 已完成的值。 */
@@ -29,6 +32,8 @@ export interface ProgressTick {
   /** 总值；0 表示未知。 */
   max: number
 }
+
+export type { PreviewFrame }
 
 /** ComfyUI 在 `/ws` 上推的事件形状（只取用得到的字段）。 */
 interface WsMessage {
@@ -62,6 +67,13 @@ export function watchProgress(
      * 不传时才退回一个随机 id（只用于测试或独立调试）。
      */
     clientId?: string
+    /**
+     * 收到潜空间预览帧时调用。
+     *
+     * 不传就完全不解码二进制消息（省掉每帧一次 DataView 解析）。
+     * 回调自己抛错会被吞掉 —— 预览坏了不能连带把百分比进度弄断。
+     */
+    onPreview?: (frame: PreviewFrame) => void
     /**
      * 只用来**告知**降级，不参与判断。
      *
@@ -107,6 +119,21 @@ export function watchProgress(
 
   socket.addEventListener('message', event => {
     if (closed) return
+
+    // 二进制消息 = 潜空间预览帧（不是 JSON）。想收帧才解析，否则直接跳过。
+    const binary = bytesOfMessage(event.data)
+    if (binary !== null) {
+      if (options.onPreview === undefined) return
+      const frame = parsePreviewFrame(binary)
+      if (frame === null) return
+      try {
+        options.onPreview(frame)
+      } catch {
+        // 回调自己抛错不该断掉订阅
+      }
+      return
+    }
+
     let parsed: WsMessage
     try {
       parsed = JSON.parse(typeof event.data === 'string' ? event.data : '') as WsMessage

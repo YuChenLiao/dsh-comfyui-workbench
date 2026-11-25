@@ -22,6 +22,16 @@ import path from 'node:path'
 /** 一条运行的状态。 */
 export type RunState = 'queued' | 'running' | 'done' | 'failed' | 'unknown'
 
+/** 缓存的一帧预览图（内存态，不落盘）。 */
+export interface CachedPreview {
+  /** `image/jpeg` 或 `image/png`。 */
+  mime: string
+  /** 图像字节。 */
+  bytes: Uint8Array
+  /** 收到时刻（毫秒）。 */
+  at: number
+}
+
 /** 进度（P2 接 WebSocket 后会更细；P1 只有排队位）。 */
 export interface RunProgress {
   /** 已完成步数。 */
@@ -86,6 +96,13 @@ export class RunRegistry {
   private readonly filePath: string | undefined
   private writeTimer: NodeJS.Timeout | undefined
   private dirty = false
+  /**
+   * 最新一帧潜空间预览图。
+   *
+   * **只在内存、运行结束即清、绝不落盘**：一帧几十 KB，30 步的图会推几十帧，
+   * 写盘纯属浪费；而且它是"此刻正在画什么"的瞬时信息，重启后毫无意义。
+   */
+  private readonly previews = new Map<string, CachedPreview>()
 
   /**
    * @param outputDir - 会话产物目录（写 `<dir>/runs.json`）。不传则纯内存。
@@ -139,6 +156,7 @@ export class RunRegistry {
     // 终态不够就再动 active（极端情况：全都在跑），但那是不得已
     for (const record of [...finished, ...active].slice(0, Math.max(0, need))) {
       this.records.delete(record.promptId)
+      this.previews.delete(record.promptId)
     }
   }
 
@@ -200,7 +218,39 @@ export class RunRegistry {
     const current = this.records.get(promptId)
     if (current === undefined) return
     Object.assign(current, patch)
+    // 进终态就丢掉预览帧：再没有谁会看"上一张已经画完的中间态"。
+    const state = (patch as { state?: unknown }).state
+    if (state === 'done' || state === 'failed' || state === 'unknown') this.previews.delete(promptId)
     this.scheduleFlush()
+  }
+
+  /**
+   * 存一帧预览图（覆盖上一帧）。
+   *
+   * 只保留最新一帧：预览的用途是"现在画到什么样"，历史帧没有任何消费方。
+   *
+   * @param promptId - 运行 id。
+   * @param mime - 图像 MIME。
+   * @param bytes - 图像字节。
+   */
+  setPreview(promptId: string, mime: string, bytes: Uint8Array): void {
+    // 没有这条运行记录就别攒垃圾（可能是上一条已结束的迟到帧）。
+    if (!this.records.has(promptId)) return
+    this.previews.set(promptId, { mime, bytes, at: Date.now() })
+  }
+
+  /**
+   * 取最新一帧预览图。
+   *
+   * @param promptId - 运行 id。
+   */
+  preview(promptId: string): CachedPreview | undefined {
+    return this.previews.get(promptId)
+  }
+
+  /** 丢弃某条运行的预览帧（运行结束时）。 */
+  dropPreview(promptId: string): void {
+    this.previews.delete(promptId)
   }
 
   /** 查询一条。 */
@@ -234,5 +284,6 @@ export class RunRegistry {
   /** 清空（测试用）。 */
   clear(): void {
     this.records.clear()
+    this.previews.clear()
   }
 }

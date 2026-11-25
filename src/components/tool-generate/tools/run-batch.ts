@@ -439,6 +439,7 @@ function sweepOne(deps: ToolDeps, promptId: string, outputDir: string, identity:
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    progressStream: deps.progressStream?.() === true,
     onCollected: outcome => recordArtifacts(outcome, {
       index: deps.index,
       workflowId: identity.workflowId,
@@ -472,6 +473,7 @@ function watchOne(
     outputDir,
     intervalMs: deps.pollIntervalMs,
     registry: deps.runs,
+    progressStream: deps.progressStream?.() === true,
     // 批次路径同样要进索引：否则批量出的图在相册里按工作流筛不出来
     onCollected: outcome => recordArtifacts(outcome, {
       index: deps.index,

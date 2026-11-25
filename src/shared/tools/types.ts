@@ -147,6 +147,13 @@ export interface ToolDeps {
    * 一律异步；省略按开启处理。
    */
   syncWait?: boolean
+  /**
+   * 是否订阅 `/ws` 进度与潜空间预览（面板开关 > 配置 `progressStream`）。
+   *
+   * 与 `runWait` 一样每次调用时求值。省略按关闭处理 ——
+   * 它是额外一条长连接，默认不开是既定行为。
+   */
+  progressStream?: () => boolean
   /** 运行注册表：提交后把状态写进去，供面板与 comfyui_runs 读。 */
   runs: RunsLike
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */

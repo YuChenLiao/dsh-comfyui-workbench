@@ -93,6 +93,13 @@ export interface WorkflowRouteDeps {
      * 字段形状由 `RunRegistry` 与 `comfyui_runs` 那份契约决定（不在本组件重抄一遍）。
      */
     list: (filter?: { state?: string; batchId?: string; limit?: number }) => unknown[]
+    /**
+     * 取某条运行的最新一帧潜空间预览。
+     *
+     * 可选：`runs` 只在内存里缓存最新一帧，裁剪过的注册表实现可能没有它 ——
+     * 缺了就是 `/run-preview` 永远回 `found:false`，不影响其它接口。
+     */
+    preview?: (promptId: string) => { mime: string; bytes: Uint8Array } | undefined
   }
   /** 后台 sweep 与进度订阅的日志（不给的话降级与连续失败都留不下痕）。 */
   logger?: LoggerLike | undefined
@@ -211,6 +218,31 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
           ...(record.error === undefined ? {} : { error: record.error }),
           ...(record.artifacts === undefined ? {} : { artifacts: record.artifacts }),
         })
+      },
+      // 潜空间预览帧：直接回图片字节，`<img src>` 可以直连，不用 JSON 再 base64 一层
+      // （base64 会让 40KB 的帧变成 55KB，且浏览器多一次解码）。
+      // 只保留最新一帧，运行进终态即清 —— 找不到就是 200 + found:false，不是错误。
+      '/run-preview': (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '这条只接受 GET。' })
+          return
+        }
+        const promptId = url.searchParams.get('promptId') ?? ''
+        if (promptId === '') {
+          sendJson(res, 400, { ok: false, error: 'bad-request', message: '要给 promptId。' })
+          return
+        }
+        const frame = runs.preview?.(promptId)
+        if (frame === undefined) {
+          sendJson(res, 200, { ok: true, found: false, promptId })
+          return
+        }
+        res.writeHead(200, {
+          'Content-Type': frame.mime,
+          'Content-Length': frame.bytes.byteLength,
+          'Cache-Control': 'no-store',
+        })
+        res.end(Buffer.from(frame.bytes))
       },
       '/run': createRunHandler({
         client, workflowDir, settings, assertWritable, defaultOutputDir, runs,
