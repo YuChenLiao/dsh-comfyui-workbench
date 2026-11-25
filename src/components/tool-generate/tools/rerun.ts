@@ -219,6 +219,12 @@ export function rerunTool(deps: ToolDeps): ToolSpec {
           ...(tags.length === 0 ? {} : { tags }),
           ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
         })
+        // 异步重跑的产物由 watcher 收，交付物也在这里登记（exec 在闭包里）。
+        deps.presentDeliverables?.(
+          exec?.agent,
+          outcome.artifacts.map(artifact => ({ path: artifact.path })),
+          exec?.callId,
+        )
       }
 
       // 与 comfyui_run 共用同一份解析（规则见 parseWait）。

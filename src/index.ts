@@ -128,7 +128,7 @@ export { parseWait, resolveWait, waitSchema, WAIT_MAX_MS, WAIT_MIN_MS } from './
 export { isFillerTail, searchWithPrefixFallback } from './shared/search/fallback.js'
 export { readPref, writePref } from './shared/host/prefs.js'
 export { createHostToolRegistrar, HOST_ROOT_SYMBOL, mountHostRoutes, onHostDispose, registerHostTool, registerHostTools, resetRootFallbackWarning, resolveHostRoot, resolveHostTools } from './shared/host/adapter.js'
-export { deliverSessionNotice, NOTICE_SOURCE_KIND, noticeMessage } from './shared/host/session.js'
+export { createDeliverablesPresenter, deliverSessionNotice, NOTICE_SOURCE_KIND, noticeMessage } from './shared/host/session.js'
 export { mountWorkbenchSkill, WORKBENCH_SKILL_DESCRIPTION, WORKBENCH_SKILL_NAME } from './shared/host/skill.js'
 export { dedupeItems, looseKey } from './components/panel-gallery/server/assets/dedupe.js'
 export { collectImages } from './components/panel-gallery/server/scan/index.js'

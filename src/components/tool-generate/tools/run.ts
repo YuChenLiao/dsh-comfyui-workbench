@@ -363,13 +363,22 @@ export function runTool(deps: ToolDeps): ToolSpec {
               progressStream: deps.progressStream?.() === true,
               // 默认模式（async）的产物就是从这里进索引的：watcher 收完产物回调一次，
               // 与同步分支共用同一份登记逻辑，字段不会两边漂。
-              onCollected: outcome => recordArtifacts(outcome, {
-                index: deps.index,
-                workflowId: loaded.workflowId,
-                workflowHash: loaded.surface.workflowHash,
-                ...(tags.length === 0 ? {} : { tags }),
-                ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
-              }),
+              onCollected: outcome => {
+                recordArtifacts(outcome, {
+                  index: deps.index,
+                  workflowId: loaded.workflowId,
+                  workflowHash: loaded.surface.workflowHash,
+                  ...(tags.length === 0 ? {} : { tags }),
+                  ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
+                })
+                // 异步路径的产物是几十分钟后由 watcher 收的，交付物也在这里登记：
+                // `exec` 仍在闭包里，callId 能对上对话里那张卡片。
+                deps.presentDeliverables?.(
+                  exec?.agent,
+                  outcome.artifacts.map(artifact => ({ path: artifact.path })),
+                  exec?.callId,
+                )
+              },
               ...(deps.logger === undefined ? {} : { logger: deps.logger }),
             })
           }

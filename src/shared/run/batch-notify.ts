@@ -50,6 +50,8 @@ export class BatchCollector {
   private readonly startedAt: number
   private readonly maxWaitMs: number
   private readonly logger: { warn?: (message: string) => void } | undefined
+  /** 凑齐（或超时）汇总时回调一次产物路径 —— 交给交付物登记，只在批次级写一次。 */
+  private readonly onFlushed: ((files: Array<{ path: string }>) => void) | undefined
   private readonly settled = new Map<string, SettledRun>()
   private delivered = false
   private timer: NodeJS.Timeout | undefined
@@ -63,12 +65,15 @@ export class BatchCollector {
     maxWaitMs?: number
     startedAt?: number
     logger?: { warn?: (message: string) => void } | undefined
+    /** 汇总时回调产物路径（可选）：批量出图只在批次级登记一次交付物。 */
+    onFlushed?: (files: Array<{ path: string }>) => void
   }) {
     this.total = Math.max(1, options.total)
     this.deliver = options.deliver
     this.startedAt = options.startedAt ?? Date.now()
     this.maxWaitMs = options.maxWaitMs ?? 30 * 60 * 1000
     this.logger = options.logger
+    this.onFlushed = options.onFlushed
     // 到点还没凑齐也要说一声，别让用户一直等
     this.timer = setTimeout(() => {
       this.flush('timeout')
@@ -144,6 +149,15 @@ export class BatchCollector {
       for (const item of failed) {
         const label = item.index === undefined ? item.promptId : `第 ${item.index + 1} 条`
         lines.push(`失败：${label}（${item.text}）`)
+      }
+    }
+
+    // 交付物登记：批次级只写一次（逐条写会在对话里冒出 N 条重复交付物）。
+    if (artifacts.length > 0) {
+      try {
+        this.onFlushed?.(artifacts.map(artifact => ({ path: artifact.path })))
+      } catch {
+        // 登记失败不影响汇总投递
       }
     }
 

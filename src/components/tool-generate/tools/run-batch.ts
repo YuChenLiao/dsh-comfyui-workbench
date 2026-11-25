@@ -191,6 +191,8 @@ export function runBatchTool(deps: ToolDeps): ToolSpec {
           deliver: text => {
             deliverSessionNotice(agent, text, { id: batchId, logger: deps.logger, tag: 'batch' })
           },
+          // 交付物在批次级写一次：逐条登记会在对话里冒出 N 条重复交付物。
+          onFlushed: files => deps.presentDeliverables?.(exec?.agent, files, exec?.callId),
           ...(deps.logger === undefined ? {} : { logger: deps.logger }),
         })
         : undefined
