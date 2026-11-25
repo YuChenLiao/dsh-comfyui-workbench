@@ -28,6 +28,12 @@ export interface ToolOutput {
 export interface ToolExec {
   /** 发起这次调用的 Agent；有它就能把结果通知回对话。 */
   agent?: unknown
+  /**
+   * 这次调用的 id（与 `tool.call.toolview` 收到的 `callId` 同源）。
+   *
+   * 交付物登记要带上它，对话里才能把产物挂到正确的那张工具卡片上。
+   */
+  callId?: string
 }
 
 /** 工具规格（形状对齐 memory-ledger 的 ToolSpec）。 */
@@ -154,6 +160,13 @@ export interface ToolDeps {
    * 它是额外一条长连接，默认不开是既定行为。
    */
   progressStream?: () => boolean
+  /**
+   * 把产物登记成本轮交付物（`deliverables/presented`）。
+   *
+   * 由装配层注入：`shared/tools` 不认识 `sessionProjections` 那套宿主服务。
+   * 缺席时交付物卡片不出现，出图与索引登记都不受影响。
+   */
+  presentDeliverables?: (agent: unknown, files: ReadonlyArray<{ path: string; description?: string }>, callId?: string) => void
   /** 运行注册表：提交后把状态写进去，供面板与 comfyui_runs 读。 */
   runs: RunsLike
   /** workflowId → 下一次运行要应用的节点级覆盖。进程内有效，重启即清。 */

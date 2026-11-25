@@ -470,6 +470,15 @@ export function runTool(deps: ToolDeps): ToolSpec {
           ...(deps.logger === undefined ? {} : { warn: message => deps.logger?.warn?.(message) }),
         })
 
+        // 登记本轮交付物：与内置 `present` 写同一个 durable event
+        // （`deliverables/presented`），对话里才会走同一套交付物渲染。
+        // 仅在真的等到产物（同步成功）时登记；异步路径由 watcher 收图，那里没有 callId。
+        deps.presentDeliverables?.(
+          exec?.agent,
+          outcome.artifacts.map(artifact => ({ path: artifact.path })),
+          exec?.callId,
+        )
+
         // wait 成功：这条必须收敛成终态，否则记录永远停在 queued。
         // watcher 只在"异步 + 有 agent"时才挂，wait 路径完全绕过它。
         deps.runs.update(submitted.promptId, {

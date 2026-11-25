@@ -28,7 +28,7 @@ import { Workbench } from './components/Workbench.js'
 import { terminalActions } from '../components/panel-terminal/client/buttons.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
 import { hostLocale, navigateToConversation } from './host/runtime.js'
-import { mountComposerSlot, mountInputDock, mountToolView, mountWorkbenchEntries } from './host/slots.js'
+import { mountComposerStatus, mountInputDock, mountToolView, mountWorkbenchEntries } from './host/slots.js'
 import type { ClientHostContext } from './host/types.js'
 import { shouldAutoFill, shouldLoadMore } from './scroll.js'
 import { metaLine, planPage } from './format.js'
@@ -122,7 +122,7 @@ export const __test = {
   // 客户端 DSH 适配层：供 host-adapter.test.mjs 验证降级与槽位挂载
   mountWorkbenchEntries,
   mountToolView,
-  mountComposerSlot,
+  mountComposerStatus,
   mountInputDock,
   navigateToConversation,
   hostLocale,

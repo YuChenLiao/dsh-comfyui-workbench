@@ -178,7 +178,7 @@ test('客户端适配层：slots 缺失、betterSidebar 缺席与扩展槽位安
   const {
     mountWorkbenchEntries,
     mountToolView,
-    mountComposerSlot,
+    mountComposerStatus,
     mountInputDock,
     navigateToConversation,
     hostLocale,
@@ -197,9 +197,9 @@ test('客户端适配层：slots 缺失、betterSidebar 缺席与扩展槽位安
     },
   )
   assert.equal(noSlots.openSidebar(), false)
-  assert.equal(mountToolView({ get: () => undefined }, {}, null), false)
-  assert.equal(mountComposerSlot({ get: () => undefined }, {}, null), false)
-  assert.equal(mountInputDock({ get: () => undefined }, {}, null), false)
+  assert.equal(mountToolView({ get: () => undefined }, 'comfyui_run', null), false)
+  assert.equal(mountComposerStatus({ get: () => undefined }, 'id', null), false)
+  assert.equal(mountInputDock({ get: () => undefined }, 'id', null), false)
 
   // betterSidebar 缺席时仍正常注册 sidebar.panellist 与 main
   const registeredSlots = []

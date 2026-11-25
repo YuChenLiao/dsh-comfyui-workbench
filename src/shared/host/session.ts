@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 
-import type { LoggerLike } from './types.js'
+import type { HostContext, LoggerLike } from './types.js'
 
 /**
  * 插件通知的 source kind。
@@ -62,6 +62,91 @@ export function deliverSessionNotice(
       options?.logger?.warn?.(`[${tag}] 通知未送达：${error instanceof Error ? error.message : String(error)}`)
     } catch {
       // 连日志都写不了，只能放弃
+    }
+  }
+}
+
+/** 一条交付物引用（与 DSH `deliverables/presented` 的 `files` 项同形）。 */
+export interface PresentedFileRef {
+  /** 产物绝对路径。 */
+  path: string
+  /** 给用户看的一句话说明。 */
+  description?: string
+}
+
+/**
+ * 登记交付物的回调：`comfyui_run` 等工具在真的出图成功后调用它。
+ *
+ * 拿不到 `sessionProjections` 时这条链路整体缺席（返回 `undefined`），
+ * 工具侧用可选链调用即可 —— 交付物卡片是增强，不是出图的前提。
+ */
+export type DeliverablesPresenter = (
+  agent: unknown,
+  files: readonly PresentedFileRef[],
+  callId?: string,
+) => void
+
+/** 宿主 `sessionProjections` 服务的最小面。 */
+interface SessionProjectionsLike {
+  stateOf: (session: unknown, key: string) => unknown
+}
+
+/** 会话最小面（只要 append）。 */
+interface AppendableSession {
+  append: (type: string, payload: unknown) => void
+}
+
+/**
+ * 造一个"把产物登记成本轮交付物"的写入器。
+ *
+ * 与内置 `present` 工具写的是**同一个 durable event**（`deliverables/presented`，
+ * 形状 `{ turn, callId, files }`），所以对话里会走同一套交付物渲染。
+ *
+ * 三条硬约束（照抄宿主 `tool-present` 的实现）：
+ * 1. 必须 `openTurnStartSeq !== null` —— 回合已关闭时写进去的交付物不会有人渲染；
+ * 2. `turn` 用 `turnBoundary.lastTurn`，不是自己数；
+ * 3. 全程 try/catch：宿主版本没有这套投影时静默降级，不能让出图失败。
+ *
+ * @param ctx - 服务端上下文。
+ * @returns 写入器；宿主不支持时 `undefined`。
+ */
+export function createDeliverablesPresenter(ctx: HostContext): DeliverablesPresenter | undefined {
+  let projections: SessionProjectionsLike | undefined
+  try {
+    const candidate = ctx.get?.('sessionProjections') as Partial<SessionProjectionsLike> | undefined
+    if (candidate !== undefined && candidate !== null && typeof candidate.stateOf === 'function') {
+      projections = candidate as SessionProjectionsLike
+    }
+  } catch {
+    // 服务未挂载：交付物登记整体缺席
+  }
+  if (projections === undefined) return undefined
+  const service = projections
+
+  return (agent, files, callId) => {
+    if (files.length === 0) return
+    try {
+      const session = (agent as { session?: unknown } | undefined)?.session as AppendableSession | undefined
+      if (session === undefined || session === null || typeof session.append !== 'function') return
+
+      const boundary = service.stateOf(session, 'turnBoundary') as
+        | { lastTurn?: unknown; openTurnStartSeq?: unknown }
+        | undefined
+      // 回合已关闭：写进去也没人渲染，不如不写（会污染 durable log）
+      if (boundary === undefined || boundary.openTurnStartSeq === null || boundary.openTurnStartSeq === undefined) return
+      const turn = boundary.lastTurn
+      if (typeof turn !== 'number') return
+
+      session.append('deliverables/presented', {
+        turn,
+        ...(callId === undefined ? {} : { callId }),
+        files: files.map(file => ({
+          path: file.path,
+          ...(file.description === undefined ? {} : { description: file.description }),
+        })),
+      })
+    } catch {
+      // 宿主拒绝了这次写入：交付物卡片缺席，但图已经在盘上，不影响任何后续步骤
     }
   }
 }

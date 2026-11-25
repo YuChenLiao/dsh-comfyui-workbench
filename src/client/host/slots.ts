@@ -118,29 +118,61 @@ export function mountWorkbenchEntries(
   return { openSidebar }
 }
 
-/** 预留 v0.9.0：注册工具结果视图槽位（业务卡片不直接写 DSH 槽位字符串）。 */
+/**
+ * 注册一次工具调用的原生卡片（`tool.call.toolview`）。
+ *
+ * 槽位是 **keyed by wire name**：`key` 必须与工具名逐字一致，写错就永远不渲染。
+ * 注意不要碰它的子槽位 `tool.call.images` —— 那是 `single`，且已被内置
+ * `read_image` 的 toolview 占用，第二个占位者会在加载时直接抛错。
+ *
+ * @param ctx - 客户端上下文。
+ * @param toolName - 工具线名（`comfyui_run` 等）。
+ * @param component - 卡片组件。
+ */
 export function mountToolView(
   ctx: ClientHostContext,
-  options: SlotMountOptions,
+  toolName: string,
   component: unknown,
 ): boolean {
-  return mountSlot(ctx, 'tool.view', options, component)
+  return mountSlot(ctx, 'tool.call.toolview', { key: toolName }, component)
 }
 
-/** 预留 v0.9.0：注册输入栏扩展槽位（业务卡片不直接写 DSH 槽位字符串）。 */
-export function mountComposerSlot(
+/**
+ * 注册输入框工具行左侧的紧凑控件（`conversation.input.left`）。
+ *
+ * 计划里写的 `conversation.composer.tools` 在当前 Slot 契约里**不存在**；
+ * 实测对应位置是这一条（list，`id`/`order`/`label`）。
+ *
+ * @param ctx - 客户端上下文。
+ * @param id - 本条目的稳定 id。
+ * @param component - 控件组件。
+ * @param order - 排序，越小越靠左。
+ */
+export function mountComposerStatus(
   ctx: ClientHostContext,
-  options: SlotMountOptions,
+  id: string,
   component: unknown,
+  order = 40,
 ): boolean {
-  return mountSlot(ctx, 'composer.slot', options, component)
+  return mountSlot(ctx, 'conversation.input.left', { id, order }, component)
 }
 
-/** 预留 v0.9.0：注册输入框停靠区槽位（业务卡片不直接写 DSH 槽位字符串）。 */
+/**
+ * 注册输入框上方的整宽停靠区（`conversation.input.dock`）。
+ *
+ * 计划里写的 `input.dock` 实际全名是 `conversation.input.dock`；
+ * 另有 `conversation.composer.dock` 位于输入框**下方**，这里不用。
+ *
+ * @param ctx - 客户端上下文。
+ * @param id - 本条目的稳定 id。
+ * @param component - 组件。
+ * @param order - 排序。
+ */
 export function mountInputDock(
   ctx: ClientHostContext,
-  options: SlotMountOptions,
+  id: string,
   component: unknown,
+  order = 40,
 ): boolean {
-  return mountSlot(ctx, 'input.dock', options, component)
+  return mountSlot(ctx, 'conversation.input.dock', { id, order }, component)
 }
