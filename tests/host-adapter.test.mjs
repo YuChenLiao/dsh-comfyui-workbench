@@ -181,6 +181,7 @@ test('客户端适配层：slots 缺失、betterSidebar 缺席与扩展槽位安
     mountComposerStatus,
     mountInputDock,
     navigateToConversation,
+    navigateToWorkbench,
     hostLocale,
   } = mod.__test
 
@@ -261,9 +262,19 @@ test('客户端适配层：slots 缺失、betterSidebar 缺席与扩展槽位安
   assert.deepEqual(opened, ['comfyui-workbench:workbench'])
   assert.equal(disposedTab, 0)
 
-  // runtime 辅助：layout / locale 缺失时安全兜底
+  // runtime 辅助：layout / locale 缺失时安全兜底；layout 可用时切去工作台主面板
   assert.doesNotThrow(() => navigateToConversation({ get: () => undefined }))
   assert.doesNotThrow(() => navigateToConversation({ get: () => { throw new Error('no layout') } }))
+  assert.equal(navigateToWorkbench({ get: () => undefined }), false)
+  assert.equal(navigateToWorkbench({ get: () => { throw new Error('no layout') } }), false)
+  const selectedPanels = []
+  assert.equal(
+    navigateToWorkbench({
+      get: name => (name === 'layout' ? { selectPanel: id => selectedPanels.push(id) } : undefined),
+    }),
+    true,
+  )
+  assert.deepEqual(selectedPanels, ['comfyui-workbench'])
   assert.equal(hostLocale({ get: () => undefined }), 'zh')
   assert.equal(hostLocale({ get: () => ({ getSnapshot: () => ({ active: 'en-US' }) }) }), 'en-US')
 })

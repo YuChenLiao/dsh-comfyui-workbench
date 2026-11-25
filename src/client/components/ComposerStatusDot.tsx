@@ -46,18 +46,44 @@ export function dotKind(state: string | undefined, running: number): string {
   return 'idle'
 }
 
+/** 迷你状态点 props：宿主归一化字段 + 打开工作台的回调。 */
+export interface ComposerStatusDotProps extends ComposerStatusProps {
+  /** 打开工作台（由入口层优先走侧边栏、否则切主面板，避免硬编码无效 URL）。 */
+  onOpenWorkbench?: () => void
+}
+
 /**
  * 迷你状态点。
  *
- * @param props - 适配层归一化后的 props（这条槽位只有 `sessionId`）。
+ * @param props - 适配层归一化后的 props（这条槽位只有 `sessionId`）与打开工作台回调。
  */
-export function ComposerStatusDot(props: ComposerStatusProps): React.ReactElement {
+export function ComposerStatusDot(props: ComposerStatusDotProps): React.ReactElement {
   const [state, setState] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState(false)
   const [running, setRunning] = useState(0)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined
+    const onPointerDown = (event: MouseEvent): void => {
+      const target = event.target as Node | null
+      if (rootRef.current !== null && target !== null && !rootRef.current.contains(target)) {
+        setOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
 
   useEffect(() => {
     let alive = true
@@ -101,7 +127,7 @@ export function ComposerStatusDot(props: ComposerStatusProps): React.ReactElemen
   }
 
   return (
-    <div className="cst-root">
+    <div ref={rootRef} className="cst-root">
       <style>{DOT_CSS}</style>
       <button
         type="button"
@@ -116,13 +142,17 @@ export function ComposerStatusDot(props: ComposerStatusProps): React.ReactElemen
       {open ? (
         <div className="cst-menu">
           {canStart ? (
-            <button type="button" className="cst-item" onClick={() => { void start() }}>
+            <button type="button" className="cst-item" onClick={() => { setOpen(false); void start() }}>
               启动 ComfyUI
             </button>
           ) : null}
-          <a className="cst-item" href="/comfyui-workbench" target="_blank" rel="noreferrer">
+          <button
+            type="button"
+            className="cst-item"
+            onClick={() => { setOpen(false); props.onOpenWorkbench?.() }}
+          >
             打开工作台
-          </a>
+          </button>
         </div>
       ) : null}
     </div>

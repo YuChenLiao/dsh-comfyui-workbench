@@ -616,6 +616,9 @@ assert.match(dotHtml, /class="cst-root"/)
 assert.match(dotHtml, /class="cst-point"/)
 assert.match(dotHtml, /class="cst-label"/)
 assert.doesNotMatch(dotHtml, /class="cst-menu"/, '默认收起，点开才出菜单')
+const dotSource = fs.readFileSync(path.join(here, '..', 'src/client/components/ComposerStatusDot.tsx'), 'utf8')
+assert.doesNotMatch(dotSource, /href="\/comfyui-workbench"/, '打开工作台不能跳不存在的独立路由，必须走宿主面板导航')
+assert.match(dotSource, /onOpenWorkbench/, '打开工作台应通过回调接入宿主导航')
 
 // ── WorkflowAdmin：环境自检入口与空态一键生成 ──
 // 空库是最常见的冷启动状态：空态里必须有"一键生成基础模板"这条出路，

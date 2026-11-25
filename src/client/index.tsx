@@ -29,7 +29,7 @@ import { ComposerStatusDot, dotKind, statusLabel } from './components/ComposerSt
 import { ToolRunCard, artifactPathsOf, isVideoPath, parseToolResult } from './components/ToolRunCard.js'
 import { terminalActions } from '../components/panel-terminal/client/buttons.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
-import { hostLocale, navigateToConversation } from './host/runtime.js'
+import { hostLocale, navigateToConversation, navigateToWorkbench } from './host/runtime.js'
 import { composerStatusPropsFrom, inputDockPropsFrom, toolViewPropsFrom } from './host/props.js'
 import { mountComposerStatus, mountInputDock, mountToolView, mountWorkbenchEntries } from './host/slots.js'
 import type { ClientHostContext } from './host/types.js'
@@ -64,6 +64,10 @@ export function apply(ctx: ClientHostContext): void {
 
   let openSidebarFn = (): boolean => false
   const openSidebar = (): boolean => openSidebarFn()
+  // 装了 better-sidebar 时在右侧栏打开（不打断当前对话），否则切到工作台主面板。
+  const openWorkbench = (): void => {
+    if (openSidebar() === false) navigateToWorkbench(ctx)
+  }
 
   const Tab = (tabProps?: { visible?: boolean }): React.ReactElement => (
     <Workbench
@@ -80,7 +84,9 @@ export function apply(ctx: ClientHostContext): void {
   for (const toolName of TOOL_VIEW_TOOLS) mountToolView(ctx, toolName, ToolRunCard)
   // 输入框工具行左侧的迷你状态点（`conversation.input.left`；Plan 里写的
   // `conversation.composer.tools` 在当前 Slot 契约里不存在）。
-  mountComposerStatus(ctx, 'comfyui-workbench:status', ComposerStatusDot)
+  mountComposerStatus(ctx, 'comfyui-workbench:status', dotProps => (
+    <ComposerStatusDot {...dotProps} onOpenWorkbench={openWorkbench} />
+  ))
 
   const mounted = mountWorkbenchEntries(ctx, {
     title: () => t('title'),
@@ -153,5 +159,6 @@ export const __test = {
   composerStatusPropsFrom,
   inputDockPropsFrom,
   navigateToConversation,
+  navigateToWorkbench,
   hostLocale,
 }
