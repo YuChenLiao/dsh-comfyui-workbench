@@ -25,6 +25,8 @@ import { Gallery } from '../components/panel-gallery/client/Gallery.js'
 import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import CSS from '../components/panel-gallery/client/styles.css'
 import { Workbench } from './components/Workbench.js'
+import { ComposerStatusDot, dotKind, statusLabel } from './components/ComposerStatusDot.js'
+import { QuickRunDock, buildQuickRunPrompt } from './components/QuickRunDock.js'
 import { ToolRunCard, artifactPathsOf, isVideoPath, parseToolResult } from './components/ToolRunCard.js'
 import { terminalActions } from '../components/panel-terminal/client/buttons.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
@@ -77,6 +79,11 @@ export function apply(ctx: ClientHostContext): void {
   // 出图卡片：三个工具共用一个视图，按 wire name 各挂一次。
   // `tool.call.images` 是 single 且已被内置 read_image 占用，所以这里只能挂 toolview。
   for (const toolName of TOOL_VIEW_TOOLS) mountToolView(ctx, toolName, ToolRunCard)
+  // 输入框工具行左侧的迷你状态点（`conversation.input.left`；Plan 里写的
+  // `conversation.composer.tools` 在当前 Slot 契约里不存在）。
+  mountComposerStatus(ctx, 'comfyui-workbench:status', ComposerStatusDot)
+  // 输入框上方整宽停靠区（`conversation.input.dock`；Plan 里写的 `input.dock` 是全名的简写）。
+  mountInputDock(ctx, 'comfyui-workbench:quick-run', QuickRunDock)
 
   const mounted = mountWorkbenchEntries(ctx, {
     title: () => t('title'),
@@ -137,6 +144,11 @@ export const __test = {
   mountWorkbenchEntries,
   mountToolView,
   ToolRunCard,
+  ComposerStatusDot,
+  QuickRunDock,
+  buildQuickRunPrompt,
+  statusLabel,
+  dotKind,
   parseToolResult,
   artifactPathsOf,
   isVideoPath,

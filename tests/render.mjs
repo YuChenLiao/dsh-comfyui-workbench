@@ -76,7 +76,7 @@ assert.deepEqual(mod.inject, ['slots'])
 assert.equal(typeof mod.apply, 'function')
 assert.ok(mod.__test, '应当导出 __test 便于自检')
 
-const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow, ToolRunCard, parseToolResult, artifactPathsOf, isVideoPath } = mod.__test
+const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow, ToolRunCard, ComposerStatusDot, QuickRunDock, buildQuickRunPrompt, parseToolResult, artifactPathsOf, isVideoPath, statusLabel, dotKind } = mod.__test
 const t = key => key
 
 // ── Card：缩略图 + 四个悬浮动作 ──
@@ -595,3 +595,45 @@ assert.match(failHtml, /E_DOWN/)
 assert.match(failHtml, /ComfyUI 没启动/)
 
 console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / ToolRunCard / TagsPanel）')
+
+// ── ComposerStatusDot：输入框旁的迷你状态点 ──
+// 状态词与点色是纯函数，先钉住：这四个状态混起来最容易"看着像在线其实没连上"
+assert.equal(statusLabel('ready', 0), '在线')
+assert.equal(statusLabel('starting', 0), '启动中')
+assert.equal(statusLabel('external', 0), '外部实例')
+assert.equal(statusLabel('failed', 0), '离线')
+assert.equal(statusLabel(undefined, 0), '未知')
+assert.equal(statusLabel('ready', 2), '出图中 2', '有活跃任务时优先显示任务数')
+assert.equal(dotKind('ready', 0), 'ok')
+assert.equal(dotKind('ready', 1), 'busy')
+assert.equal(dotKind('starting', 0), 'wait')
+assert.equal(dotKind('external', 0), 'ext')
+assert.equal(dotKind('failed', 0), 'bad')
+assert.equal(dotKind(undefined, 0), 'idle')
+
+const dotHtml = renderToStaticMarkup(React.createElement(ComposerStatusDot, { sessionId: 'sess-1' }))
+assert.match(dotHtml, /class="cst-root"/)
+assert.match(dotHtml, /class="cst-point"/)
+assert.match(dotHtml, /class="cst-label"/)
+assert.doesNotMatch(dotHtml, /class="cst-menu"/, '默认收起，点开才出菜单')
+
+// ── QuickRunDock：输入框上方的快捷生图停靠区 ──
+// 指令文本是唯一的"产品输出"，先把形状钉住：模型要能照做
+assert.equal(
+  buildQuickRunPrompt('sdxl', '', {}),
+  '请用 comfyui_run 出图：workflow=sdxl。',
+)
+assert.equal(
+  buildQuickRunPrompt('sdxl', 'fast', { prompt: '一只猫' }),
+  '请用 comfyui_run 出图：workflow=sdxl，preset=fast，vars={"prompt":"一只猫"}。',
+)
+assert.equal(
+  buildQuickRunPrompt('sdxl', '', { prompt: '', negative: 'blurry' }),
+  '请用 comfyui_run 出图：workflow=sdxl，vars={"negative":"blurry"}。',
+  '空值不该进 vars',
+)
+
+const dockHtml = renderToStaticMarkup(React.createElement(QuickRunDock, { sessionId: 'sess-1', draft: '' }))
+assert.match(dockHtml, /class="cqd-root"/)
+assert.match(dockHtml, /快速生图/)
+assert.doesNotMatch(dockHtml, /class="cqd-body"/, '默认收起，展开才拉工作流列表')

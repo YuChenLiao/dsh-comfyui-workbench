@@ -39,8 +39,10 @@ const STYLE_FILES = [
   path.join(root, 'src', 'components', 'panel-characters', 'client', 'styles.css'),
   path.join(root, 'src', 'components', 'panel-terminal', 'client', 'styles.css'),
   path.join(clientDir, 'styles.css'),
-  // 对话流里的出图卡片（`tool.call.toolview`），样式与组件同目录
+  // 对话流里的出图卡片（`tool.call.toolview`）与输入框状态点，样式与组件同目录
   path.join(clientDir, 'components', 'ToolRunCard.css'),
+  path.join(clientDir, 'components', 'ComposerStatusDot.css'),
+  path.join(clientDir, 'components', 'QuickRunDock.css'),
 ]
 
 /**
@@ -48,7 +50,7 @@ const STYLE_FILES = [
  * 也不进 used —— 检查看起来全绿，实际那个面板完全没被校验（终端面板漏了整整一轮，
  * 直到样式迁移时才被发现：加了它的 .css 却没加 `cwt`，校验是空转的）。
  */
-const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt|ctv|cch|cmf|csf|csm|cpm'
+const PREFIXES = 'cwb|cwf|cfa|cwa|ctg|cps|cct|cwt|ctv|cst|cqd|cch|cmf|csf|csm|cpm'
 
 /** 样式表里定义过的类名。 */
 const defined = new Set()
