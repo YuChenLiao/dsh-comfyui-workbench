@@ -6,7 +6,7 @@ import type { Settings } from '../../../shared/host/config.js'
 import type { Toggles } from '../../../shared/host/toggles.js'
 import type { LoggerLike } from '../../../shared/host/types.js'
 import type { ComfyClient, ComfySupervisor } from '../../../shared/comfy/index.js'
-import { availableModels } from '../../../shared/comfy/index.js'
+import { availableModels, bootstrapWorkflows, enumOf, runDoctor } from '../../../shared/comfy/index.js'
 import { auditWorkflows } from '../../../shared/comfy/audit.js'
 import { sendJson } from '../../../shared/http/respond.js'
 import { removeWorkflow } from '../../../shared/workflow/index.js'
@@ -161,6 +161,30 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
           },
         }, res, req)
       },
+      // 按本机模型一键生成基础模板。写接口，但 `/workflows/*` 在 router 里走 selfManaged，
+      // 所以方法校验由这里自己做（与 `/workflows/import` 同一套路）。
+      '/workflows/bootstrap': async (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { ok: false, error: 'method-not-allowed', message: '生成模板只接受 POST。' })
+          return
+        }
+        let objectInfo: unknown = null
+        try {
+          objectInfo = await client.objectInfo(false, { timeoutMs: 3_000, skipEnsure: true })
+        } catch {
+          objectInfo = null
+        }
+        const kindsRaw = url.searchParams.get('kinds')
+        const kinds = kindsRaw === null
+          ? undefined
+          : (kindsRaw.split(',').map(item => item.trim()).filter(Boolean) as Array<'txt2img' | 'img2img' | 'inpaint'>)
+        const result = bootstrapWorkflows({
+          dir: workflowDir,
+          checkpoints: enumOf(objectInfo, 'CheckpointLoaderSimple', 'ckpt_name'),
+          ...(kinds === undefined ? {} : { kinds }),
+        })
+        sendJson(res, 200, { ok: true, ...result })
+      },
       // 同一路径两种方法：GET 列出工作流，POST 批量导出（导出由相册组件提供）。
       '/workflows': async (url: URL, res: ServerResponse, req: import('node:http').IncomingMessage) => {
         if (req.method === 'GET' || req.method === 'HEAD') {
@@ -218,6 +242,33 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): WorkflowRoutes {
           ...(record.error === undefined ? {} : { error: record.error }),
           ...(record.artifacts === undefined ? {} : { artifacts: record.artifacts }),
         })
+      },
+      // 环境自检：把"点了没反应"的四种原因一次性列清。
+      // 只读 + `skipEnsure`：它不该顺手把服务拉起来（那会掩盖"服务没起"这个结论）。
+      '/doctor': async (_url: URL, res: ServerResponse) => {
+        let objectInfo: unknown = null
+        try {
+          objectInfo = await client.objectInfo(false, { timeoutMs: 2_000, skipEnsure: true })
+        } catch {
+          objectInfo = null
+        }
+        let workflowCount = 0
+        try {
+          workflowCount = fs.readdirSync(workflowDir)
+            .filter(name => name.endsWith('.json') && !name.endsWith('.meta.json') && !name.endsWith('.schema.json'))
+            .length
+        } catch {
+          workflowCount = 0
+        }
+        const report = await runDoctor({
+          baseUrl: settings.baseUrl,
+          systemStats: () => client.systemStats({ timeoutMs: 2_000, skipEnsure: true }),
+          objectInfo: async () => objectInfo,
+          workflowCount: () => workflowCount,
+          outputDir: defaultOutputDir,
+          assertWritable: dir => assertWritable(dir),
+        })
+        sendJson(res, 200, { ok: true, report })
       },
       // 潜空间预览帧：直接回图片字节，`<img src>` 可以直连，不用 JSON 再 base64 一层
       // （base64 会让 40KB 的帧变成 55KB，且浏览器多一次解码）。

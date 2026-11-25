@@ -21,6 +21,8 @@ export {
 } from './errors.js'
 export type { RunErrorCode } from './errors.js'
 export { ComfySupervisor, detectInstallation, queueBusy, shouldReclaim } from './supervisor.js'
+export { bootstrapWorkflows, enumOf, gpuSummary, img2imgWorkflow, inpaintWorkflow, runDoctor, txt2imgWorkflow } from './doctor.js'
+export type { BootstrapKind, BootstrapResult, DoctorDeps, DoctorItem, DoctorLevel, DoctorReport } from './doctor.js'
 export { isQueueBusy, parseQueue } from './queue.js'
 export type { QueueSnapshot } from './queue.js'
 export { ensureComfyImage, materializeImages } from './upload.js'

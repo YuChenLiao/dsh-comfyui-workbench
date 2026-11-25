@@ -626,6 +626,51 @@ test('GET /run-preview：有帧回图片字节、无帧回 found:false、非 GET
   }
 })
 
+test('GET /doctor：返回五项自检结论；服务不可用时 service=fail 但接口本身 200', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    const res = await fetch(`${app.origin}/comfyui-workbench/api/doctor`)
+    assert.equal(res.status, 200, '自检本身不该因为服务没起而报错')
+    const body = await res.json()
+    assert.equal(body.ok, true)
+    assert.equal(Array.isArray(body.report.items), true)
+    assert.deepEqual(body.report.items.map(item => item.id), ['service', 'models', 'workflows', 'output', 'gpu'])
+    // 测试环境里 ComfyUI 没起：service 必须如实说 fail，而不是含糊的 warn
+    assert.equal(body.report.items.find(item => item.id === 'service').level, 'fail')
+    assert.equal(body.report.ok, false)
+  } finally {
+    await app.close()
+  }
+})
+
+test('POST /workflows/bootstrap：没有模型时拒绝生成；GET 回 405', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    const base = `${app.origin}/comfyui-workbench/api/workflows/bootstrap`
+    assert.equal((await fetch(base)).status, 405, '生成模板是写动作')
+
+    const res = await fetch(base, { method: 'POST' })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.ok, true)
+    // ComfyUI 没起 → 拿不到 checkpoint 列表 → 明确 blocked，而不是静默生成空模板
+    assert.deepEqual(body.created, [])
+    assert.match(String(body.blocked), /checkpoint/)
+  } finally {
+    await app.close()
+  }
+})
+
 test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）', async () => {
   // 这条防的是"单测全绿、真机 405"：`/tags/sync` 需要 POST（开始）与 GET（轮进度）
   // 两种方法，必须进 router 的 selfManaged，否则分派器在 handler 之前就 405 了。
