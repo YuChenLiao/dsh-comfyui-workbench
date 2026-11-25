@@ -228,7 +228,7 @@
 .cwa-doctor{display:flex;flex-direction:column;gap:8px;padding:10px 12px;flex-shrink:0}
 .cwa-doctor-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .cwa-doctor-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}
-.cwa-doctor-item{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:6px 8px;border-radius:6px;border:1px solid var(--dsh-border,rgba(127,127,127,.22));font-size:12px}
+.cwa-doctor-item{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:6px 8px;border-radius:6px;border:1px solid var(--w-line);font-size:12px}
 .cwa-doctor-item.lv-fail{border-color:rgba(220,90,90,.55)}
 .cwa-doctor-item.lv-warn{border-color:rgba(214,161,58,.5)}
 .cwa-doctor-title{font-weight:600}

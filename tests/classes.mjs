@@ -119,3 +119,14 @@ const workbenchGroupRule = /\.cwa-group\{([^}]*)\}/.exec(workbenchCss)
 assert.ok(workbenchGroupRule !== null, '找不到 .cwa-group 规则')
 assert.match(workbenchGroupRule[1], /flex-shrink:0/, '.cwa-group 必须 flex-shrink:0，否则展开的卡片会被压扁截断且不出滚动条')
 console.log('滚动: .cwa-group 不参与 flex 压缩')
+
+/**
+ * 宿主主题 token 自检：DSH 真实主题变量前缀是 `--dsw-*`（不是 `--dsh-surface`/`--dsh-border`）。
+ * 写成不存在的 `--dsh-surface` 会退回深色 fallback，在浅色主题下出现黑底黑字。
+ */
+for (const file of STYLE_FILES) {
+  const text = fs.readFileSync(file, 'utf8')
+  const bad = [...text.matchAll(/var\(--dsh-(surface|border|bg|text)\b/g)].map(match => match[0])
+  assert.deepEqual(bad, [], `${path.relative(root, file)} 使用了不存在的宿主变量：${bad.join(', ')}（应改用 --dsw-*）`)
+}
+console.log('主题: 未发现无效的 --dsh-* 颜色变量')
