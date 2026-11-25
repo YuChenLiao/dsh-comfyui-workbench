@@ -117,6 +117,28 @@
 - 一次出图实测中位 115 秒、最长 336 秒。用 `comfyui_runs` 查状态。**工具提交的运行只有排队位置，没有百分比** —— 精确进度只接在面板那两条路径上。
 - 中间产物（保存节点的来源还被别的计算节点继续消费）**在有正式产物时**会被丢掉、不进资产库；如果这个工作流一个正式产物都没有，就会退而求其次把中间产物收下来。
 
+## 进度与潜空间预览
+
+开着 `progressStream`（面板「运行设置」或配置项）时，`comfyui_run` / `comfyui_run_batch` / `comfyui_rerun`
+提交的任务会额外写采样进度，并把**最新一帧潜空间预览**缓存在内存里。想看这张图现在画成什么样：
+
+```text
+GET /comfyui-workbench/api/run-preview?promptId=<promptId>
+```
+
+- 回的是**图片字节**（`image/png` 或 `image/jpeg`），不是 JSON —— 直接当 `<img src>` 用；
+- 只保留最新一帧，运行进终态（`done` / `failed`）即清，取不到时回 `200 + {"found": false}`；
+- 没有帧不代表出错：开关没开、模型不支持预览、或还没跑到第一个采样步。
+
+## 交付物怎么出现在对话里
+
+`comfyui_run` 等到产物后会把它登记为本轮交付物（`deliverables/presented`），与内置 `present` 同一个事件、
+同一套渲染。两条边界要记住：
+
+- **异步出图不写交付物**：默认 `runWait: async` 时工具立刻返回 `pending`，那一轮对话随即结束；
+  几分钟后 watcher 收图时回合已关闭，写进去没人渲染，所以只走 `followup` 通知 + 出图卡片。
+- 想让它进"本轮交付物"，就用同步等待（`wait: true` 或配置 `runWait: sync`）。
+
 ## 升级后先体检
 
 ComfyUI 更新或装了新节点包之后，`comfyui_workflow { audit: true }` 一次回答"现在还能跑哪几个"：

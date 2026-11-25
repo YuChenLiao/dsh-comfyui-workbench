@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 未发布（v0.9.0 · 对话流）
+
+把工作台从"面板里能用"推进到"对话里就能用"。对外工具名与 HTTP 语义不变，新增的都是增量面。
+
+### 进度与潜空间预览
+
+- `comfyui_run` / `comfyui_run_batch` / `comfyui_rerun` 接入 `/ws` 进度与**二进制潜空间预览帧**：`progressStream` 开关（面板「运行设置」或配置）打开后，工具提交的任务也会写 `progress` 并把最新一帧缓存进 `RunRegistry`。
+- 新增 `GET /run-preview?promptId=`：直接回图片字节（不 base64），只保留最新一帧、运行进终态即清、全程只在内存。
+- 修复真机上"预览帧一个都收不到"：Node 原生 WebSocket 的 `binaryType` 默认是 `blob`，解析器只认 `ArrayBuffer` —— 建连后显式设为 `arraybuffer`。
+
+### 对话流里的三处原生化
+
+- **出图卡片**（`tool.call.toolview`）：运行中显示排队位次 + 采样百分比 + 潜空间预览；完成态直接渲染产物缩略图（视频走 `<video>`）；失败态给错误码与文案。刻意没抢 `tool.call.images` —— 那是 `single` 且已被内置 `read_image` 占用。
+- **迷你状态点**（`conversation.input.left`）：一行显示在线 / 启动中 / 外部实例 / 离线 / 出图中 N，点开可拉起服务。
+- **快捷生图停靠区**（`conversation.input.dock`）：选工作流 + 预设 + 提示词，生成一段可直接照做的 `comfyui_run` 指令填进草稿。
+
+### 交付物登记
+
+- `comfyui_run`（同步 + 异步）、`comfyui_rerun`（同步 + 异步）、`comfyui_run_batch`（批次级一次）都会把产物写进 `deliverables/presented`，与内置 `present` 同形，对话里走同一套交付物渲染。
+- 只在回合仍开放时写（`openTurnStartSeq !== null`）；宿主没有 `sessionProjections` 时整体静默缺席。
+
+### 环境自检与开箱模板
+
+- `GET /doctor`：五项自检（服务 / 模型 / 工作流库 / 产物目录 / 显存），每项给出 `ok` / `warn` / `fail` + 现状 + 可执行建议；只有 `fail` 才让整体不通过。
+- `POST /workflows/bootstrap`：按本机第一个 checkpoint 生成文生图 / 图生图 / 局部重绘三份最小可用 API 模板；**已存在的一律跳过、绝不覆盖**，没有模型时明确说明放哪。
+- 工作流面板顶部状态条加「环境自检」弹窗，空库态加「一键生成基础模板」入口。
+
 ## 0.8.2 — 2026-11-25
 
 ### 修复（对应 issue #6）
