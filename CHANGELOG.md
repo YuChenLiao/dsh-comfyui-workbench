@@ -10,11 +10,10 @@
 - 新增 `GET /run-preview?promptId=`：直接回图片字节（不 base64），只保留最新一帧、运行进终态即清、全程只在内存。
 - 修复真机上"预览帧一个都收不到"：Node 原生 WebSocket 的 `binaryType` 默认是 `blob`，解析器只认 `ArrayBuffer` —— 建连后显式设为 `arraybuffer`。
 
-### 对话流里的三处原生化
+### 对话流里的两处原生化
 
 - **出图卡片**（`tool.call.toolview`）：运行中显示排队位次 + 采样百分比 + 潜空间预览；完成态直接渲染产物缩略图（视频走 `<video>`）；失败态给错误码与文案。刻意没抢 `tool.call.images` —— 那是 `single` 且已被内置 `read_image` 占用。
 - **迷你状态点**（`conversation.input.left`）：一行显示在线 / 启动中 / 外部实例 / 离线 / 出图中 N，点开可拉起服务。
-- **快捷生图停靠区**（`conversation.input.dock`）：选工作流 + 预设 + 提示词，生成一段可直接照做的 `comfyui_run` 指令填进草稿。
 
 ### 交付物登记
 

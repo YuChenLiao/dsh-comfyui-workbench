@@ -76,7 +76,7 @@ assert.deepEqual(mod.inject, ['slots'])
 assert.equal(typeof mod.apply, 'function')
 assert.ok(mod.__test, '应当导出 __test 便于自检')
 
-const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow, ToolRunCard, ComposerStatusDot, QuickRunDock, buildQuickRunPrompt, parseToolResult, artifactPathsOf, isVideoPath, statusLabel, dotKind } = mod.__test
+const { Gallery, Card, Lightbox, ConfirmRemove, ConfirmBulkRemove, metaLine, planPage, WorkflowRow, ToolRunCard, ComposerStatusDot, parseToolResult, artifactPathsOf, isVideoPath, statusLabel, dotKind } = mod.__test
 const t = key => key
 
 // ── Card：缩略图 + 四个悬浮动作 ──
@@ -616,27 +616,6 @@ assert.match(dotHtml, /class="cst-root"/)
 assert.match(dotHtml, /class="cst-point"/)
 assert.match(dotHtml, /class="cst-label"/)
 assert.doesNotMatch(dotHtml, /class="cst-menu"/, '默认收起，点开才出菜单')
-
-// ── QuickRunDock：输入框上方的快捷生图停靠区 ──
-// 指令文本是唯一的"产品输出"，先把形状钉住：模型要能照做
-assert.equal(
-  buildQuickRunPrompt('sdxl', '', {}),
-  '请用 comfyui_run 出图：workflow=sdxl。',
-)
-assert.equal(
-  buildQuickRunPrompt('sdxl', 'fast', { prompt: '一只猫' }),
-  '请用 comfyui_run 出图：workflow=sdxl，preset=fast，vars={"prompt":"一只猫"}。',
-)
-assert.equal(
-  buildQuickRunPrompt('sdxl', '', { prompt: '', negative: 'blurry' }),
-  '请用 comfyui_run 出图：workflow=sdxl，vars={"negative":"blurry"}。',
-  '空值不该进 vars',
-)
-
-const dockHtml = renderToStaticMarkup(React.createElement(QuickRunDock, { sessionId: 'sess-1', draft: '' }))
-assert.match(dockHtml, /class="cqd-root"/)
-assert.match(dockHtml, /快速生图/)
-assert.doesNotMatch(dockHtml, /class="cqd-body"/, '默认收起，展开才拉工作流列表')
 
 // ── WorkflowAdmin：环境自检入口与空态一键生成 ──
 // 空库是最常见的冷启动状态：空态里必须有"一键生成基础模板"这条出路，
