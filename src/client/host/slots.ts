@@ -1,3 +1,5 @@
+import { composerStatusPropsFrom, inputDockPropsFrom, toolViewPropsFrom } from './props.js'
+import type { ComposerStatusProps, InputDockProps, ToolViewProps } from './props.js'
 import type { BetterSidebarLike, ClientHostContext, SlotRegistryLike } from './types.js'
 
 /** 主面板 id（`sidebar.panellist` 与 `main` 的 key 必须一致，否则点图标切不过去）。 */
@@ -35,15 +37,36 @@ function resolveSlots(ctx: ClientHostContext): SlotRegistryLike | undefined {
   return slots as SlotRegistryLike
 }
 
+/** 宿主 props → 组件 props 的归一化函数。 */
+export type SlotPropsAdapter = (hostProps: Record<string, unknown>) => unknown
+
+/**
+ * 往一个槽位注册组件。
+ *
+ * `adapter` 是适配层的另一半：给了它，组件收到的是**归一化后**的 props，
+ * 而不是宿主原始形状；没给就原样透传（用于不需要映射的位置）。
+ *
+ * @param ctx - 客户端上下文。
+ * @param slotName - 槽位名。
+ * @param options - 注册参数（key / id / order / label）。
+ * @param component - 组件。
+ * @param adapter - 可选的 props 归一化。
+ */
 function mountSlot(
   ctx: ClientHostContext,
   slotName: string,
   options: SlotMountOptions,
   component: unknown,
+  adapter?: SlotPropsAdapter,
 ): boolean {
   const slots = resolveSlots(ctx)
   if (slots === undefined) return false
-  slots.inject(slotName, () => slots.register({ ...options, name: slotName }, component))
+
+  const rendered = adapter === undefined
+    ? component
+    : (hostProps: Record<string, unknown>) => (component as (props: unknown) => unknown)(adapter(hostProps))
+
+  slots.inject(slotName, () => slots.register({ ...options, name: slotName }, rendered))
   return true
 }
 
@@ -132,9 +155,10 @@ export function mountWorkbenchEntries(
 export function mountToolView(
   ctx: ClientHostContext,
   toolName: string,
-  component: unknown,
+  component: (props: ToolViewProps) => unknown,
+  adapter: SlotPropsAdapter = toolViewPropsFrom,
 ): boolean {
-  return mountSlot(ctx, 'tool.call.toolview', { key: toolName }, component)
+  return mountSlot(ctx, 'tool.call.toolview', { key: toolName }, component, adapter)
 }
 
 /**
@@ -151,10 +175,11 @@ export function mountToolView(
 export function mountComposerStatus(
   ctx: ClientHostContext,
   id: string,
-  component: unknown,
+  component: (props: ComposerStatusProps) => unknown,
   order = 40,
+  adapter: SlotPropsAdapter = composerStatusPropsFrom,
 ): boolean {
-  return mountSlot(ctx, 'conversation.input.left', { id, order }, component)
+  return mountSlot(ctx, 'conversation.input.left', { id, order }, component, adapter)
 }
 
 /**
@@ -171,8 +196,9 @@ export function mountComposerStatus(
 export function mountInputDock(
   ctx: ClientHostContext,
   id: string,
-  component: unknown,
+  component: (props: InputDockProps) => unknown,
   order = 40,
+  adapter: SlotPropsAdapter = inputDockPropsFrom,
 ): boolean {
-  return mountSlot(ctx, 'conversation.input.dock', { id, order }, component)
+  return mountSlot(ctx, 'conversation.input.dock', { id, order }, component, adapter)
 }
