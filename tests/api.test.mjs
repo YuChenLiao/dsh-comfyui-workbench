@@ -579,6 +579,53 @@ test('GET /run-status：查得到刚提交的运行，查不到时 found:false �
   }
 })
 
+test('GET /run-preview：有帧回图片字节、无帧回 found:false、非 GET 405', async () => {
+  const dirs = tmpDirs()
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    const base = `${app.origin}/comfyui-workbench/api/run-preview`
+
+    // 缺 promptId：说清楚要什么
+    assert.equal((await fetch(base)).status, 400)
+
+    // 没有帧：不是错误，是"这会儿还没有预览"
+    const absent = await fetch(`${base}?promptId=nope`)
+    assert.equal(absent.status, 200)
+    const body = await absent.json()
+    assert.equal(body.ok, true)
+    assert.equal(body.found, false)
+
+    // 有帧：直接回图片字节（不是 JSON），Content-Type 跟着帧的 mime 走
+    const runtime = app.runtime
+    assert.ok(runtime !== undefined, 'applyAll 该把 runtime 回出来')
+    runtime.runs.submit('p-preview', 'wf')
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    runtime.runs.setPreview('p-preview', 'image/png', png)
+
+    const hit = await fetch(`${base}?promptId=p-preview`)
+    assert.equal(hit.status, 200)
+    assert.equal(hit.headers.get('content-type'), 'image/png', '预览帧要按图片回，不能包一层 JSON')
+    assert.equal(hit.headers.get('cache-control'), 'no-store', '播放中的帧不能被缓存')
+    const bytes = new Uint8Array(await hit.arrayBuffer())
+    assert.deepEqual([...bytes], [...png], '回的必须是与写入时逐字节相同的图')
+
+    // 进终态后帧要消失：否则每次出图都会泄漏几十 KB
+    runtime.runs.update('p-preview', { state: 'done' })
+    const gone = await fetch(`${base}?promptId=p-preview`)
+    assert.equal(gone.status, 200)
+    assert.equal((await gone.json()).found, false, '运行结束后不该还有预览帧')
+
+    // 非 GET 一律 405
+    assert.equal((await fetch(`${base}?promptId=x`, { method: 'POST' })).status, 405)
+  } finally {
+    await app.close()
+  }
+})
+
 test('POST /tags/sync 不能被子方法校验拦成 405（走真实 dispatch）', async () => {
   // 这条防的是"单测全绿、真机 405"：`/tags/sync` 需要 POST（开始）与 GET（轮进度）
   // 两种方法，必须进 router 的 selfManaged，否则分派器在 handler 之前就 405 了。

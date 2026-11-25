@@ -104,6 +104,15 @@ export function watchProgress(
     return () => {}
   }
 
+  // **必须显式改成 arraybuffer**：Node 原生 WebSocket 的默认 binaryType 是 `'blob'`，
+  // 而 `bytesOfMessage` 只认 ArrayBuffer / TypedArray —— 不设这一行，潜空间预览帧
+  // 会在真机上被逐帧静默丢弃（单测直接喂 Uint8Array，所以测试照样绿）。
+  try {
+    socket.binaryType = 'arraybuffer'
+  } catch {
+    // 老实现不支持该属性：预览帧会拿不到，但百分比进度仍然可用
+  }
+
   const timer = setTimeout(() => {
     // 连不上就别耗着：调用方的轮询本来就能兜底
     if (!closed) {

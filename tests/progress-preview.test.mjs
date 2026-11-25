@@ -102,3 +102,75 @@ test('RunRegistry：没有记录的 promptId 不攒垃圾；dropPreview / clear 
   runs.clear()
   assert.equal(runs.preview('p1'), undefined, 'clear 要连预览一起清')
 })
+
+test('watchProgress：binaryType 必须显式设成 arraybuffer，否则真机预览帧全是 Blob 被逐帧丢弃', async () => {
+  // Node 原生 WebSocket 默认 binaryType === 'blob'，而解析器只认 ArrayBuffer/TypedArray。
+  // 单测直接喂 Uint8Array 时永远发现不了这个坑，所以这里用一个假 WebSocket 把
+  // "构造后有没有改 binaryType" 与"收到 ArrayBuffer 帧能不能解析"一起钉住。
+  const { watchProgress } = await import('../lib/index.js')
+  const instances = []
+  class FakeWS {
+    constructor(url) {
+      this.url = url
+      this.listeners = new Map()
+      this.binaryType = 'blob'
+      this.closed = false
+      instances.push(this)
+    }
+    addEventListener(type, fn) {
+      const list = this.listeners.get(type) ?? []
+      list.push(fn)
+      this.listeners.set(type, list)
+    }
+    removeEventListener() {}
+    close() {
+      this.closed = true
+    }
+    emit(type, event) {
+      for (const fn of this.listeners.get(type) ?? []) fn(event)
+    }
+  }
+
+  const prev = globalThis.WebSocket
+  globalThis.WebSocket = FakeWS
+  try {
+    const ticks = []
+    const previews = []
+    const stop = watchProgress('http://127.0.0.1:8188', 'p1', tick => ticks.push(tick), {
+      clientId: 'c1',
+      onPreview: frame => previews.push(frame),
+      connectTimeoutMs: 5_000,
+    })
+
+    assert.equal(instances.length, 1, '应当建了一条 ws 连接')
+    assert.equal(instances[0].binaryType, 'arraybuffer', '不改 binaryType 就收不到任何预览帧')
+
+    // 二进制帧：4B 事件类型(1) + 4B 格式(2=PNG) + 图像字节
+    const frame = new Uint8Array(11)
+    const view = new DataView(frame.buffer)
+    view.setUint32(0, 1, false)
+    view.setUint32(4, 2, false)
+    frame.set([0x89, 0x50, 0x4e], 8)
+    instances[0].emit('message', { data: frame.buffer })
+    assert.equal(previews.length, 1)
+    assert.equal(previews[0].mime, 'image/png')
+    assert.deepEqual([...previews[0].bytes], [0x89, 0x50, 0x4e])
+
+    // JSON 进度：同一条连接上两种消息要能分流
+    instances[0].emit('message', {
+      data: JSON.stringify({ type: 'progress', data: { value: 3, max: 10, prompt_id: 'p1' } }),
+    })
+    assert.deepEqual(ticks, [{ value: 3, max: 10 }])
+
+    // 别的 promptId 的进度不能串进来
+    instances[0].emit('message', {
+      data: JSON.stringify({ type: 'progress', data: { value: 9, max: 10, prompt_id: 'other' } }),
+    })
+    assert.equal(ticks.length, 1, '共用同一条 /ws，必须按 prompt_id 过滤')
+
+    stop()
+    assert.equal(instances[0].closed, true, '取消函数要关掉连接')
+  } finally {
+    globalThis.WebSocket = prev
+  }
+})
