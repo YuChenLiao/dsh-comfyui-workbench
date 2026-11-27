@@ -10,7 +10,9 @@ export interface GalleryItem {
   /** 媒体类别：卡片与灯箱据此渲染 img / video / audio（老的列表项没有这个字段，按图片处理）。 */
   kind?: 'image' | 'video' | 'audio'
   prompt?: string
+  promptClipped?: boolean
   negativePrompt?: string
+  negativePromptClipped?: boolean
   seed?: number
   width?: number
   height?: number

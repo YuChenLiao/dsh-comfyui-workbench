@@ -122,7 +122,7 @@ export function CompareModal({ a, b, t, onClose }: CompareModalProps): React.Rea
               {rows === null
                 ? t('loading')
                 : changed.length === 0
-                  // 用列表值时只说"列表可见字段"——列表里的 prompt 还被截断到 1200 字符，
+                  // 用列表值时只说"列表可见字段"——列表里的超长 prompt 可能被截断，
                   // 断言"完全相同"会比真实情况更响
                   ? (fromMeta ? t('compareSame') : t('compareSameSummary'))
                   : t('compareChanged').replace('{n}', String(changed.length))}

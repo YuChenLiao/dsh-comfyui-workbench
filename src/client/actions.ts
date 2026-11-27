@@ -10,19 +10,19 @@ export interface ActionHandlers {
 }
 
 /**
- * 复制提示词：列表项里没有就回源读 /meta。
+ * 复制提示词：列表项缺失或被截断（`promptClipped`）时回源读 `/meta` 取全文。
  *
  * @returns 给用户的成功文案。
  */
 export async function copyPrompt(item: GalleryItem, t: Translate): Promise<string> {
   let prompt = item.prompt
-  if (prompt === undefined || prompt === '') {
+  if (prompt === undefined || prompt === '' || item.promptClipped === true) {
     try {
       const data = await apiJson('/meta', { path: item.path })
       const meta = data.meta !== null && typeof data.meta === 'object' ? (data.meta as { prompt?: unknown }) : null
-      prompt = typeof meta?.prompt === 'string' ? meta.prompt : ''
+      if (typeof meta?.prompt === 'string' && meta.prompt !== '') prompt = meta.prompt
     } catch {
-      // 没元数据就走下面的报错
+      // 回源失败时退回列表已有文本；若本来就没有则走下面的报错
     }
   }
   if (prompt === undefined || prompt === '') throw new Error(t('noPrompt'))

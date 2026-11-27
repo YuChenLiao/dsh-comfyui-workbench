@@ -39,7 +39,11 @@ export interface SummaryFields {
   hasMeta: boolean
   metaSource?: string
   prompt?: string
+  /** 列表里的 prompt 是否被截断（true 时灯箱与复制动作会回源 `/meta` 取全文）。 */
+  promptClipped?: boolean
   negativePrompt?: string
+  /** 列表里的 negativePrompt 是否被截断。 */
+  negativePromptClipped?: boolean
   mode?: string
   seed?: number
   width?: number
