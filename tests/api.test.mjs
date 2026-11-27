@@ -1471,3 +1471,99 @@ test('工作流预设：列表项带出名字，删除预设只动 presets 不�
     await app.close()
   }
 })
+
+test('issue #7：/items 阈值提高至 4000/2000 且超限时标 *Clipped，copyPrompt 回源 /meta 复制全文', async () => {
+  const dirs = tmpDirs()
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+  const mediumPrompt = 'tag_medium_'.repeat(200) // 2200 字：超过旧 1200，但未超新 4000
+  const mediumNeg = 'neg_medium_'.repeat(110) // 1210 字：超过旧 800，但未超新 2000
+  const mediumImg = path.join(dirs.out, 'medium.png')
+  fs.writeFileSync(mediumImg, pngBytes)
+  fs.writeFileSync(`${mediumImg}.json`, JSON.stringify({ prompt: mediumPrompt, negativePrompt: mediumNeg }))
+
+  const hugePrompt = 'tag_huge_'.repeat(500) // 4500 字：超过新 4000
+  const hugeNeg = 'neg_huge_'.repeat(280) // 2520 字：超过新 2000
+  const hugeImg = path.join(dirs.out, 'huge.png')
+  fs.writeFileSync(hugeImg, pngBytes)
+  fs.writeFileSync(`${hugeImg}.json`, JSON.stringify({ prompt: hugePrompt, negativePrompt: hugeNeg }))
+
+  const app = await boot({
+    roots: [dirs.out], outputDir: dirs.out, workflowsDir: dirs.workflows,
+    uploadsDir: dirs.uploads, indexFile: dirs.index,
+    autoStart: false, autoDetect: false,
+  })
+  try {
+    const listRes = await fetch(`${app.origin}/comfyui-workbench/api/items?refresh=1&limit=10`)
+    assert.equal(listRes.status, 200)
+    const listBody = await listRes.json()
+    const mediumItem = listBody.items.find(item => item.name === 'medium.png')
+    const hugeItem = listBody.items.find(item => item.name === 'huge.png')
+
+    assert.ok(mediumItem !== undefined, '应查到 medium.png')
+    assert.equal(mediumItem.prompt, mediumPrompt, '2200 字提示词在列表里不应再被截断')
+    assert.equal(mediumItem.negativePrompt, mediumNeg, '1210 字负向提示词在列表里不应再被截断')
+    assert.equal(mediumItem.promptClipped, undefined, '未截断不应带 promptClipped')
+    assert.equal(mediumItem.negativePromptClipped, undefined, '未截断不应带 negativePromptClipped')
+
+    assert.ok(hugeItem !== undefined, '应查到 huge.png')
+    assert.equal(hugeItem.prompt.length, 4001, '超 4000 字时截断到 4000 + 省略号')
+    assert.ok(hugeItem.prompt.endsWith('…'))
+    assert.equal(hugeItem.promptClipped, true, '超限时必须显式标 promptClipped: true')
+    assert.equal(hugeItem.negativePrompt.length, 2001, '超 2000 字时截断到 2000 + 省略号')
+    assert.equal(hugeItem.negativePromptClipped, true, '超限时必须显式标 negativePromptClipped: true')
+
+    // /meta 始终返回未截断全文
+    const metaBody = await (await fetch(`${app.origin}/comfyui-workbench/api/meta?path=${encodeURIComponent(hugeImg)}`)).json()
+    assert.equal(metaBody.meta.prompt, hugePrompt)
+    assert.equal(metaBody.meta.negativePrompt, hugeNeg)
+
+    // 真实构建产物 lib/client.js 里的 copyPrompt：
+    // 未截断不发 /meta；promptClipped=true 时回源 /meta 复制完整 4500 字；/meta 异常时兜底复制列表摘要
+    const { createRequire } = await import('node:module')
+    const req = createRequire(import.meta.url)
+    let captured = null
+    const prevWindow = globalThis.window
+    globalThis.window = { __ModuleLoader__: { load: spec => { captured = spec } } }
+    try {
+      await import('../lib/client.js?prompt-clip-test=' + Date.now())
+    } finally {
+      if (prevWindow === undefined) delete globalThis.window
+      else globalThis.window = prevWindow
+    }
+    const clientMod = captured.factory(req)
+    const { copyPrompt } = clientMod.__test
+
+    const copied = []
+    const prevFetch = globalThis.fetch
+    const prevNavDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { clipboard: { writeText: async text => { copied.push(text) } } },
+    })
+    let metaCalls = 0
+    try {
+      globalThis.fetch = async url => {
+        metaCalls += 1
+        return await prevFetch(`${app.origin}${url}`)
+      }
+      await copyPrompt(mediumItem, key => key)
+      assert.equal(metaCalls, 0, '未截断条目不应白发 /meta 请求')
+      assert.equal(copied[0], mediumPrompt)
+
+      await copyPrompt(hugeItem, key => key)
+      assert.equal(metaCalls, 1, 'promptClipped=true 必须回源 /meta 取全文')
+      assert.equal(copied[1], hugePrompt, '复制到剪贴板的必须是未截断的完整提示词')
+
+      globalThis.fetch = async () => { throw new Error('network down') }
+      await copyPrompt(hugeItem, key => key)
+      assert.equal(copied[2], hugeItem.prompt, '/meta 回源失败时退回已有列表文本，不能无故报错')
+    } finally {
+      globalThis.fetch = prevFetch
+      if (prevNavDescriptor !== undefined) Object.defineProperty(globalThis, 'navigator', prevNavDescriptor)
+      else delete globalThis.navigator
+    }
+  } finally {
+    await app.close()
+  }
+})

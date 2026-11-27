@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { fileUrl } from '../../../client/api.js'
+import { fetchMeta, fileUrl } from '../../../client/api.js'
 import { Icon } from '../../../client/icons.js'
 import type { Translate } from '../../../client/i18n.js'
 import type { ActionKind, GalleryItem } from '../../../client/types.js'
@@ -38,6 +38,8 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
   const [dragging, setDragging] = useState(false)
   // 与卡片同一套降级：解不了的容器给一句人话 + 路径，而不是一个永远不播的控件条
   const [mediaBroken, setMediaBroken] = useState(false)
+  /** 列表项提示词被截断时补拉 `/meta` 拿到的完整文本（按 path 对齐，防翻页竞态）。 */
+  const [fullMeta, setFullMeta] = useState<{ path: string; prompt?: string; negativePrompt?: string } | null>(null)
   /** 老列表项没有 `kind`，按图片处理。 */
   const isImage = (item.kind ?? 'image') === 'image'
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -49,7 +51,32 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
     setPan({ x: 0, y: 0 })
     dragRef.current = null
     setDragging(false)
+    setMediaBroken(false)
   }, [item.path])
+
+  // 仅当列表摘要被截断时才补拉完整 /meta，常规未截断条目零额外请求。
+  useEffect(() => {
+    if (item.promptClipped !== true && item.negativePromptClipped !== true) {
+      setFullMeta(null)
+      return undefined
+    }
+    let alive = true
+    setFullMeta(null)
+    void fetchMeta(item.path)
+      .then(meta => {
+        if (!alive || meta === undefined) return
+        const fullPrompt = typeof meta.prompt === 'string' && meta.prompt !== '' ? meta.prompt : undefined
+        const fullNegative = typeof meta.negativePrompt === 'string' && meta.negativePrompt !== '' ? meta.negativePrompt : undefined
+        if (fullPrompt === undefined && fullNegative === undefined) return
+        setFullMeta({
+          path: item.path,
+          ...(fullPrompt === undefined ? {} : { prompt: fullPrompt }),
+          ...(fullNegative === undefined ? {} : { negativePrompt: fullNegative }),
+        })
+      })
+      .catch(() => { /* 回读失败时保留列表摘要 */ })
+    return () => { alive = false }
+  }, [item.path, item.promptClipped, item.negativePromptClipped])
 
   // React 的 onWheel 是 passive 的，preventDefault 无效，这里直接挂原生监听。
   useEffect(() => {
@@ -107,8 +134,17 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
     setDragging(false)
   }
 
+  const matchedMeta = fullMeta !== null && fullMeta.path === item.path ? fullMeta : null
+  const displayPrompt = matchedMeta?.prompt ?? item.prompt
+  const displayNegative = matchedMeta?.negativePrompt ?? item.negativePrompt
+
   const act = (kind: ActionKind) => (event: React.MouseEvent): void => {
     event.stopPropagation()
+    // 灯箱已经拉到全文时直接复用，避免点击「复制提示词」再发一次 /meta
+    if (kind === 'copyPrompt' && matchedMeta?.prompt !== undefined && matchedMeta.prompt !== '') {
+      onAction(kind, { ...item, prompt: matchedMeta.prompt, promptClipped: false })
+      return
+    }
     onAction(kind, item)
   }
 
@@ -237,9 +273,9 @@ export function Lightbox(props: LightboxProps): React.ReactElement {
           </div>
         ) : null}
         <div className="cfa-kv-k">{t('prompt')}</div>
-        <p className="cfa-prompt-box">{item.prompt !== undefined && item.prompt !== '' ? item.prompt : t('noPrompt')}</p>
-        {item.negativePrompt !== undefined && item.negativePrompt !== '' ? <div className="cfa-kv-k">{t('negativePrompt')}</div> : null}
-        {item.negativePrompt !== undefined && item.negativePrompt !== '' ? <p className="cfa-prompt-box">{item.negativePrompt}</p> : null}
+        <p className="cfa-prompt-box">{displayPrompt !== undefined && displayPrompt !== '' ? displayPrompt : t('noPrompt')}</p>
+        {displayNegative !== undefined && displayNegative !== '' ? <div className="cfa-kv-k">{t('negativePrompt')}</div> : null}
+        {displayNegative !== undefined && displayNegative !== '' ? <p className="cfa-prompt-box">{displayNegative}</p> : null}
       </aside>
     </div>
   )

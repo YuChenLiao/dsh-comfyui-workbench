@@ -26,6 +26,7 @@ import { Lightbox } from '../components/panel-gallery/client/Lightbox.js'
 import CSS from '../components/panel-gallery/client/styles.css'
 import { Workbench } from './components/Workbench.js'
 import { terminalActions } from '../components/panel-terminal/client/buttons.js'
+import { copyPrompt } from './actions.js'
 import { addImageToConversation, addToConversation, findComposerEditor, isVisibleElement, pasteFile, pickComposerEditor } from './conversation.js'
 import { hostLocale, navigateToConversation } from './host/runtime.js'
 import { mountComposerSlot, mountInputDock, mountToolView, mountWorkbenchEntries } from './host/slots.js'
@@ -102,6 +103,7 @@ export const __test = {
   planPage,
   shouldLoadMore,
   shouldAutoFill,
+  copyPrompt,
   addToConversation,
   addImageToConversation,
   pasteFile,

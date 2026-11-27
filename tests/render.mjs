@@ -530,4 +530,10 @@ assert.match(rowOpen, /slotsTitle/, '槽位区要有标题（t 是 identity，�
 assert.match(rowOpen, /night/, '预设名要显示出来')
 assert.match(rowOpen, /sendToChat/, '要有「送进对话」入口')
 
+// ── Lightbox：截断提示词回源 /meta 补全文（issue #7） ──
+const lightboxSource = fs.readFileSync(path.join(here, '..', 'src/components/panel-gallery/client/Lightbox.tsx'), 'utf8')
+assert.match(lightboxSource, /fetchMeta/, '灯箱在提示词被截断时应回源 /meta 取全文')
+assert.match(lightboxSource, /promptClipped/, '灯箱应按服务端 promptClipped 标记判定，而不是猜末尾省略号')
+assert.match(lightboxSource, /negativePromptClipped/, '灯箱应同步补拉被截断的负向提示词')
+
 console.log('render: 全部通过（Card / Lightbox / Gallery / 删除确认 / 批量选择 / 分页 / metaLine / Workbench / WorkflowAdmin / WorkflowRow / TagsPanel）')

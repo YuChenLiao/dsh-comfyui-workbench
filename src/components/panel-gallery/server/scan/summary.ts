@@ -1,10 +1,13 @@
 import { modelFromVars, modelFromWorkflow } from './graph.js'
 import type { MetaRecord, SummaryFields } from './types.js'
 
-/** 提示词在列表里的截断上限：1200 字符覆盖实际提示词，也够灯箱展示。 */
-const PROMPT_CLIP = 1200
-/** 负向提示词上限。 */
-const NEGATIVE_CLIP = 800
+/**
+ * 提示词在列表里的截断上限：4000 字符覆盖绝大多数长 tag 串，
+ * 同时防止极端巨型文本撑爆单页列表；超限时附带 `promptClipped: true` 让前端回读 `/meta`。
+ */
+const PROMPT_CLIP = 4000
+/** 负向提示词上限；超限时附带 `negativePromptClipped: true`。 */
+const NEGATIVE_CLIP = 2000
 
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() !== '' ? value : undefined
@@ -37,12 +40,18 @@ function promptIdOf(meta: MetaRecord): string | undefined {
  */
 export function metaSummary(meta: MetaRecord | undefined): SummaryFields {
   if (meta === undefined) return { hasMeta: false }
+  const rawPrompt = text(meta.prompt)
+  const rawNegative = text(meta.negativePrompt)
+  const promptClipped = rawPrompt !== undefined && rawPrompt.length > PROMPT_CLIP
+  const negativePromptClipped = rawNegative !== undefined && rawNegative.length > NEGATIVE_CLIP
   return {
     hasMeta: true,
     // sidecar 是插件自己的记录；embedded 表示从 PNG 的 prompt 块现读出来的。
     metaSource: text(meta.source),
-    prompt: clip(text(meta.prompt), PROMPT_CLIP),
-    negativePrompt: clip(text(meta.negativePrompt), NEGATIVE_CLIP),
+    prompt: clip(rawPrompt, PROMPT_CLIP),
+    ...(promptClipped ? { promptClipped: true } : {}),
+    negativePrompt: clip(rawNegative, NEGATIVE_CLIP),
+    ...(negativePromptClipped ? { negativePromptClipped: true } : {}),
     mode: text(meta.mode),
     seed: num(meta.seed),
     width: num(meta.width),
