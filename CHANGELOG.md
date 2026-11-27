@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.8.3 — 2026-11-28
+
+### 修复（对应 issue #7）
+
+- **修复资产库长提示词被截断导致灯箱展示与「复制提示词」只剩截断版（issue #7，感谢 @rainnosick）**：
+  - [summary.ts](src/components/panel-gallery/server/scan/summary.ts) 将列表摘要截断上限由 `1200 / 800` 提高至 `4000 / 2000` 字符（覆盖绝大多数长 tag 串），并在真正发生截断时显式返回 `promptClipped: true` / `negativePromptClipped: true` 标记，不再依赖猜测末尾省略号。
+  - [actions.ts](src/client/actions.ts) 的 `copyPrompt` 遇到 `promptClipped === true` 时自动回源读取 `/meta` 并复制完整提示词（回源失败时优雅退回列表文本，不误报无提示词）。
+  - [Lightbox.tsx](src/components/panel-gallery/client/Lightbox.tsx) 打开被截断条目时自动补拉 `/meta` 展示完整正负向提示词，并在点击「复制提示词」时直接复用已拉取的全文；未截断条目零额外请求。
+
 ## 0.8.2 — 2026-11-25
 
 ### 修复（对应 issue #6）
